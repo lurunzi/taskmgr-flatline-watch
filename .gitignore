@@ -5,3 +5,7 @@ config.ini
 log.txt
 ScreenWatcher.spec
 .DS_Store
+.venv/
+.local/
+__pycache__/
+*.pyc
