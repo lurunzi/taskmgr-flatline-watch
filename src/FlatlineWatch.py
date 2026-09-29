@@ -17,7 +17,7 @@ TEXT = {
  'invalid':'当前曲线无法识别', 'capture_error':'无法读取图表', 'capture_timeout':'读取超时，正在恢复',
  'error':'检测错误', 'stopped':'已暂停', 'cooldown':'取证冷却中', 'storage_limit':'已达存储限额，暂停转储',
  'system':'跟随系统', 'light':'浅色', 'dark':'深色', 'complete':'转储完成', 'dump_failed':'转储失败，请查看记录',
- 'capturing':'正在写入转储'},
+ 'capturing':'正在写入转储', 'verification_complete':'安装验证转储完成'},
  'en': {'title':'Task Manager automatic capture', 'folder':'Open records on D:', 'quit':'Quit', 'show':'Status',
  'pause':'Pause', 'resume':'Resume', 'hint':'Finds CPU aggregate and logical graphs automatically; saves two dumps after 30 seconds of suspected freezing.',
  'starting':'Starting', 'waiting':'Waiting for Task Manager CPU / logical processors page', 'normal':'Aggregate changing',
@@ -25,7 +25,7 @@ TEXT = {
  'invalid':'Graph not recognized', 'capture_error':'Cannot read charts', 'capture_timeout':'Capture timed out; recovering',
  'error':'Detection error', 'stopped':'Paused', 'cooldown':'Capture cooldown', 'storage_limit':'Storage limit; dumps paused',
  'system':'System', 'light':'Light', 'dark':'Dark', 'complete':'Dumps complete', 'dump_failed':'Dump failed; see records',
- 'capturing':'Writing dumps'}
+ 'capturing':'Writing dumps', 'verification_complete':'Installation dump verification complete'}
 }
 
 class Watch(QWidget):

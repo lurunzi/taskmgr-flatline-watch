@@ -5,6 +5,7 @@ import multiprocessing as mp
 import os
 import shutil
 import subprocess
+import struct
 import threading
 import time
 from collections import deque
@@ -18,6 +19,7 @@ from NativeCapture import worker
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path('D:/TaskmgrFreezeCaptures')
 PROCDUMP = ROOT / '.local/procdump/procdump64.exe'
+VERIFY_REQUEST = ROOT / '.local/verify.request'
 
 def timestamp():
     return datetime.now().astimezone().isoformat()
@@ -26,6 +28,35 @@ def write_json(path, value):
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding='utf-8')
     temp.replace(path)
+
+def validate_full_dump(path):
+    """Validate directory and full-memory ranges, including truncation checks."""
+    length = path.stat().st_size
+    with path.open('rb') as stream:
+        magic, version, count, directory, _, _, flags = struct.unpack('<4sIIIIIQ',stream.read(32))
+        if magic != b'MDMP' or not flags & 2 or not 1 <= count <= 1024:
+            raise ValueError('Invalid full-memory minidump header')
+        if directory < 32 or directory+count*12 > length:
+            raise ValueError('Invalid stream directory')
+        stream.seek(directory)
+        entries = [struct.unpack('<III',stream.read(12)) for _ in range(count)]
+        streams = {kind:(size,offset) for kind,size,offset in entries if kind}
+        if not {3,4,7,9}.issubset(streams):
+            raise ValueError('Missing thread, module, system or memory stream')
+        if any(offset+size > length for size,offset in streams.values()):
+            raise ValueError('Truncated metadata stream')
+        _, offset = streams[9]
+        stream.seek(offset)
+        ranges, base = struct.unpack('<QQ',stream.read(16))
+        if not 1 <= ranges <= 1_000_000 or offset+16+ranges*16 > length:
+            raise ValueError('Invalid full-memory ranges')
+        total = 0
+        for _ in range(ranges):
+            address, size = struct.unpack('<QQ',stream.read(16))
+            total += size
+        if base < 32 or base+total > length:
+            raise ValueError('Truncated full-memory payload')
+    return {'bytes':length,'memory_ranges':ranges,'memory_bytes':total,'flags':hex(flags)}
 
 def write_dump(pid, destination):
     """Dump a PSS clone without terminating the target."""
@@ -54,9 +85,13 @@ def write_dump(pid, destination):
                 timeout=180, creationflags=subprocess.CREATE_NO_WINDOW, check=False)
         result['exit_code'] = completed.returncode
         result['bytes'] = destination.stat().st_size if destination.exists() else 0
-        with destination.open('rb') as stream:
-            signature = stream.read(4)
-        result['success'] = completed.returncode == 0 and result['bytes'] > 32 and signature == b'MDMP'
+        # ProcDump 12.01 was observed returning 1 after a completed one-dump run.
+        # Its redirected output mixes an ASCII banner with UTF-16LE messages.
+        transcript = log.read_bytes().replace(b'\x00',b'').decode('utf-8',errors='replace')
+        log.with_suffix('.txt').write_text(transcript,encoding='utf-8')
+        result['validation'] = validate_full_dump(destination)
+        result['completion_logged'] = 'Dump 1 complete:' in transcript
+        result['success'] = completed.returncode in (0,1) and result['completion_logged']
     except Exception as exc:
         result.update(success=False, error=str(exc))
     finally:
@@ -78,7 +113,7 @@ class Monitor:
         self.last_request = 0
         self.dump_thread = None
         self.last_capture = 0
-        prior = list(OUTPUT.glob('*/event.json'))
+        prior = [p for p in OUTPUT.glob('*/event.json') if not p.parent.name.startswith('verification-')]
         if prior:
             age = max(0,time.time()-max(p.stat().st_mtime for p in prior))
             if age < 600:
@@ -86,6 +121,7 @@ class Monitor:
         self.enabled = True
         self.last_event = None
         self.capture_result = None
+        self.rearm_requested = False
 
     def reset_worker(self):
         if self.pipe:
@@ -139,6 +175,10 @@ class Monitor:
             self.publish('error', error=str(exc))
 
     def accept(self, sample):
+        if self.rearm_requested:
+            self.detector.reset()
+            self.frames.clear()
+            self.rearm_requested = False
         if sample['state'] != 'captured':
             self.detector.reset()
             self.frames.clear()
@@ -159,23 +199,28 @@ class Monitor:
         self.frames.append(frame)
         self.publish(result['state'], taskmgr_pid=sample['pid'], seconds=result['seconds'],
                      logical_graphs=len(sample['geometry'])-1)
+        if VERIFY_REQUEST.exists() and not (self.dump_thread and self.dump_thread.is_alive()):
+            VERIFY_REQUEST.unlink()
+            self.trigger(sample, verification=True)
+            return
         if result['state'] == 'suspect' and (result['alert'] or self.capture_result in ('dump_failed',None)):
             self.trigger(sample)
 
-    def trigger(self, sample):
+    def trigger(self, sample, verification=False):
         if self.dump_thread and self.dump_thread.is_alive():
             return
-        if self.last_capture and time.monotonic()-self.last_capture < 600:
+        if not verification and self.last_capture and time.monotonic()-self.last_capture < 600:
             self.publish('cooldown')
             return
         used = sum(p.stat().st_size for p in OUTPUT.glob('*/*.dmp'))
         if shutil.disk_usage(OUTPUT).free < 10*1024**3 or used > 50*1024**3:
             self.publish('storage_limit')
             return
-        folder = OUTPUT/datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+        prefix = 'verification-' if verification else ''
+        folder = OUTPUT/(prefix+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
         folder.mkdir()
         frames = list(self.frames)
-        evidence = {'classification':'suspected_visual_aggregate_freeze', 'timestamp':timestamp(),
+        evidence = {'classification':'installation_verification' if verification else 'suspected_visual_aggregate_freeze', 'timestamp':timestamp(),
             'taskmgr_pid':sample['pid'], 'window':sample['hwnd'], 'geometry':sample['geometry'],
             'confirm_seconds':30, 'samples':[], 'dumps':[], 'status':'capturing'}
         for i, frame in enumerate(frames):
@@ -184,7 +229,8 @@ class Monitor:
                 for key,data in frame['images'].items():
                     (folder/f'{i:02d}-{key}.png').write_bytes(data)
         write_json(folder/'event.json',evidence)
-        self.last_capture = time.monotonic()
+        if not verification:
+            self.last_capture = time.monotonic()
         self.last_event = str(folder)
         self.capture_result = 'capturing'
         self.dump_thread = threading.Thread(target=self.capture_dumps,args=(folder,evidence),daemon=False)
@@ -210,6 +256,9 @@ class Monitor:
             evidence['finished'] = timestamp()
             write_json(folder/'event.json',evidence)
             self.capture_result = evidence['status']
+            if evidence['classification'] == 'installation_verification':
+                self.capture_result = 'verification_complete' if evidence['status'] == 'complete' else 'dump_failed'
+                self.rearm_requested = True
 
     def stop(self):
         self.enabled = False
