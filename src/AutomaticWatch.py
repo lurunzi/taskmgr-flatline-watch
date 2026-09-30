@@ -15,6 +15,7 @@ from pathlib import Path
 import cv2
 from FlatlineDetection import FlatlineDetector
 from NativeCapture import worker
+from TaskmgrRecovery import restart_taskmgr, restore_cpu_page
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path('D:/TaskmgrFreezeCaptures')
@@ -122,6 +123,20 @@ class Monitor:
         self.last_event = None
         self.capture_result = None
         self.rearm_requested = False
+        self.recovery_result = None
+        self.pending_recovery = None
+        self.pending_navigation = None
+        if prior:
+            latest=max(prior,key=lambda p:p.stat().st_mtime)
+            saved=json.loads(latest.read_text(encoding='utf-8'))
+            if saved.get('status')=='complete' and not saved.get('recovery'):
+                self.pending_recovery=(latest.parent,saved)
+        history=list(OUTPUT.glob('*/event.json'))
+        if history:
+            latest=max(history,key=lambda p:p.stat().st_mtime)
+            saved=json.loads(latest.read_text(encoding='utf-8'))
+            if saved.get('recovery',{}).get('status')=='restarted_waiting_for_cpu_page':
+                self.pending_navigation=(latest.parent,saved)
 
     def reset_worker(self):
         if self.pipe:
@@ -138,7 +153,7 @@ class Monitor:
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
-                      'capture_result':self.capture_result, **extra}
+                      'capture_result':self.capture_result, 'recovery':self.recovery_result, **extra}
         if time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
             self.last_status_write = time.monotonic()
@@ -149,6 +164,12 @@ class Monitor:
             self.publish('stopped')
             return
         try:
+            if self.pending_navigation:
+                folder,saved=self.pending_navigation
+                self.pending_navigation=None
+                self.last_event=str(folder)
+                self.dump_thread=threading.Thread(target=self.resume_navigation,args=(folder,saved),daemon=False)
+                self.dump_thread.start()
             if self.process is None:
                 self.pipe, child = mp.Pipe()
                 self.process = mp.Process(target=worker, args=(child,), daemon=True)
@@ -189,6 +210,14 @@ class Monitor:
             self.detector.reset()
             self.frames.clear()
             self.identity = identity
+        if self.pending_recovery:
+            folder, saved = self.pending_recovery
+            self.pending_recovery = None
+            if sample['pid']==saved['taskmgr_pid'] and sample['hwnd']==saved['window']:
+                self.last_event=str(folder)
+                self.capture_result='complete'
+                self.dump_thread=threading.Thread(target=self.recover,args=(folder,saved),daemon=False)
+                self.dump_thread.start()
         result = self.detector.observe(time.monotonic(), sample['total'], sample['cores'])
         frame = {'timestamp':timestamp(), 'result':result, 'images':{}}
         for key in ('total','cores'):
@@ -200,13 +229,14 @@ class Monitor:
         self.publish(result['state'], taskmgr_pid=sample['pid'], seconds=result['seconds'],
                      logical_graphs=len(sample['geometry'])-1)
         if VERIFY_REQUEST.exists() and not (self.dump_thread and self.dump_thread.is_alive()):
+            recovery_test=VERIFY_REQUEST.read_text(encoding='ascii').strip()=='recovery_check'
             VERIFY_REQUEST.unlink()
-            self.trigger(sample, verification=True)
+            self.trigger(sample, verification=True, recovery_test=recovery_test)
             return
-        if result['state'] == 'suspect' and (result['alert'] or self.capture_result in ('dump_failed',None)):
+        if result['state'] == 'suspect' and (result['alert'] or self.capture_result in ('dump_failed','recovered',None)):
             self.trigger(sample)
 
-    def trigger(self, sample, verification=False):
+    def trigger(self, sample, verification=False, recovery_test=False):
         if self.dump_thread and self.dump_thread.is_alive():
             return
         if not verification and self.last_capture and time.monotonic()-self.last_capture < 600:
@@ -223,6 +253,8 @@ class Monitor:
         evidence = {'classification':'installation_verification' if verification else 'suspected_visual_aggregate_freeze', 'timestamp':timestamp(),
             'taskmgr_pid':sample['pid'], 'window':sample['hwnd'], 'geometry':sample['geometry'],
             'confirm_seconds':30, 'samples':[], 'dumps':[], 'status':'capturing'}
+        if verification and recovery_test:
+            evidence['classification']='recovery_verification'
         for i, frame in enumerate(frames):
             evidence['samples'].append({'timestamp':frame['timestamp'], **frame['result']})
             if i in {0,len(frames)//2,len(frames)-1}:
@@ -259,6 +291,44 @@ class Monitor:
             if evidence['classification'] == 'installation_verification':
                 self.capture_result = 'verification_complete' if evidence['status'] == 'complete' else 'dump_failed'
                 self.rearm_requested = True
+            elif evidence['status']=='complete':
+                self.recover(folder,evidence)
+
+    def recover(self, folder, evidence):
+        # Verify durable files again; test captures and incomplete pairs never restart.
+        if evidence.get('classification') not in ('suspected_visual_aggregate_freeze','recovery_verification') or evidence.get('status')!='complete':
+            return
+        try:
+            if len(evidence.get('dumps',[]))!=2 or not all(d.get('success') for d in evidence['dumps']):
+                raise RuntimeError('Two successful dumps are required before restart')
+            for index in (1,2):
+                validate_full_dump(folder/f'taskmgr-{index}.dmp')
+            evidence['recovery']={'status':'restarting','started':timestamp()}
+            write_json(folder/'event.json',evidence)
+            self.recovery_result=evidence['recovery']
+            result=restart_taskmgr(evidence['taskmgr_pid'],evidence['window'])
+            evidence['recovery'].update(result,finished=timestamp())
+            self.capture_result='recovered' if result['status']=='restarted' else 'recovery_failed'
+        except Exception as exc:
+            evidence['recovery']={'status':'failed','error':str(exc),'finished':timestamp()}
+            self.capture_result='recovery_failed'
+        finally:
+            write_json(folder/'event.json',evidence)
+            self.recovery_result=evidence.get('recovery')
+            self.rearm_requested=True
+
+    def resume_navigation(self,folder,evidence):
+        try:
+            result=restore_cpu_page(evidence['recovery']['launch_pid'])
+            evidence['recovery'].update(result,finished=timestamp())
+            self.capture_result='recovered' if result['status']=='restarted' else 'recovery_failed'
+        except Exception as exc:
+            evidence['recovery'].update(error=str(exc),finished=timestamp())
+            self.capture_result='recovery_failed'
+        finally:
+            write_json(folder/'event.json',evidence)
+            self.recovery_result=evidence['recovery']
+            self.rearm_requested=True
 
     def stop(self):
         self.enabled = False

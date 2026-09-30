@@ -30,6 +30,8 @@ class CaptureFlowTests(unittest.TestCase):
              patch.object(watch.time,'monotonic',return_value=1000) as clock, \
              patch.object(watch.time,'sleep'), \
              patch.object(watch,'write_dump',return_value={'success':True,'test_stub':True}) as dump, \
+             patch.object(watch,'validate_full_dump',return_value={'test_stub':True}), \
+             patch.object(watch,'restart_taskmgr',return_value={'status':'restarted','new_pid':9876}) as restart, \
              patch.object(NativeCapture.u,'GetWindowThreadProcessId',side_effect=target_pid), \
              patch.object(NativeCapture,'class_name',return_value='TaskManagerWindow'):
             monitor=watch.Monitor()
@@ -47,6 +49,33 @@ class CaptureFlowTests(unittest.TestCase):
             self.assertEqual(len(list(event.glob('*.png'))),6)
             self.assertEqual(len(evidence['dumps']),2)
             self.assertEqual(evidence['taskmgr_pid'],4321)
+            restart.assert_called_once_with(4321,123)
+            self.assertEqual(evidence['recovery']['status'],'restarted')
             monitor.stop()
+
+    def test_verification_never_restarts_taskmgr(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \
+             patch.object(watch,'restart_taskmgr') as restart:
+            monitor=watch.Monitor()
+            monitor.recover(Path(directory),{'classification':'installation_verification','status':'complete'})
+            restart.assert_not_called()
+
+    def test_missing_dump_prevents_restart(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \
+             patch.object(watch,'restart_taskmgr') as restart:
+            monitor=watch.Monitor()
+            evidence={'classification':'suspected_visual_aggregate_freeze','status':'complete',
+                      'dumps':[{'success':True},{'success':True}],'taskmgr_pid':4321,'window':123}
+            monitor.recover(Path(directory),evidence)
+            restart.assert_not_called()
+            self.assertEqual(evidence['recovery']['status'],'failed')
+
+    def test_failed_second_dump_prevents_restart(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \
+             patch.object(watch,'restart_taskmgr') as restart:
+            monitor=watch.Monitor()
+            monitor.recover(Path(directory),{'classification':'suspected_visual_aggregate_freeze',
+                'status':'dump_failed','dumps':[{'success':True},{'success':False}]})
+            restart.assert_not_called()
 
 if __name__=='__main__':unittest.main()

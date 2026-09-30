@@ -11,21 +11,23 @@ from AutomaticWatch import Monitor, ROOT, OUTPUT
 
 TEXT = {
  'zh': {'title':'任务管理器自动取证', 'folder':'打开 D 盘记录', 'quit':'退出', 'show':'查看状态',
- 'pause':'暂停', 'resume':'继续', 'hint':'自动识别 CPU 总图与分线程图；持续异常 30 秒后保存两份内存转储。',
+ 'pause':'暂停', 'resume':'继续', 'hint':'持续异常 30 秒后保存两份转储，验证成功再重启任务管理器、继续检测。',
  'starting':'正在启动', 'waiting':'等待任务管理器 CPU → 逻辑处理器页面', 'normal':'总图正常变化',
  'candidate':'总图水平，正在确认', 'no_motion':'等待分线程曲线变化', 'suspect':'疑似汇总冻结，已触发取证',
  'invalid':'当前曲线无法识别', 'capture_error':'无法读取图表', 'capture_timeout':'读取超时，正在恢复',
  'error':'检测错误', 'stopped':'已暂停', 'cooldown':'取证冷却中', 'storage_limit':'已达存储限额，暂停转储',
  'system':'跟随系统', 'light':'浅色', 'dark':'深色', 'complete':'转储完成', 'dump_failed':'转储失败，请查看记录',
- 'capturing':'正在写入转储', 'verification_complete':'安装验证转储完成'},
+ 'capturing':'正在写入转储', 'verification_complete':'安装验证转储完成',
+ 'recovered':'取证完成，任务管理器已重启', 'recovery_failed':'取证已保存，自动恢复未完成'},
  'en': {'title':'Task Manager automatic capture', 'folder':'Open records on D:', 'quit':'Quit', 'show':'Status',
- 'pause':'Pause', 'resume':'Resume', 'hint':'Finds CPU aggregate and logical graphs automatically; saves two dumps after 30 seconds of suspected freezing.',
+ 'pause':'Pause', 'resume':'Resume', 'hint':'After 30 seconds of suspected freezing, saves and verifies two dumps, then restarts Task Manager and resumes detection.',
  'starting':'Starting', 'waiting':'Waiting for Task Manager CPU / logical processors page', 'normal':'Aggregate changing',
  'candidate':'Aggregate flat; confirming', 'no_motion':'Waiting for logical graph movement', 'suspect':'Suspected freeze; capture triggered',
  'invalid':'Graph not recognized', 'capture_error':'Cannot read charts', 'capture_timeout':'Capture timed out; recovering',
  'error':'Detection error', 'stopped':'Paused', 'cooldown':'Capture cooldown', 'storage_limit':'Storage limit; dumps paused',
  'system':'System', 'light':'Light', 'dark':'Dark', 'complete':'Dumps complete', 'dump_failed':'Dump failed; see records',
- 'capturing':'Writing dumps', 'verification_complete':'Installation dump verification complete'}
+ 'capturing':'Writing dumps', 'verification_complete':'Installation dump verification complete',
+ 'recovered':'Evidence saved; Task Manager restarted', 'recovery_failed':'Evidence saved; recovery incomplete'}
 }
 
 class Watch(QWidget):
