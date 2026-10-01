@@ -17,7 +17,7 @@ TEXT = {
  'invalid':'当前曲线无法识别', 'capture_error':'无法读取图表', 'capture_timeout':'读取超时，正在恢复',
  'error':'检测错误', 'stopped':'已暂停', 'cooldown':'取证冷却中', 'storage_limit':'已达存储限额，暂停转储',
  'system':'跟随系统', 'light':'浅色', 'dark':'深色', 'complete':'转储完成', 'dump_failed':'转储失败，请查看记录',
- 'capturing':'正在写入转储', 'verification_complete':'安装验证转储完成',
+ 'capturing':'正在写入转储', 'recovering':'正在重启任务管理器', 'verification_complete':'安装验证转储完成',
  'recovered':'取证完成，任务管理器已重启', 'recovery_failed':'取证已保存，自动恢复未完成'},
  'en': {'title':'Task Manager automatic capture', 'folder':'Open records on D:', 'quit':'Quit', 'show':'Status',
  'pause':'Pause', 'resume':'Resume', 'hint':'After 30 seconds of suspected freezing, saves and verifies two dumps, then restarts Task Manager and resumes detection.',
@@ -26,7 +26,7 @@ TEXT = {
  'invalid':'Graph not recognized', 'capture_error':'Cannot read charts', 'capture_timeout':'Capture timed out; recovering',
  'error':'Detection error', 'stopped':'Paused', 'cooldown':'Capture cooldown', 'storage_limit':'Storage limit; dumps paused',
  'system':'System', 'light':'Light', 'dark':'Dark', 'complete':'Dumps complete', 'dump_failed':'Dump failed; see records',
- 'capturing':'Writing dumps', 'verification_complete':'Installation dump verification complete',
+ 'capturing':'Writing dumps', 'recovering':'Restarting Task Manager', 'verification_complete':'Installation dump verification complete',
  'recovered':'Evidence saved; Task Manager restarted', 'recovery_failed':'Evidence saved; recovery incomplete'}
 }
 

@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from unittest.mock import patch
 
@@ -105,5 +106,49 @@ class CaptureFlowTests(unittest.TestCase):
             monitor.recover(Path(directory),{'classification':'suspected_visual_aggregate_freeze',
                 'status':'dump_failed','dumps':[{'success':True},{'success':False}]})
             restart.assert_not_called()
+
+    def test_background_recovery_stays_visible_over_live_samples(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)):
+            monitor=watch.Monitor()
+            monitor.dump_thread=unittest.mock.Mock(is_alive=lambda:True)
+            monitor.recovery_result={'status':'restarting'}
+            monitor.last_status_write=watch.time.monotonic()
+            monitor.accept({'state':'waiting'})
+            state=json.loads((Path(directory)/'status.json').read_text(encoding='utf-8'))
+            self.assertEqual(state['state'],'recovering')
+            self.assertEqual(state['sample_state'],'waiting')
+            self.assertTrue(state['dump_running'])
+
+    def recovery_evidence(self):
+        return {'classification':'suspected_visual_aggregate_freeze','status':'complete',
+                'dumps':[{'success':True},{'success':True}],'taskmgr_pid':4321,'window':123}
+
+    def test_failed_recovery_is_retried_a_bounded_number_of_times(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)),              patch.object(watch,'validate_full_dump',return_value={}) as validate,              patch.object(watch,'restart_taskmgr',side_effect=OSError('busy')) as restart:
+            monitor=watch.Monitor()
+            monitor.recover(Path(directory),self.recovery_evidence())
+            self.assertIsNotNone(monitor.retry)
+            for _ in range(watch.RETRY_LIMIT+2):
+                monitor.retry_recovery(watch.time.monotonic()+watch.RETRY_INTERVAL+1)
+                if monitor.dump_thread:
+                    monitor.dump_thread.join(timeout=3)
+            self.assertEqual(restart.call_count,watch.RETRY_LIMIT+1)
+            self.assertEqual(validate.call_count,2*(watch.RETRY_LIMIT+1))
+            self.assertIsNone(monitor.retry)
+            evidence=json.loads((Path(directory)/'event.json').read_text(encoding='utf-8'))
+            self.assertTrue(evidence['recovery']['retry_exhausted'])
+
+    def test_missing_cpu_page_retries_navigation_only(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)),              patch.object(watch,'validate_full_dump',return_value={}),              patch.object(watch,'restart_taskmgr',return_value={'status':'restarted_waiting_for_cpu_page','launch_pid':9876}) as restart,              patch.object(watch,'restore_cpu_page',return_value={'status':'restarted','new_pid':9876}) as navigate:
+            monitor=watch.Monitor()
+            monitor.recover(Path(directory),self.recovery_evidence())
+            monitor.retry_recovery(watch.time.monotonic())
+            navigate.assert_not_called()
+            monitor.retry_recovery(watch.time.monotonic()+watch.RETRY_INTERVAL+1)
+            monitor.dump_thread.join(timeout=3)
+            restart.assert_called_once()
+            navigate.assert_called_once_with(9876)
+            self.assertEqual(monitor.capture_result,'recovered')
+            self.assertIsNone(monitor.retry)
 
 if __name__=='__main__':unittest.main()

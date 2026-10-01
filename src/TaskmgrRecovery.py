@@ -6,20 +6,30 @@ import time
 from ctypes import wintypes as w
 from pathlib import Path
 
-from NativeCapture import u, class_name, signature, locate
+from NativeCapture import u, class_name, signature, locate, enumerate_windows
+
+def main_window(pid):
+    for hwnd in enumerate_windows():
+        owner=w.DWORD();u.GetWindowThreadProcessId(hwnd,c.byref(owner))
+        if owner.value==pid and class_name(hwnd)=='TaskManagerWindow':
+            return hwnd
+    return None
 
 def restore_cpu_page(pid):
     script=Path(__file__).resolve().parents[1]/'tools/Restore-CpuPage.ps1'
-    result={}
+    result={'navigation':[]}
     for attempt in range(2):
+        started=time.monotonic()
         try:
             completed=subprocess.run(['powershell.exe','-NoProfile','-STA','-ExecutionPolicy','Bypass',
                                       '-File',str(script),'-TargetPid',str(pid)],
-                                     capture_output=True,timeout=25,creationflags=subprocess.CREATE_NO_WINDOW)
-            result.update(navigation_exit_code=completed.returncode,navigation_attempt=attempt+1,
-                navigation_output=(completed.stdout+completed.stderr).decode(errors='replace')[-4000:])
+                                     capture_output=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
+            code,output=completed.returncode,(completed.stdout+completed.stderr).decode(errors='replace')[-4000:]
         except subprocess.TimeoutExpired:
-            result.update(navigation_exit_code=None,navigation_attempt=attempt+1,navigation_output='UI Automation timed out')
+            code,output=None,'UI Automation timed out'
+        # Keep every attempt; the step timings show where recovery time is spent.
+        result['navigation'].append({'attempt':attempt+1,'exit_code':code,'seconds':round(time.monotonic()-started,1),'output':output})
+        result.update(navigation_exit_code=code,navigation_attempt=attempt+1,navigation_output=output)
         for _ in range(20):
             time.sleep(.25)
             found=locate()
@@ -63,12 +73,21 @@ def restart_taskmgr(pid, hwnd):
     startup.wShowWindow=4  # Show without activating.
     child=subprocess.Popen([str(expected)],startupinfo=startup)
     result['launch_pid']=child.pid
-    for _ in range(40):
+    started=time.monotonic();shown=None
+    # Wait for the CPU grid, but navigate as soon as the new window has been
+    # shown for two seconds on another page instead of idling for ten.
+    while time.monotonic()-started < 10:
         time.sleep(.25)
         found=locate()
         if found and found[1]!=pid:
-            result.update(status='restarted',new_pid=found[1],logical_graphs=len(found[3]))
+            result.update(status='restarted',new_pid=found[1],logical_graphs=len(found[3]),
+                          launch_seconds=round(time.monotonic()-started,1))
             return result
+        if shown is None and main_window(child.pid):
+            shown=time.monotonic()
+        if shown is not None and time.monotonic()-shown >= 2:
+            break
+    result['launch_seconds']=round(time.monotonic()-started,1)
     # Navigation is bounded to the newly launched Task Manager.
     result.update(restore_cpu_page(child.pid))
     return result

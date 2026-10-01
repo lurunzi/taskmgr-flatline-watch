@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path('D:/TaskmgrFreezeCaptures')
 PROCDUMP = ROOT / '.local/procdump/procdump64.exe'
 VERIFY_REQUEST = ROOT / '.local/verify.request'
+RETRY_LIMIT = 3
+RETRY_INTERVAL = 30
 
 def timestamp():
     return datetime.now().astimezone().isoformat()
@@ -130,6 +132,10 @@ class Monitor:
         self.recovery_result = None
         self.pending_recovery = None
         self.pending_navigation = None
+        self.retry = None
+        self.retry_folder = None
+        self.retry_count = 0
+        self.last_retry = 0
         if prior:
             latest=max(prior,key=lambda p:p.stat().st_mtime)
             saved=json.loads(latest.read_text(encoding='utf-8'))
@@ -153,12 +159,24 @@ class Monitor:
         self.pipe = self.process = None
         self.pending = None
 
+    def background_phase(self):
+        if not (self.dump_thread and self.dump_thread.is_alive()):
+            return None
+        return 'recovering' if self.recovery_result else 'capturing'
+
     def publish(self, state, **extra):
+        # Live samples keep arriving while dumps or recovery run in the
+        # background; the background phase must stay the visible state.
+        phase = self.background_phase()
+        if phase and state not in ('stopped','capturing','recovering'):
+            extra['sample_state'] = state
+            state = phase
+        changed = state != self.state.get('state')
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
                       'capture_result':self.capture_result, 'recovery':self.recovery_result, **extra}
-        if time.monotonic()-self.last_status_write > 5:
+        if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
             self.last_status_write = time.monotonic()
 
@@ -174,6 +192,7 @@ class Monitor:
                 self.last_event=str(folder)
                 self.dump_thread=threading.Thread(target=self.resume_navigation,args=(folder,saved),daemon=False)
                 self.dump_thread.start()
+            self.retry_recovery(now)
             if self.process is None:
                 self.pipe, child = mp.Pipe()
                 self.process = mp.Process(target=worker, args=(child,), daemon=True)
@@ -209,6 +228,8 @@ class Monitor:
             self.frames.clear()
             self.publish(sample['state'], error=sample.get('error'))
             return
+        if self.retry and sample['pid'] != self.retry[1]['taskmgr_pid']:
+            self.retry = None  # A working CPU page from another Taskmgr ends the retry.
         identity = (sample['pid'], sample['hwnd'], sample['total'].shape, sample['cores'].shape)
         if identity != self.identity:
             self.detector.reset()
@@ -243,7 +264,7 @@ class Monitor:
 
     def trigger(self, sample, verification=False, recovery_test=False):
         if self.dump_thread and self.dump_thread.is_alive():
-            self.publish('capturing',taskmgr_pid=sample['pid'])
+            self.publish(self.background_phase(),taskmgr_pid=sample['pid'])
             return
         # A replacement Taskmgr must get its own evidence and recovery immediately
         # after confirmation. Rate limiting the previous PID blocks that recovery.
@@ -319,6 +340,7 @@ class Monitor:
             evidence['recovery']={'status':'restarting','started':timestamp()}
             write_json(folder/'event.json',evidence)
             self.recovery_result=evidence['recovery']
+            self.last_status_write=0
             result=restart_taskmgr(evidence['taskmgr_pid'],evidence['window'])
             evidence['recovery'].update(result,finished=timestamp())
             self.capture_result='recovered' if result['status']=='restarted' else 'recovery_failed'
@@ -326,11 +348,13 @@ class Monitor:
             evidence['recovery']={'status':'failed','error':str(exc),'finished':timestamp()}
             self.capture_result='recovery_failed'
         finally:
+            self.schedule_retry(folder,evidence)
             write_json(folder/'event.json',evidence)
             self.recovery_result=evidence.get('recovery')
             self.rearm_requested=True
 
     def resume_navigation(self,folder,evidence):
+        self.recovery_result=evidence['recovery']
         try:
             result=restore_cpu_page(evidence['recovery']['launch_pid'])
             evidence['recovery'].update(result,finished=timestamp())
@@ -339,9 +363,44 @@ class Monitor:
             evidence['recovery'].update(error=str(exc),finished=timestamp())
             self.capture_result='recovery_failed'
         finally:
+            self.schedule_retry(folder,evidence)
             write_json(folder/'event.json',evidence)
             self.recovery_result=evidence['recovery']
             self.rearm_requested=True
+
+    def schedule_retry(self, folder, evidence):
+        if self.capture_result != 'recovery_failed':
+            self.retry = None
+            return
+        if self.retry_folder != folder:
+            self.retry_folder, self.retry_count = folder, 0
+        self.retry = (folder, evidence)
+        self.last_retry = time.monotonic()
+        evidence['recovery']['retries'] = self.retry_count
+        if self.retry_count >= RETRY_LIMIT:
+            evidence['recovery']['retry_exhausted'] = True
+            self.retry = None
+
+    def retry_recovery(self, now):
+        """Bounded retry of a failed recovery; the saved dumps are revalidated, never retaken."""
+        if not self.retry or (self.dump_thread and self.dump_thread.is_alive()):
+            return
+        if now-self.last_retry < RETRY_INTERVAL:
+            return
+        folder, evidence = self.retry
+        self.retry = None
+        self.retry_count += 1
+        self.last_event = str(folder)
+        recovery = evidence.get('recovery', {})
+        if recovery.get('status') == 'restarted_waiting_for_cpu_page':
+            target, args = self.resume_navigation, (folder, evidence)
+        elif recovery.get('status') == 'failed':
+            evidence = {k:v for k,v in evidence.items() if k != 'recovery'}
+            target, args = self.recover, (folder, evidence)
+        else:
+            return
+        self.dump_thread = threading.Thread(target=target, args=args, daemon=False)
+        self.dump_thread.start()
 
     def stop(self):
         self.enabled = False
