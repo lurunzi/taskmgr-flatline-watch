@@ -13,6 +13,34 @@ import NativeCapture
 from test_detection import graph
 
 class CaptureFlowTests(unittest.TestCase):
+    def test_new_taskmgr_bypasses_previous_target_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \
+             patch.object(watch.time,'monotonic',return_value=1000), \
+             patch.object(watch.threading,'Thread') as thread:
+            monitor=watch.Monitor()
+            monitor.last_capture=990
+            monitor.last_capture_target=(4321,123)
+            monitor.trigger({'pid':9876,'hwnd':456,'geometry':[]})
+            thread.return_value.start.assert_called_once()
+            evidence=json.loads((Path(monitor.last_event)/'event.json').read_text(encoding='utf-8'))
+            self.assertEqual(evidence['taskmgr_pid'],9876)
+            self.assertEqual(evidence['classification'],'suspected_visual_aggregate_freeze')
+            self.assertEqual(monitor.last_capture_target,(9876,456))
+
+    def test_same_target_cooldown_survives_watcher_restart_and_is_visible(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \
+             patch.object(watch.time,'monotonic',return_value=1000), \
+             patch.object(watch.threading,'Thread') as thread:
+            folder=Path(directory)/'prior';folder.mkdir()
+            watch.write_json(folder/'event.json',{'taskmgr_pid':4321,'window':123,'status':'dump_failed'})
+            monitor=watch.Monitor()
+            self.assertEqual(monitor.last_capture_target,(4321,123))
+            monitor.trigger({'pid':4321,'hwnd':123,'geometry':[]})
+            thread.assert_not_called()
+            state=json.loads((Path(directory)/'status.json').read_text(encoding='utf-8'))
+            self.assertEqual(state['state'],'cooldown')
+            self.assertGreater(state['cooldown_remaining'],590)
+
     def test_non_taskmgr_process_is_rejected_before_procdump(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(watch.subprocess,'run') as run:
             result=watch.write_dump(os.getpid(),Path(directory)/'rejected.dmp')

@@ -114,11 +114,15 @@ class Monitor:
         self.last_request = 0
         self.dump_thread = None
         self.last_capture = 0
+        self.last_capture_target = None
         prior = [p for p in OUTPUT.glob('*/event.json') if not p.parent.name.startswith('verification-')]
         if prior:
             age = max(0,time.time()-max(p.stat().st_mtime for p in prior))
             if age < 600:
                 self.last_capture = time.monotonic()-age
+                recent=max(prior,key=lambda p:p.stat().st_mtime)
+                saved=json.loads(recent.read_text(encoding='utf-8'))
+                self.last_capture_target=(saved.get('taskmgr_pid'),saved.get('window'))
         self.enabled = True
         self.last_event = None
         self.capture_result = None
@@ -226,8 +230,6 @@ class Monitor:
                 raise RuntimeError('PNG encoding failed')
             frame['images'][key] = encoded.tobytes()
         self.frames.append(frame)
-        self.publish(result['state'], taskmgr_pid=sample['pid'], seconds=result['seconds'],
-                     logical_graphs=len(sample['geometry'])-1)
         if VERIFY_REQUEST.exists() and not (self.dump_thread and self.dump_thread.is_alive()):
             recovery_test=VERIFY_REQUEST.read_text(encoding='ascii').strip()=='recovery_check'
             VERIFY_REQUEST.unlink()
@@ -235,12 +237,20 @@ class Monitor:
             return
         if result['state'] == 'suspect' and (result['alert'] or self.capture_result in ('dump_failed','recovered',None)):
             self.trigger(sample)
+            return
+        self.publish(result['state'], taskmgr_pid=sample['pid'], seconds=result['seconds'],
+                     logical_graphs=len(sample['geometry'])-1)
 
     def trigger(self, sample, verification=False, recovery_test=False):
         if self.dump_thread and self.dump_thread.is_alive():
+            self.publish('capturing',taskmgr_pid=sample['pid'])
             return
-        if not verification and self.last_capture and time.monotonic()-self.last_capture < 600:
-            self.publish('cooldown')
+        # A replacement Taskmgr must get its own evidence and recovery immediately
+        # after confirmation. Rate limiting the previous PID blocks that recovery.
+        target=(sample['pid'],sample['hwnd'])
+        remaining=600-(time.monotonic()-self.last_capture)
+        if not verification and self.last_capture and target==self.last_capture_target and remaining > 0:
+            self.publish('cooldown',taskmgr_pid=sample['pid'],cooldown_remaining=round(remaining))
             return
         used = sum(p.stat().st_size for p in OUTPUT.glob('*/*.dmp'))
         if shutil.disk_usage(OUTPUT).free < 10*1024**3 or used > 50*1024**3:
@@ -263,10 +273,13 @@ class Monitor:
         write_json(folder/'event.json',evidence)
         if not verification:
             self.last_capture = time.monotonic()
+            self.last_capture_target = target
         self.last_event = str(folder)
         self.capture_result = 'capturing'
+        self.recovery_result = None
         self.dump_thread = threading.Thread(target=self.capture_dumps,args=(folder,evidence),daemon=False)
         self.dump_thread.start()
+        self.publish('capturing',taskmgr_pid=sample['pid'])
 
     def capture_dumps(self, folder, evidence):
         try:

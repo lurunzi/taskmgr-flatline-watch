@@ -82,7 +82,12 @@ class Watch(QWidget):
         state=self.monitor.state
         self.status.setText(self.text(state['state']) + (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else ''))
         result=self.monitor.capture_result
-        self.details.setText(self.text(result) if result else str(OUTPUT))
+        if state['state']=='cooldown':
+            self.details.setText(f"{state.get('cooldown_remaining',0):.0f}s")
+        elif state['state'] in ('candidate','suspect','storage_limit'):
+            self.details.setText(str(OUTPUT))
+        else:
+            self.details.setText(self.text(result) if result else str(OUTPUT))
         self.pause.setText(self.text('pause' if self.monitor.enabled else 'resume'))
         self.tray.setToolTip(self.text('title')+'\n'+self.status.text())
     def tick(self):
