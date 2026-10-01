@@ -14,7 +14,8 @@ from pathlib import Path
 
 import cv2
 from FlatlineDetection import FlatlineDetector
-from NativeCapture import worker
+from NativeCapture import worker, taskmgr_pids
+from OriginCapture import OriginWatch
 from TaskmgrRecovery import restart_taskmgr, restore_cpu_page
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,21 +62,16 @@ def validate_full_dump(path):
             raise ValueError('Truncated full-memory payload')
     return {'bytes':length,'memory_ranges':ranges,'memory_bytes':total,'flags':hex(flags)}
 
-def write_dump(pid, destination):
-    """Dump a PSS clone without terminating the target."""
-    cmd = [str(PROCDUMP), '-accepteula', '-r', '-ma', str(pid), str(destination)]
-    log = destination.with_suffix('.log')
-    result = {'started':timestamp(), 'pid':pid, 'file':str(destination)}
-    handle = None
+def require_taskmgr(pid):
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel.OpenProcess.argtypes = [ctypes.c_uint32,ctypes.c_bool,ctypes.c_uint32]
     kernel.OpenProcess.restype = ctypes.c_void_p
     kernel.CloseHandle.argtypes = [ctypes.c_void_p]
     kernel.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p,ctypes.c_uint32,ctypes.c_wchar_p,ctypes.POINTER(ctypes.c_uint32)]
+    handle = kernel.OpenProcess(0x1000,False,pid)
+    if not handle:
+        raise OSError('Cannot verify target process identity')
     try:
-        handle = kernel.OpenProcess(0x1000,False,pid)
-        if not handle:
-            raise OSError('Cannot verify target process identity')
         image = ctypes.create_unicode_buffer(32768)
         size = ctypes.c_uint32(len(image))
         if not kernel.QueryFullProcessImageNameW(handle,0,image,ctypes.byref(size)):
@@ -83,6 +79,20 @@ def write_dump(pid, destination):
         expected = Path(os.environ['SystemRoot'])/'System32/Taskmgr.exe'
         if Path(image.value).resolve() != expected.resolve():
             raise RuntimeError('Target is not Windows Task Manager')
+    finally:
+        kernel.CloseHandle(handle)
+
+def storage_available():
+    used = sum(p.stat().st_size for p in OUTPUT.glob('*/*.dmp'))
+    return shutil.disk_usage(OUTPUT).free >= 10*1024**3 and used <= 50*1024**3
+
+def write_dump(pid, destination):
+    """Dump a PSS clone without terminating the target."""
+    cmd = [str(PROCDUMP), '-accepteula', '-r', '-ma', str(pid), str(destination)]
+    log = destination.with_suffix('.log')
+    result = {'started':timestamp(), 'pid':pid, 'file':str(destination)}
+    try:
+        require_taskmgr(pid)
         with log.open('w', encoding='utf-8') as stream:
             completed = subprocess.run(cmd, stdout=stream, stderr=subprocess.STDOUT,
                 timeout=180, creationflags=subprocess.CREATE_NO_WINDOW, check=False)
@@ -97,9 +107,6 @@ def write_dump(pid, destination):
         result['success'] = completed.returncode in (0,1) and result['completion_logged']
     except Exception as exc:
         result.update(success=False, error=str(exc))
-    finally:
-        if handle:
-            kernel.CloseHandle(handle)
     result['finished'] = timestamp()
     return result
 
@@ -136,6 +143,9 @@ class Monitor:
         self.retry_folder = None
         self.retry_count = 0
         self.last_retry = 0
+        self.origin = OriginWatch(PROCDUMP, OUTPUT, validate_full_dump, write_json)
+        self.last_origin_scan = 0
+        self.origin_error = None
         if prior:
             latest=max(prior,key=lambda p:p.stat().st_mtime)
             saved=json.loads(latest.read_text(encoding='utf-8'))
@@ -175,7 +185,8 @@ class Monitor:
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
-                      'capture_result':self.capture_result, 'recovery':self.recovery_result, **extra}
+                      'capture_result':self.capture_result, 'recovery':self.recovery_result,
+                      'origin_monitoring':sorted(self.origin.sessions), 'origin_error':self.origin_error, **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
             self.last_status_write = time.monotonic()
@@ -193,6 +204,11 @@ class Monitor:
                 self.dump_thread=threading.Thread(target=self.resume_navigation,args=(folder,saved),daemon=False)
                 self.dump_thread.start()
             self.retry_recovery(now)
+            if now-self.last_origin_scan >= 5:
+                # Any page can hit the aggregation error, not only the CPU page.
+                self.last_origin_scan = now
+                for pid in taskmgr_pids():
+                    self.watch_origin(pid)
             if self.process is None:
                 self.pipe, child = mp.Pipe()
                 self.process = mp.Process(target=worker, args=(child,), daemon=True)
@@ -228,6 +244,7 @@ class Monitor:
             self.frames.clear()
             self.publish(sample['state'], error=sample.get('error'))
             return
+        self.watch_origin(sample['pid'])
         if self.retry and sample['pid'] != self.retry[1]['taskmgr_pid']:
             self.retry = None  # A working CPU page from another Taskmgr ends the retry.
         identity = (sample['pid'], sample['hwnd'], sample['total'].shape, sample['cores'].shape)
@@ -273,8 +290,7 @@ class Monitor:
         if not verification and self.last_capture and target==self.last_capture_target and remaining > 0:
             self.publish('cooldown',taskmgr_pid=sample['pid'],cooldown_remaining=round(remaining))
             return
-        used = sum(p.stat().st_size for p in OUTPUT.glob('*/*.dmp'))
-        if shutil.disk_usage(OUTPUT).free < 10*1024**3 or used > 50*1024**3:
+        if not storage_available():
             self.publish('storage_limit')
             return
         prefix = 'verification-' if verification else ''
@@ -342,6 +358,8 @@ class Monitor:
             self.recovery_result=evidence['recovery']
             self.last_status_write=0
             result=restart_taskmgr(evidence['taskmgr_pid'],evidence['window'])
+            if result.get('launch_pid'):
+                self.watch_origin(result['launch_pid'])
             evidence['recovery'].update(result,finished=timestamp())
             self.capture_result='recovered' if result['status']=='restarted' else 'recovery_failed'
         except Exception as exc:
@@ -402,8 +420,23 @@ class Monitor:
         self.dump_thread = threading.Thread(target=target, args=args, daemon=False)
         self.dump_thread.start()
 
+    def watch_origin(self, pid):
+        """Attach the first-report monitor once per Task Manager instance."""
+        if pid in self.origin.attempted or not self.enabled:
+            return
+        try:
+            if not storage_available():
+                return
+            require_taskmgr(pid)
+            self.origin.attach(pid)
+            self.origin_error = None
+        except Exception as exc:
+            self.origin.attempted.add(pid)
+            self.origin_error = str(exc)
+
     def stop(self):
         self.enabled = False
+        self.origin.cancel_all()
         self.reset_worker()
         self.detector.reset()
         self.frames.clear()

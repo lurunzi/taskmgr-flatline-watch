@@ -85,6 +85,15 @@ def locate():
         return hwnd, pid.value, total, right
     return None
 
+def taskmgr_pids():
+    pids = set()
+    for hwnd in enumerate_windows():
+        if class_name(hwnd) == 'TaskManagerWindow':
+            pid = w.DWORD()
+            u.GetWindowThreadProcessId(hwnd, c.byref(pid))
+            pids.add(pid.value)
+    return pids
+
 def capture(hwnd):
     _, _, width, height = rectangle(hwnd)
     if width <= 0 or height <= 0 or width*height > 10_000_000:

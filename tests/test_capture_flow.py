@@ -1,4 +1,5 @@
 import ctypes
+import io
 import json
 import os
 import sys
@@ -14,6 +15,10 @@ import NativeCapture
 from test_detection import graph
 
 class CaptureFlowTests(unittest.TestCase):
+    def setUp(self):
+        guard=patch.object(watch.Monitor,'watch_origin')
+        guard.start();self.addCleanup(guard.stop)
+
     def test_new_taskmgr_bypasses_previous_target_cooldown(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \
              patch.object(watch.time,'monotonic',return_value=1000), \
@@ -150,5 +155,54 @@ class CaptureFlowTests(unittest.TestCase):
             navigate.assert_called_once_with(9876)
             self.assertEqual(monitor.capture_result,'recovered')
             self.assertIsNone(monitor.retry)
+
+class OriginCaptureTests(unittest.TestCase):
+    class FakeProcess:
+        def __init__(self, output, code=0):
+            self.stdout=io.BytesIO(output);self.returncode=code;self.pid=1
+        def wait(self):return self.returncode
+
+    def test_matching_debug_string_dump_is_validated_and_recorded(self):
+        import OriginCapture
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);(folder/'Taskmgr.exe_261001_040000.dmp').write_bytes(b'x')
+            output=('[04:00:00]Debug String: \nX 80070005\n[04:00:01]Debug String: \nY 8007139F\n').encode('utf-16-le')
+            origin=OriginCapture.OriginWatch(Path(directory)/'procdump.exe',folder,lambda p:{'ok':True},watch.write_json)
+            record={'debug_strings':0}
+            with patch.object(origin,'extract_stacks') as stacks:
+                origin.follow(42,self.FakeProcess(output),folder,record)
+            self.assertEqual(record['status'],'captured')
+            self.assertEqual(record['debug_strings'],2)
+            stacks.assert_called_once()
+            self.assertIn('8007139F',(folder/'procdump.txt').read_text(encoding='utf-8'))
+
+    def test_no_match_keeps_summary_without_dump(self):
+        import OriginCapture
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)
+            origin=OriginCapture.OriginWatch(folder/'procdump.exe',folder,lambda p:{},watch.write_json)
+            record={'debug_strings':0}
+            origin.follow(42,self.FakeProcess(b'Process exited'),folder,record)
+            self.assertEqual(record['status'],'no_match')
+
+    def test_stop_detaches_with_cancel_and_never_terminates(self):
+        import OriginCapture
+        with tempfile.TemporaryDirectory() as directory, patch.object(OriginCapture.subprocess,'run') as run:
+            origin=OriginCapture.OriginWatch(Path(directory)/'procdump.exe',Path(directory),lambda p:{},watch.write_json)
+            process=unittest.mock.Mock()
+            origin.sessions[42]=(process,Path(directory),{})
+            origin.attempted.add(42)
+            with patch.object(OriginCapture.time,'monotonic',side_effect=[0,0,100]):
+                origin.cancel_all()
+            self.assertEqual(run.call_args[0][0][1:],['-cancel','42'])
+            process.terminate.assert_not_called();process.kill.assert_not_called()
+            self.assertNotIn(42,origin.attempted)
+
+    def test_each_taskmgr_instance_is_attached_once(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)),              patch.object(watch,'require_taskmgr'), patch.object(watch,'storage_available',return_value=True):
+            monitor=watch.Monitor()
+            with patch.object(monitor.origin,'attach',side_effect=lambda pid:monitor.origin.attempted.add(pid)) as attach:
+                monitor.watch_origin(10);monitor.watch_origin(10);monitor.watch_origin(11)
+            self.assertEqual([c.args[0] for c in attach.call_args_list],[10,11])
 
 if __name__=='__main__':unittest.main()
