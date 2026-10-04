@@ -156,6 +156,51 @@ class CaptureFlowTests(unittest.TestCase):
             self.assertEqual(monitor.capture_result,'recovered')
             self.assertIsNone(monitor.retry)
 
+    def test_restart_only_restarts_without_graphs_or_dumps(self):
+        with tempfile.TemporaryDirectory() as directory,              patch.object(watch,'OUTPUT',Path(directory)),              patch.object(watch.time,'monotonic',return_value=1000) as clock,              patch.object(watch,'write_dump') as dump,              patch.object(watch,'validate_full_dump') as validate,              patch.object(watch,'storage_available',return_value=False),              patch.object(watch,'restart_taskmgr',return_value={'status':'restarted','new_pid':9876}) as restart:
+            monitor=watch.Monitor(restart_only=True)
+            for t in range(0,34,2):
+                clock.return_value=1000+t
+                monitor.accept({'state':'captured','pid':4321,'hwnd':123,'geometry':[[0,0,75,50]]*33,
+                                'total':graph(),'cores':graph(15+t%8,wave=True)})
+            monitor.dump_thread.join(timeout=3)
+            restart.assert_called_once_with(4321,123)
+            dump.assert_not_called();validate.assert_not_called()
+            event=Path(monitor.last_event)
+            self.assertTrue(event.name.startswith('restart-'))
+            self.assertEqual(sorted(p.name for p in event.iterdir()),['event.json'])
+            record=json.loads((event/'event.json').read_text(encoding='utf-8'))
+            self.assertEqual(record['classification'],'restart_only')
+            self.assertEqual(record['recovery']['status'],'restarted')
+            self.assertEqual(monitor.capture_result,'recovered')
+            state=json.loads((Path(directory)/'status.json').read_text(encoding='utf-8'))
+            self.assertEqual(state['mode'],'restart_only')
+            monitor.stop()
+
+    def test_restart_only_uses_short_same_target_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)),              patch.object(watch.time,'monotonic',return_value=1000),              patch.object(watch.threading,'Thread') as thread:
+            monitor=watch.Monitor(restart_only=True)
+            monitor.last_capture_target=(4321,123)
+            monitor.last_capture=1000-30
+            monitor.trigger({'pid':4321,'hwnd':123,'geometry':[]})
+            thread.assert_not_called()
+            monitor.last_capture=1000-watch.RESTART_COOLDOWN-1
+            monitor.trigger({'pid':4321,'hwnd':123,'geometry':[]})
+            thread.return_value.start.assert_called_once()
+            self.assertTrue(Path(monitor.last_event).name.startswith('restart-'))
+
+    def test_failed_restart_only_is_retried_without_dump_checks(self):
+        record={'classification':'restart_only','status':'complete','taskmgr_pid':4321,'window':123}
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)),              patch.object(watch,'validate_full_dump') as validate,              patch.object(watch,'restart_taskmgr',side_effect=[OSError('busy'),{'status':'restarted','new_pid':9876}]) as restart:
+            monitor=watch.Monitor(restart_only=True)
+            monitor.recover(Path(directory),record)
+            self.assertEqual(monitor.capture_result,'recovery_failed')
+            monitor.retry_recovery(watch.time.monotonic()+watch.RETRY_INTERVAL+1)
+            monitor.dump_thread.join(timeout=3)
+            self.assertEqual(restart.call_count,2)
+            validate.assert_not_called()
+            self.assertEqual(monitor.capture_result,'recovered')
+
 class OriginCaptureTests(unittest.TestCase):
     class FakeProcess:
         def __init__(self, output, code=0):
@@ -204,5 +249,17 @@ class OriginCaptureTests(unittest.TestCase):
             with patch.object(monitor.origin,'attach',side_effect=lambda pid:monitor.origin.attempted.add(pid)) as attach:
                 monitor.watch_origin(10);monitor.watch_origin(10);monitor.watch_origin(11)
             self.assertEqual([c.args[0] for c in attach.call_args_list],[10,11])
+
+    def test_restart_only_never_attaches_and_detaches_existing(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)),              patch.object(watch,'require_taskmgr'), patch.object(watch,'storage_available',return_value=True):
+            monitor=watch.Monitor(restart_only=True)
+            with patch.object(monitor.origin,'attach') as attach:
+                monitor.watch_origin(10)
+            attach.assert_not_called()
+            monitor.restart_only=False
+            with patch.object(monitor.origin,'cancel_all') as cancel, patch.object(watch.threading,'Thread') as thread:
+                monitor.set_restart_only(True)
+                self.assertIs(thread.call_args.kwargs['target'],cancel)
+                thread.return_value.start.assert_called_once()
 
 if __name__=='__main__':unittest.main()

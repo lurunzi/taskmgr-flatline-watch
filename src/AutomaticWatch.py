@@ -24,6 +24,8 @@ PROCDUMP = ROOT / '.local/procdump/procdump64.exe'
 VERIFY_REQUEST = ROOT / '.local/verify.request'
 RETRY_LIMIT = 3
 RETRY_INTERVAL = 30
+CAPTURE_COOLDOWN = 600
+RESTART_COOLDOWN = 60
 
 def timestamp():
     return datetime.now().astimezone().isoformat()
@@ -111,7 +113,10 @@ def write_dump(pid, destination):
     return result
 
 class Monitor:
-    def __init__(self, query_trace=False):
+    def __init__(self, query_trace=False, restart_only=False):
+        # Restart-only mode skips graphs, dumps and the origin monitor; it only
+        # records when Task Manager was restarted.
+        self.restart_only = restart_only
         OUTPUT.mkdir(parents=True, exist_ok=True)
         self.detector = FlatlineDetector(30)
         self.frames = deque(maxlen=31)
@@ -187,7 +192,8 @@ class Monitor:
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
                       'capture_result':self.capture_result, 'recovery':self.recovery_result,
                       'origin_monitoring':sorted(self.origin.sessions), 'origin_error':self.origin_error,
-                      'origin_mode':'query_trace' if self.origin.query_trace else 'procdump', **extra}
+                      'origin_mode':'query_trace' if self.origin.query_trace else 'procdump',
+                      'mode':'restart_only' if self.restart_only else 'capture', **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
             self.last_status_write = time.monotonic()
@@ -287,9 +293,12 @@ class Monitor:
         # A replacement Taskmgr must get its own evidence and recovery immediately
         # after confirmation. Rate limiting the previous PID blocks that recovery.
         target=(sample['pid'],sample['hwnd'])
-        remaining=600-(time.monotonic()-self.last_capture)
+        remaining=(RESTART_COOLDOWN if self.restart_only else CAPTURE_COOLDOWN)-(time.monotonic()-self.last_capture)
         if not verification and self.last_capture and target==self.last_capture_target and remaining > 0:
             self.publish('cooldown',taskmgr_pid=sample['pid'],cooldown_remaining=round(remaining))
+            return
+        if self.restart_only and not verification:
+            self.restart_now(sample, target)
             return
         if not storage_available():
             self.publish('storage_limit')
@@ -319,6 +328,28 @@ class Monitor:
         self.dump_thread.start()
         self.publish('capturing',taskmgr_pid=sample['pid'])
 
+    def restart_now(self, sample, target):
+        folder = OUTPUT/('restart-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+        folder.mkdir()
+        record = {'classification':'restart_only', 'timestamp':timestamp(), 'taskmgr_pid':sample['pid'],
+                  'window':sample['hwnd'], 'confirm_seconds':30, 'status':'complete'}
+        write_json(folder/'event.json',record)
+        self.last_capture = time.monotonic()
+        self.last_capture_target = target
+        self.last_event = str(folder)
+        self.capture_result = None
+        self.recovery_result = None
+        self.dump_thread = threading.Thread(target=self.recover,args=(folder,record),daemon=False)
+        self.dump_thread.start()
+        self.publish('recovering',taskmgr_pid=sample['pid'])
+
+    def set_restart_only(self, value):
+        self.restart_only = bool(value)
+        if self.restart_only:
+            # Detaching can take seconds; never block the tray on it.
+            threading.Thread(target=self.origin.cancel_all,daemon=True).start()
+        self.last_status_write = 0
+
     def capture_dumps(self, folder, evidence):
         try:
             for index in range(2):
@@ -347,13 +378,14 @@ class Monitor:
 
     def recover(self, folder, evidence):
         # Verify durable files again; test captures and incomplete pairs never restart.
-        if evidence.get('classification') not in ('suspected_visual_aggregate_freeze','recovery_verification') or evidence.get('status')!='complete':
+        if evidence.get('classification') not in ('suspected_visual_aggregate_freeze','recovery_verification','restart_only') or evidence.get('status')!='complete':
             return
         try:
-            if len(evidence.get('dumps',[]))!=2 or not all(d.get('success') for d in evidence['dumps']):
-                raise RuntimeError('Two successful dumps are required before restart')
-            for index in (1,2):
-                validate_full_dump(folder/f'taskmgr-{index}.dmp')
+            if evidence['classification']!='restart_only':
+                if len(evidence.get('dumps',[]))!=2 or not all(d.get('success') for d in evidence['dumps']):
+                    raise RuntimeError('Two successful dumps are required before restart')
+                for index in (1,2):
+                    validate_full_dump(folder/f'taskmgr-{index}.dmp')
             evidence['recovery']={'status':'restarting','started':timestamp()}
             write_json(folder/'event.json',evidence)
             self.recovery_result=evidence['recovery']
@@ -423,7 +455,7 @@ class Monitor:
 
     def watch_origin(self, pid):
         """Attach the first-report monitor once per Task Manager instance."""
-        if pid in self.origin.attempted or not self.enabled:
+        if pid in self.origin.attempted or not self.enabled or self.restart_only:
             return
         try:
             if not storage_available():
