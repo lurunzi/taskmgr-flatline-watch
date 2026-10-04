@@ -66,6 +66,20 @@ class QueryTraceTests(unittest.TestCase):
                 session.handle_line('QT D')
                 self.assertEqual(thread.call_args.kwargs['target'],detach)
 
+    def test_aggregation_time_comes_from_the_first_report_not_the_late_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session=Feed(Path(directory)).session
+            # The echoed sxe command takes no timestamp: the first call is the report.
+            times=iter(['t-report','t-marker','t-x'])
+            with patch.object(QueryTrace,'timestamp',side_effect=lambda:next(times)), \
+                 patch.object(session,'log'), patch.object(session,'save'):
+                session.handle_line('0:070> sxe -c "$$<x/aggregation.cdb" out:*8007139F*')
+                session.handle_line('TaskManagerDataLayer.dll!00007FFDFEFAE5F3: LogHr(21) tid(b6f4) 8007139F The group')
+                session.handle_line('taskmgr.exe!X: LogHr(1) 8007139F downstream')
+                session.handle_line('QT A')
+            self.assertEqual(session.record['aggregation_at'],'t-report')
+            self.assertIn('TaskManagerDataLayer.dll',session.record['aggregation_report'])
+
     def test_scripts_use_forward_slashes_and_one_command_per_dump_line(self):
         with tempfile.TemporaryDirectory(prefix='qt') as directory:
             folder=Path(directory)
@@ -82,6 +96,7 @@ class QueryTraceTests(unittest.TestCase):
             self.assertEqual(len(dump),1)
             self.assertEqual(aggregation[aggregation.index(dump[0])+1],'.echo QT D')
             self.assertLess(aggregation.index('bc *'),aggregation.index(dump[0]))
+            self.assertEqual(aggregation[1],'sxi out')
 
     def test_script_folder_with_space_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

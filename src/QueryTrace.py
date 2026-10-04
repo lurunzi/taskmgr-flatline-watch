@@ -68,7 +68,10 @@ SCRIPTS = {
                 '.printf "QT T %x %x %x %I64x %I64x\\n", @$tid, @$t1, @$t0-@rcx, qwo(@$t0+0x50), qwo(@$t0+0x20) }; gc\n',
     'return.cdb': '.printf "QT R %x %x\\n", @$tid, @eax; gc\n',
 }
+# sxi out first: later 0x8007139F reports (e.g. Taskmgr's own downstream
+# aggregation) must not rerun this script while detaching.
 AGGREGATION = '''.echo QT A
+sxi out
 bc *
 kn 40
 .dump /ma {folder}/Taskmgr-origin.dmp
@@ -197,6 +200,11 @@ class Session:
             self.at_prompt = False
         match = MARKER.match(PROMPTS.sub('', text))
         if not match:
+            # The debug string arrives at once; cdb flushes the script's own
+            # output (QT A) only after the dump, seconds later. Echoed commands
+            # start with a prompt and are not reports.
+            if '8007139F' in text and not PROMPTS.match(text) and 'aggregation_report_at' not in self.record:
+                self.record.update(aggregation_report_at=timestamp(), aggregation_report=text)
             self.tail.append(text)
             self.log(text)
             return
@@ -213,7 +221,8 @@ class Session:
         elif kind == 'MISMATCH':
             self.record['status'] = 'module_mismatch'
         elif kind == 'A':
-            self.record.update(status='aggregation_detected', aggregation_at=timestamp())
+            self.record.update(status='aggregation_detected',
+                               aggregation_at=self.record.get('aggregation_report_at', timestamp()))
         elif kind == 'D':
             self.record['dump_written_at'] = timestamp()
             threading.Thread(target=self.detach, daemon=True).start()
