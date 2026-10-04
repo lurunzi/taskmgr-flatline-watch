@@ -6,8 +6,9 @@ import traceback
 
 from PySide6.QtCore import QSettings, QTimer, QUrl, Qt
 from PySide6.QtGui import QAction, QDesktopServices, QIcon
-from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QLabel, QMenu, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel, QMenu, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget
 from AutomaticWatch import Monitor, ROOT, OUTPUT
+import Autostart
 
 TEXT = {
  'zh': {'title':'任务管理器自动取证', 'folder':'打开 D 盘记录', 'quit':'退出', 'show':'查看状态',
@@ -18,7 +19,8 @@ TEXT = {
  'error':'检测错误', 'stopped':'已暂停', 'cooldown':'取证冷却中', 'storage_limit':'已达存储限额，暂停转储',
  'system':'跟随系统', 'light':'浅色', 'dark':'深色', 'complete':'转储完成', 'dump_failed':'转储失败，请查看记录',
  'capturing':'正在写入转储', 'recovering':'正在重启任务管理器', 'verification_complete':'安装验证转储完成',
- 'recovered':'取证完成，任务管理器已重启', 'recovery_failed':'取证已保存，自动恢复未完成'},
+ 'recovered':'取证完成，任务管理器已重启', 'recovery_failed':'取证已保存，自动恢复未完成',
+ 'autostart':'开机自启动', 'autostart_missing':'未安装自启动（运行 Install.cmd）'},
  'en': {'title':'Task Manager automatic capture', 'folder':'Open records on D:', 'quit':'Quit', 'show':'Status',
  'pause':'Pause', 'resume':'Resume', 'hint':'After 30 seconds of suspected freezing, saves and verifies two dumps, then restarts Task Manager and resumes detection.',
  'starting':'Starting', 'waiting':'Waiting for Task Manager CPU / logical processors page', 'normal':'Aggregate changing',
@@ -27,7 +29,8 @@ TEXT = {
  'error':'Detection error', 'stopped':'Paused', 'cooldown':'Capture cooldown', 'storage_limit':'Storage limit; dumps paused',
  'system':'System', 'light':'Light', 'dark':'Dark', 'complete':'Dumps complete', 'dump_failed':'Dump failed; see records',
  'capturing':'Writing dumps', 'recovering':'Restarting Task Manager', 'verification_complete':'Installation dump verification complete',
- 'recovered':'Evidence saved; Task Manager restarted', 'recovery_failed':'Evidence saved; recovery incomplete'}
+ 'recovered':'Evidence saved; Task Manager restarted', 'recovery_failed':'Evidence saved; recovery incomplete',
+ 'autostart':'Start at logon', 'autostart_missing':'Autostart not installed (run Install.cmd)'}
 }
 
 class Watch(QWidget):
@@ -47,8 +50,9 @@ class Watch(QWidget):
         self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
         self.details=QLabel();self.details.setWordWrap(True);layout.addWidget(self.details)
         self.note=QLabel();self.note.setWordWrap(True);layout.addWidget(self.note)
-        row=QHBoxLayout();self.pause=QPushButton();self.folder=QPushButton()
-        row.addWidget(self.pause);row.addWidget(self.folder);layout.addLayout(row)
+        row=QHBoxLayout();self.pause=QPushButton();self.folder=QPushButton();self.autostart=QCheckBox()
+        row.addWidget(self.pause);row.addWidget(self.folder);row.addWidget(self.autostart);layout.addLayout(row)
+        self.autostart.clicked.connect(self.set_autostart)
         self.pause.clicked.connect(self.toggle)
         self.folder.clicked.connect(lambda:QDesktopServices.openUrl(QUrl.fromLocalFile(str(OUTPUT))))
         self.language.currentIndexChanged.connect(self.translate)
@@ -56,12 +60,15 @@ class Watch(QWidget):
         QApplication.styleHints().colorSchemeChanged.connect(self.apply_theme)
         self.tray=QSystemTrayIcon(self.windowIcon(),self)
         self.menu=QMenu();self.show_action=QAction(self);self.quit_action=QAction(self)
+        self.autostart_action=QAction(self);self.autostart_action.setCheckable(True)
         self.show_action.triggered.connect(self.show);self.quit_action.triggered.connect(self.quit)
-        self.menu.addAction(self.show_action);self.menu.addAction(self.quit_action)
+        self.autostart_action.triggered.connect(self.set_autostart)
+        self.menu.aboutToShow.connect(self.refresh_autostart)
+        self.menu.addAction(self.show_action);self.menu.addAction(self.autostart_action);self.menu.addAction(self.quit_action)
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(lambda reason:self.show() if reason==QSystemTrayIcon.DoubleClick else None)
         self.tray.show()
-        self.translate();self.apply_theme();self.resize(440,210)
+        self.translate();self.apply_theme();self.refresh_autostart();self.resize(440,210)
         self.timer=QTimer(self);self.timer.setInterval(250);self.timer.timeout.connect(self.tick);self.timer.start()
 
     def text(self,key):return TEXT[self.lang].get(key,key)
@@ -70,6 +77,7 @@ class Watch(QWidget):
         self.settings.setValue('language',self.lang)
         self.setWindowTitle(self.text('title'));self.note.setText(self.text('hint'))
         self.folder.setText(self.text('folder'));self.show_action.setText(self.text('show'));self.quit_action.setText(self.text('quit'))
+        self.autostart.setText(self.text('autostart'));self.autostart_action.setText(self.text('autostart'))
         for i,key in enumerate(('system','light','dark')):self.theme.setItemText(i,self.text(key))
         self.update_status()
     def apply_theme(self,*_):
@@ -99,6 +107,14 @@ class Watch(QWidget):
         if self.monitor.enabled:self.monitor.stop()
         else:self.monitor.enabled=True
         self.update_status()
+    def refresh_autostart(self,current=None):
+        current=Autostart.state() if current is None else current
+        tip='' if current is not None else self.text('autostart_missing')
+        for control in (self.autostart,self.autostart_action):
+            control.blockSignals(True);control.setChecked(bool(current));control.setEnabled(current is not None);control.setToolTip(tip);control.blockSignals(False)
+    def set_autostart(self,checked):
+        self.refresh_autostart(Autostart.set_enabled(checked))
+    def showEvent(self,event):self.refresh_autostart();super().showEvent(event)
     def closeEvent(self,event):self.hide();event.ignore()
     def quit(self):
         self.timer.stop();self.monitor.stop();self.tray.hide();self.settings.sync();QApplication.quit()
