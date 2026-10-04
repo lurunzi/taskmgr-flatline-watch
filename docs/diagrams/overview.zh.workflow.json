@@ -1,0 +1,231 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "任务管理器冻结取证",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "任务管理器"
+        },
+        "backend": {
+          "label": "监测步骤"
+        },
+        "security": {
+          "label": "防护"
+        },
+        "database": {
+          "label": "证据"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "taskmgr",
+      "label": "任务管理器"
+    },
+    {
+      "id": "watcher",
+      "label": "监测程序（托盘，管理员）"
+    },
+    {
+      "id": "guard",
+      "label": "防护",
+      "variant": "exception"
+    },
+    {
+      "id": "evidence",
+      "label": "D 盘证据"
+    }
+  ],
+  "phases": [
+    {
+      "id": "observe",
+      "label": "观察",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "capture",
+      "label": "取证",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "recover",
+      "label": "恢复",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "cpu_page",
+    "chart_read",
+    "detector",
+    "target_check",
+    "dumps",
+    "restart"
+  ],
+  "nodes": [
+    {
+      "id": "cpu_page",
+      "lane": "taskmgr",
+      "col": 0,
+      "type": "frontend",
+      "label": "CPU 页面",
+      "sublabel": "逻辑处理器视图",
+      "width": 160
+    },
+    {
+      "id": "chart_read",
+      "lane": "watcher",
+      "col": 1,
+      "type": "backend",
+      "label": "读取图表",
+      "sublabel": "每 2 秒 PrintWindow",
+      "width": 160
+    },
+    {
+      "id": "detector",
+      "lane": "watcher",
+      "col": 2,
+      "type": "backend",
+      "label": "冻结检测",
+      "sublabel": "总图平 30 秒、分线程在动",
+      "width": 160
+    },
+    {
+      "id": "target_check",
+      "lane": "watcher",
+      "col": 3,
+      "type": "security",
+      "label": "核对目标",
+      "sublabel": "System32\\Taskmgr.exe",
+      "width": 160
+    },
+    {
+      "id": "dumps",
+      "lane": "watcher",
+      "col": 4,
+      "type": "backend",
+      "label": "两份完整转储",
+      "sublabel": "ProcDump -ma，已校验",
+      "width": 160
+    },
+    {
+      "id": "restart",
+      "lane": "taskmgr",
+      "col": 5,
+      "type": "backend",
+      "label": "重启任务管理器",
+      "sublabel": "重新打开并回到 CPU 页",
+      "width": 180
+    },
+    {
+      "id": "no_capture",
+      "lane": "guard",
+      "col": 2,
+      "type": "security",
+      "label": "不取证",
+      "sublabel": "整页静止",
+      "width": 160
+    },
+    {
+      "id": "no_restart",
+      "lane": "guard",
+      "col": 5,
+      "type": "security",
+      "label": "不重启",
+      "sublabel": "转储失败或存储超限",
+      "width": 160
+    },
+    {
+      "id": "captures",
+      "lane": "evidence",
+      "col": 4,
+      "type": "database",
+      "label": "TaskmgrFreezeCaptures",
+      "sublabel": "转储、图表、event.json",
+      "width": 180
+    }
+  ],
+  "edges": [
+    {
+      "id": "read",
+      "from": "cpu_page",
+      "to": "chart_read",
+      "label": "原生图表"
+    },
+    {
+      "id": "sample",
+      "from": "chart_read",
+      "to": "detector"
+    },
+    {
+      "id": "suspect",
+      "from": "detector",
+      "to": "target_check",
+      "label": "疑似冻结",
+      "variant": "emphasis"
+    },
+    {
+      "id": "verified",
+      "from": "target_check",
+      "to": "dumps",
+      "variant": "emphasis"
+    },
+    {
+      "id": "recover",
+      "from": "dumps",
+      "to": "restart",
+      "label": "两份有效",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ignore",
+      "from": "detector",
+      "to": "no_capture",
+      "label": "不是冻结",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "hold",
+      "from": "dumps",
+      "to": "no_restart",
+      "label": "无效",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "write",
+      "from": "dumps",
+      "to": "captures",
+      "label": "保存",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "证据",
+      "items": [
+        "两份转储间隔 5 秒，另存图表 PNG 与 event.json",
+        "证据从不自动删除"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "局限",
+      "items": [
+        "只是疑似冻结，不能证明 Windows 缺陷",
+        "从不重启 Windows 本身"
+      ]
+    }
+  ]
+}

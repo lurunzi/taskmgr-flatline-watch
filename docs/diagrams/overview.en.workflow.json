@@ -1,0 +1,231 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Task Manager freeze capture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Task Manager"
+        },
+        "backend": {
+          "label": "Watcher step"
+        },
+        "security": {
+          "label": "Guard"
+        },
+        "database": {
+          "label": "Evidence"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "taskmgr",
+      "label": "Task Manager"
+    },
+    {
+      "id": "watcher",
+      "label": "Watcher (tray, elevated)"
+    },
+    {
+      "id": "guard",
+      "label": "Guards",
+      "variant": "exception"
+    },
+    {
+      "id": "evidence",
+      "label": "Evidence on D:"
+    }
+  ],
+  "phases": [
+    {
+      "id": "observe",
+      "label": "Observe",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "capture",
+      "label": "Capture",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "recover",
+      "label": "Recover",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "cpu_page",
+    "chart_read",
+    "detector",
+    "target_check",
+    "dumps",
+    "restart"
+  ],
+  "nodes": [
+    {
+      "id": "cpu_page",
+      "lane": "taskmgr",
+      "col": 0,
+      "type": "frontend",
+      "label": "CPU page",
+      "sublabel": "logical processors",
+      "width": 160
+    },
+    {
+      "id": "chart_read",
+      "lane": "watcher",
+      "col": 1,
+      "type": "backend",
+      "label": "Chart read",
+      "sublabel": "PrintWindow every 2 s",
+      "width": 160
+    },
+    {
+      "id": "detector",
+      "lane": "watcher",
+      "col": 2,
+      "type": "backend",
+      "label": "Freeze detector",
+      "sublabel": "total flat 30 s, cores move",
+      "width": 160
+    },
+    {
+      "id": "target_check",
+      "lane": "watcher",
+      "col": 3,
+      "type": "security",
+      "label": "Target check",
+      "sublabel": "System32\\Taskmgr.exe",
+      "width": 160
+    },
+    {
+      "id": "dumps",
+      "lane": "watcher",
+      "col": 4,
+      "type": "backend",
+      "label": "Two full dumps",
+      "sublabel": "ProcDump -ma, validated",
+      "width": 160
+    },
+    {
+      "id": "restart",
+      "lane": "taskmgr",
+      "col": 5,
+      "type": "backend",
+      "label": "Restart Task Manager",
+      "sublabel": "relaunch + return to CPU",
+      "width": 180
+    },
+    {
+      "id": "no_capture",
+      "lane": "guard",
+      "col": 2,
+      "type": "security",
+      "label": "No capture",
+      "sublabel": "whole page static",
+      "width": 160
+    },
+    {
+      "id": "no_restart",
+      "lane": "guard",
+      "col": 5,
+      "type": "security",
+      "label": "No restart",
+      "sublabel": "dump failed or storage limit",
+      "width": 160
+    },
+    {
+      "id": "captures",
+      "lane": "evidence",
+      "col": 4,
+      "type": "database",
+      "label": "TaskmgrFreezeCaptures",
+      "sublabel": "dumps, graphs, event.json",
+      "width": 180
+    }
+  ],
+  "edges": [
+    {
+      "id": "read",
+      "from": "cpu_page",
+      "to": "chart_read",
+      "label": "native charts"
+    },
+    {
+      "id": "sample",
+      "from": "chart_read",
+      "to": "detector"
+    },
+    {
+      "id": "suspect",
+      "from": "detector",
+      "to": "target_check",
+      "label": "suspected freeze",
+      "variant": "emphasis"
+    },
+    {
+      "id": "verified",
+      "from": "target_check",
+      "to": "dumps",
+      "variant": "emphasis"
+    },
+    {
+      "id": "recover",
+      "from": "dumps",
+      "to": "restart",
+      "label": "both valid",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ignore",
+      "from": "detector",
+      "to": "no_capture",
+      "label": "not a freeze",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "hold",
+      "from": "dumps",
+      "to": "no_restart",
+      "label": "invalid",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "write",
+      "from": "dumps",
+      "to": "captures",
+      "label": "save",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Evidence",
+      "items": [
+        "Two dumps five seconds apart, plus chart PNGs and event.json",
+        "Evidence is never deleted automatically"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Limits",
+      "items": [
+        "A suspected freeze, not proof of the Windows bug",
+        "Windows itself is never restarted"
+      ]
+    }
+  ]
+}

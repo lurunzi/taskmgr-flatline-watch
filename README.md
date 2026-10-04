@@ -11,6 +11,12 @@ The English version governs.
 # Task Manager automatic freeze capture
 
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
+The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.en.dark.png">
+  <img alt="Workflow diagram: the watcher reads Task Manager's native CPU charts every 2 seconds; the freeze detector fires when the total curve stays flat for 30 seconds while the logical-processor curves keep moving, otherwise nothing is captured; after the target is confirmed as System32\Taskmgr.exe, ProcDump writes two full dumps to TaskmgrFreezeCaptures on D:; only when both dumps are valid is Task Manager restarted and returned to the CPU page, and a failed dump or the storage limit means no restart." src="docs/diagrams/overview.en.light.png">
+</picture>
 
 ## Operation
 
@@ -61,6 +67,12 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 # 任务管理器自动冻结取证
 
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
+上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.zh.dark.png">
+  <img alt="流程图：监测程序每 2 秒读取任务管理器的原生 CPU 图表；总图持续水平 30 秒且逻辑处理器曲线仍在变化时判为疑似冻结，否则不取证；核对目标确为 System32\Taskmgr.exe 后，ProcDump 把两份完整转储写入 D 盘 TaskmgrFreezeCaptures；两份都有效才重启任务管理器并回到 CPU 页，转储失败或存储超限则不重启。" src="docs/diagrams/overview.zh.light.png">
+</picture>
 
 ## 使用
 

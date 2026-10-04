@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-04",
+  "purpose": "README.md explanation: how the watcher samples Task Manager, decides a suspected freeze, writes two validated dumps and recovers.",
+  "generator": {
+    "name": "Archify",
+    "version": "2.17.0-dev.1",
+    "source": "https://github.com/tt-a1i/archify",
+    "license": "MIT"
+  },
+  "diagram_type": "workflow",
+  "quality_profile": "showcase",
+  "correction_rounds": 3,
+  "corrections": [
+    "Round 1 (perceptual review): \"Restart Task Manager\" and \"TaskmgrFreezeCaptures\" overflowed their boxes, \"both valid\" detoured below the nodes, and the default legend labels (\"Agent logic\" and similar) did not describe this project. Node width 160, legend labels set, recover edge given right/left sides.",
+    "Round 2 (perceptual review): the right/left sides still forced a down-and-up detour because the gap could not hold the label. The restart node moved to the Task Manager lane, where it belongs, and the side hints were removed.",
+    "Round 3 (perceptual review): node icons touched the first letter of the two longest labels; those two nodes widened to 180."
+  ],
+  "diagrams": [
+    {
+      "language": "en",
+      "specification": {
+        "file": "overview.en.workflow.json",
+        "bytes": 4596,
+        "sha256": "5d07231bfbe4517afb23e186c5802c8614387d2f8aa91fb595b59f87fa6e8b8c"
+      },
+      "artifact": {
+        "file": "overview.en.html",
+        "committed": false,
+        "bytes": 713803,
+        "sha256": "1c618749f00d25bd816294a4409e3576de4b797804134817c185266e16da5053"
+      },
+      "validation": {
+        "checksPassed": 9,
+        "checkCount": 9,
+        "compositionProfile": "showcase",
+        "compositionStatus": "pass",
+        "errors": 0,
+        "warnings": 0
+      },
+      "browser_evidence": "pass",
+      "browser_viewports": [
+        "1440x900",
+        "1600x1000",
+        "1920x1080",
+        "2048x1320"
+      ],
+      "visual_review": "passed",
+      "exports": [
+        {
+          "file": "overview.en.light.png",
+          "theme": "light",
+          "pixels": "4452x2608",
+          "bytes": 522623,
+          "sha256": "8b3ea8eda1475be7b64db4cb8689deb7ffc68d04096847c5317a930d1cd9494a",
+          "canonical": true
+        },
+        {
+          "file": "overview.en.dark.png",
+          "theme": "dark",
+          "pixels": "4452x2608",
+          "bytes": 532706,
+          "sha256": "2b1bae6ba85fc6e38556e378da7f2a7bcc5b2153586cc2646a1bd2b356bb88c6",
+          "canonical": true
+        }
+      ]
+    },
+    {
+      "language": "zh",
+      "specification": {
+        "file": "overview.zh.workflow.json",
+        "bytes": 4600,
+        "sha256": "affdd59642aefeda89088e16189b0eb0a4cc0c263862a4c930d75b150a39e9ca"
+      },
+      "artifact": {
+        "file": "overview.zh.html",
+        "committed": false,
+        "bytes": 713664,
+        "sha256": "cd4ea782d5cda62c87776c34bfadaeb251fe3289d029f53c1a5cca96373f582e"
+      },
+      "validation": {
+        "checksPassed": 9,
+        "checkCount": 9,
+        "compositionProfile": "showcase",
+        "compositionStatus": "pass",
+        "errors": 0,
+        "warnings": 0
+      },
+      "browser_evidence": "pass",
+      "browser_viewports": [
+        "1440x900",
+        "1600x1000",
+        "1920x1080",
+        "2048x1320"
+      ],
+      "visual_review": "passed",
+      "exports": [
+        {
+          "file": "overview.zh.light.png",
+          "theme": "light",
+          "pixels": "4348x2608",
+          "bytes": 552937,
+          "sha256": "856f0b86eabd091386343b64bbe4ff28bce3388b049225d3919333848547c3f8",
+          "canonical": true
+        },
+        {
+          "file": "overview.zh.dark.png",
+          "theme": "dark",
+          "pixels": "4348x2608",
+          "bytes": 564127,
+          "sha256": "5a6ea9fc88e1f30686fbdbee5abdd2c9b3742bfb7e3bea21986774e9a2003014",
+          "canonical": true
+        }
+      ]
+    }
+  ],
+  "review_scope": "Claude Code opened visual-check screenshots of both languages in both themes (1440x900 and 2048x1320) and the final exports overview.en.light and overview.zh.dark as images: no crossing, overflow or masked label remains, the English image contains no Chinese, and the Chinese wording matches the Chinese half of the README. overview.en.dark and overview.zh.light were checked by canonical flag, byte size and pixel dimensions only.",
+  "generation_commands": [
+    "node <archify>/bin/archify.mjs validate workflow docs/diagrams/overview.<lang>.workflow.json --quality showcase --json",
+    "node <archify>/bin/archify.mjs deliver workflow docs/diagrams/overview.<lang>.workflow.json <out>/overview.<lang>.html --quality showcase --json",
+    "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
+    "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
+  ],
+  "static_export": "tools/archify-export-png.mjs opens the delivered HTML with ?theme=light or ?theme=dark in the headless Chrome that Archify visual-check drives (1600x1000) and invokes the viewer's own Export > PNG button, keeping only the image/png blob. Every export reported data-last-export-canonical=true and data-last-export-bytes equal to the saved size; a second export of overview.en.light was byte-identical. No SVG was hand-written and no screenshot stands in for a README image."
+}
