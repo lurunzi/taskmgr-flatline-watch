@@ -20,7 +20,7 @@ TEXT = {
  'system':'跟随系统', 'light':'浅色', 'dark':'深色', 'complete':'转储完成', 'dump_failed':'转储失败，请查看记录',
  'capturing':'正在写入转储', 'recovering':'正在重启任务管理器', 'verification_complete':'安装验证转储完成',
  'recovered':'取证完成，任务管理器已重启', 'recovery_failed':'取证已保存，自动恢复未完成',
- 'autostart':'开机自启动', 'autostart_missing':'未安装自启动（运行 Install.cmd）'},
+ 'autostart':'开机自启动', 'autostart_missing':'未安装自启动（运行 Install.cmd）', 'query_trace':'查询追踪'},
  'en': {'title':'Task Manager automatic capture', 'folder':'Open records on D:', 'quit':'Quit', 'show':'Status',
  'pause':'Pause', 'resume':'Resume', 'hint':'After 30 seconds of suspected freezing, saves and verifies two dumps, then restarts Task Manager and resumes detection.',
  'starting':'Starting', 'waiting':'Waiting for Task Manager CPU / logical processors page', 'normal':'Aggregate changing',
@@ -30,7 +30,7 @@ TEXT = {
  'system':'System', 'light':'Light', 'dark':'Dark', 'complete':'Dumps complete', 'dump_failed':'Dump failed; see records',
  'capturing':'Writing dumps', 'recovering':'Restarting Task Manager', 'verification_complete':'Installation dump verification complete',
  'recovered':'Evidence saved; Task Manager restarted', 'recovery_failed':'Evidence saved; recovery incomplete',
- 'autostart':'Start at logon', 'autostart_missing':'Autostart not installed (run Install.cmd)'}
+ 'autostart':'Start at logon', 'autostart_missing':'Autostart not installed (run Install.cmd)', 'query_trace':'Query trace'}
 }
 
 class Watch(QWidget):
@@ -38,7 +38,7 @@ class Watch(QWidget):
         super().__init__()
         self.settings=QSettings(str(ROOT/'.local/preferences.ini'),QSettings.IniFormat)
         self.lang=self.settings.value('language','zh')
-        self.monitor=Monitor()
+        self.monitor=Monitor(query_trace='--query-trace' in sys.argv)
         self.setWindowIcon(QIcon(str(ROOT/'assets/icon.png')))
         layout=QVBoxLayout(self)
         row=QHBoxLayout()
@@ -88,7 +88,8 @@ class Watch(QWidget):
         self.settings.setValue('theme',choice)
     def update_status(self):
         state=self.monitor.state
-        self.status.setText(self.text(state['state']) + (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else ''))
+        self.status.setText(self.text(state['state']) + (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else '')
+                            + (f" · {self.text('query_trace')}" if self.monitor.origin.query_trace else ''))
         result=self.monitor.capture_result
         if state['state']=='cooldown':
             self.details.setText(f"{state.get('cooldown_remaining',0):.0f}s")

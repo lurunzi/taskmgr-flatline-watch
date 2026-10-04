@@ -7,6 +7,9 @@ the reporting thread is still inside OutputDebugStringW with its callers intact.
 
 ProcDump is a debugger here: force-killing it also terminates the target.
 Always detach with `procdump -cancel <pid>`.
+
+With query_trace enabled, cdb replaces ProcDump for each instance (see
+QueryTrace.py): one debugger per process, so never both on the same PID.
 """
 import glob
 import json
@@ -16,6 +19,8 @@ import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
+
+import QueryTrace
 
 FILTER = '*8007139F*'
 SYMBOLS = r'srv*C:\tmp\TaskmgrCpuDiag-20260928-194418\Symbols*https://msdl.microsoft.com/download/symbols'
@@ -37,12 +42,18 @@ def find_cdb():
     return found[-1] if found else None
 
 class OriginWatch:
-    def __init__(self, procdump, output, validate, write_json):
+    def __init__(self, procdump, output, validate, write_json, query_trace=False):
         self.procdump, self.output = procdump, output
         self.validate, self.write_json = validate, write_json
+        self.query_trace = query_trace
         self.sessions = {}
         self.attempted = set()
         self.lock = threading.Lock()
+
+    def new_folder(self, pid, suffix=''):
+        folder = self.output/f"origin-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{pid}{suffix}"
+        folder.mkdir()
+        return folder
 
     def attach(self, pid):
         """Monitor one Taskmgr instance once; a later instance gets its own session."""
@@ -50,10 +61,41 @@ class OriginWatch:
             if pid in self.attempted or not self.procdump.exists():
                 return False
             self.attempted.add(pid)
-        folder = self.output/f"origin-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{pid}"
-        folder.mkdir()
+        fallback = None
+        if self.query_trace:
+            fallback = QueryTrace.unavailable(find_cdb())
+            if fallback is None:
+                session = QueryTrace.Session(find_cdb(), pid, self.new_folder(pid, '-trace'), self.write_json, self.trace_finished)
+                self.sessions[pid] = session
+                session.start()
+                return True
+        return self.start_procdump(pid, fallback)
+
+    def trace_finished(self, session):
+        record, folder = session.record, session.folder
+        # After pause/resume a newer session may already own this PID.
+        if self.sessions.get(session.pid) is session:
+            self.sessions.pop(session.pid)
+        dumps = sorted(folder.glob('*.dmp'))
+        if dumps:
+            record['dump'] = str(dumps[0])
+            try:
+                record['validation'] = self.validate(dumps[0])
+                record['status'] = 'captured'
+            except Exception as exc:
+                record.update(status='dump_invalid', error=str(exc))
+            self.write_json(folder/'origin.json', record)
+            if record['status'] == 'captured':
+                self.extract_stacks(dumps[0], folder, record)
+        elif record['status'] == 'module_mismatch' and not record.get('cancelled'):
+            self.start_procdump(session.pid, 'query_trace_module_mismatch')
+
+    def start_procdump(self, pid, trace_fallback=None):
+        folder = self.new_folder(pid)
         record = {'classification':'origin_error_monitor', 'taskmgr_pid':pid, 'filter':FILTER,
                   'started':timestamp(), 'status':'monitoring', 'debug_strings':0}
+        if trace_fallback:
+            record['query_trace_unavailable'] = trace_fallback
         self.write_json(folder/'origin.json', record)
         process = subprocess.Popen([str(self.procdump), '-accepteula', '-ma', '-r', '-n', '1', '-e', '-l',
             '-f', FILTER, str(pid), str(folder)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -111,12 +153,21 @@ class OriginWatch:
         self.write_json(folder/'origin.json', record)
 
     def cancel_all(self):
-        """Detach gracefully; never terminate ProcDump (that would kill Taskmgr)."""
-        for pid, (process, folder, record) in list(self.sessions.items()):
+        """Detach gracefully; never terminate ProcDump or cdb (that could kill Taskmgr)."""
+        traces = []
+        for pid, session in list(self.sessions.items()):
+            self.attempted.discard(pid)
+            if isinstance(session, QueryTrace.Session):
+                session.record['cancelled'] = True
+                traces.append(threading.Thread(target=session.detach, daemon=True))
+                traces[-1].start()
+                continue
+            process, folder, record = session
             record['cancelled'] = True
             subprocess.run([str(self.procdump), '-cancel', str(pid)], capture_output=True, timeout=30,
                            creationflags=subprocess.CREATE_NO_WINDOW)
-            self.attempted.discard(pid)
+        for thread in traces:
+            thread.join(timeout=25)
         deadline = time.monotonic()+15
         while self.sessions and time.monotonic() < deadline:
             time.sleep(.2)

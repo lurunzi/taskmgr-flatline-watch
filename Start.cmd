@@ -5,4 +5,4 @@ if not exist ".venv\Scripts\pythonw.exe" (
   pause
   exit /b 1
 )
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start.ps1" %*

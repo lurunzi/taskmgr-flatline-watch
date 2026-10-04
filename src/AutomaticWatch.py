@@ -111,7 +111,7 @@ def write_dump(pid, destination):
     return result
 
 class Monitor:
-    def __init__(self):
+    def __init__(self, query_trace=False):
         OUTPUT.mkdir(parents=True, exist_ok=True)
         self.detector = FlatlineDetector(30)
         self.frames = deque(maxlen=31)
@@ -143,7 +143,7 @@ class Monitor:
         self.retry_folder = None
         self.retry_count = 0
         self.last_retry = 0
-        self.origin = OriginWatch(PROCDUMP, OUTPUT, validate_full_dump, write_json)
+        self.origin = OriginWatch(PROCDUMP, OUTPUT, validate_full_dump, write_json, query_trace)
         self.last_origin_scan = 0
         self.origin_error = None
         if prior:
@@ -186,7 +186,8 @@ class Monitor:
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
                       'capture_result':self.capture_result, 'recovery':self.recovery_result,
-                      'origin_monitoring':sorted(self.origin.sessions), 'origin_error':self.origin_error, **extra}
+                      'origin_monitoring':sorted(self.origin.sessions), 'origin_error':self.origin_error,
+                      'origin_mode':'query_trace' if self.origin.query_trace else 'procdump', **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
             self.last_status_write = time.monotonic()
