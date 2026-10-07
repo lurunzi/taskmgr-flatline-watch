@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-04",
-  "purpose": "README.md explanation: how the watcher samples Task Manager, decides a suspected freeze, writes two validated dumps and recovers.",
+  "date": "2026-10-07",
+  "purpose": "README watcher workflow with an opt-in address-provenance investigation card.",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -9,25 +9,24 @@
   },
   "diagram_type": "workflow",
   "quality_profile": "showcase",
-  "correction_rounds": 3,
+  "correction_rounds": 2,
   "corrections": [
-    "Round 1 (perceptual review): \"Restart Task Manager\" and \"TaskmgrFreezeCaptures\" overflowed their boxes, \"both valid\" detoured below the nodes, and the default legend labels (\"Agent logic\" and similar) did not describe this project. Node width 160, legend labels set, recover edge given right/left sides.",
-    "Round 2 (perceptual review): the right/left sides still forced a down-and-up detour because the gap could not hold the label. The restart node moved to the Task Manager lane, where it belongs, and the side hints were removed.",
-    "Round 3 (perceptual review): node icons touched the first letter of the two longest labels; those two nodes widened to 180."
+    "An extra diagnostic lane overflowed desktop viewports; removing duplicate evidence cards reduced but did not resolve overflow.",
+    "Keep the established workflow geometry and describe the separate opt-in diagnostic sequence in one viewer card. All four viewport checks then passed."
   ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "bytes": 4596,
-        "sha256": "5d07231bfbe4517afb23e186c5802c8614387d2f8aa91fb595b59f87fa6e8b8c"
+        "bytes": 4752,
+        "sha256": "92e0da01957268582414f2d3961dff35b875215302b1177a09c22eebbab120b0"
       },
       "artifact": {
         "file": "overview.en.html",
         "committed": false,
-        "bytes": 713803,
-        "sha256": "1c618749f00d25bd816294a4409e3576de4b797804134817c185266e16da5053"
+        "bytes": 713618,
+        "sha256": "770a5cb3512763cade15e6f4f8fc63193ef354a9e54aef271bd50f7a9b5cb96e"
       },
       "validation": {
         "checksPassed": 9,
@@ -68,14 +67,14 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "bytes": 4600,
-        "sha256": "affdd59642aefeda89088e16189b0eb0a4cc0c263862a4c930d75b150a39e9ca"
+        "bytes": 4773,
+        "sha256": "091194144830b079659f912c5c6f032204778a3ffc8ae5cde95bebdd82745d31"
       },
       "artifact": {
         "file": "overview.zh.html",
         "committed": false,
-        "bytes": 713664,
-        "sha256": "cd4ea782d5cda62c87776c34bfadaeb251fe3289d029f53c1a5cca96373f582e"
+        "bytes": 713496,
+        "sha256": "d221fa7d63de0dce93aaf06ee99a6bfa2480a9c37bfab6b4e46eafba8b047e74"
       },
       "validation": {
         "checksPassed": 9,
@@ -113,12 +112,13 @@
       ]
     }
   ],
-  "review_scope": "Claude Code opened visual-check screenshots of both languages in both themes (1440x900 and 2048x1320) and the final exports overview.en.light and overview.zh.dark as images: no crossing, overflow or masked label remains, the English image contains no Chinese, and the Chinese wording matches the Chinese half of the README. overview.en.dark and overview.zh.light were checked by canonical flag, byte size and pixel dimensions only.",
+  "review_scope": "Codex inspected English light at 1440x900 and Chinese dark at 2048x1320. Automated visual-check passed all four required desktop viewports in both language artifacts; the other endpoint theme screenshots were generated but not visually inspected. The viewer card holds the opt-in sequence; canonical PNG export includes the main SVG only, so all four regenerated PNGs are byte-identical to the prior baseline.",
   "generation_commands": [
     "node <archify>/bin/archify.mjs validate workflow docs/diagrams/overview.<lang>.workflow.json --quality showcase --json",
     "node <archify>/bin/archify.mjs deliver workflow docs/diagrams/overview.<lang>.workflow.json <out>/overview.<lang>.html --quality showcase --json",
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "static_export": "tools/archify-export-png.mjs opens the delivered HTML with ?theme=light or ?theme=dark in the headless Chrome that Archify visual-check drives (1600x1000) and invokes the viewer's own Export > PNG button, keeping only the image/png blob. Every export reported data-last-export-canonical=true and data-last-export-bytes equal to the saved size; a second export of overview.en.light was byte-identical. No SVG was hand-written and no screenshot stands in for a README image."
+  "static_export": "tools/archify-export-png.mjs opens the delivered HTML with ?theme=light or ?theme=dark in the headless Chrome that Archify visual-check drives (1600x1000) and invokes the viewer's own Export > PNG button, keeping only the image/png blob. Every export reported data-last-export-canonical=true and data-last-export-bytes equal to the saved size; a second export of overview.en.light was byte-identical. No SVG was hand-written and no screenshot stands in for a README image.",
+  "local_artifacts": ".local/address-chain-20261007/overview.<lang>.html and its artifact-bound visual-check sidecars (not committed)"
 }

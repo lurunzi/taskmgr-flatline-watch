@@ -213,18 +213,11 @@
   "cards": [
     {
       "dot": "cyan",
-      "title": "Evidence",
+      "title": "Address trace (opt-in)",
       "items": [
-        "Two dumps five seconds apart, plus chart PNGs and event.json",
-        "Evidence is never deleted automatically"
-      ]
-    },
-    {
-      "dot": "rose",
-      "title": "Limits",
-      "items": [
-        "A suspected freeze, not proof of the Windows bug",
-        "Windows itself is never restarted"
+        "Pause recovery; query → raw record → live copies → Idle conflict",
+        "Conflict dump → detach → observe 30 s → resume watcher",
+        "Bounded capture; address reuse and incomplete links are checked"
       ]
     }
   ]

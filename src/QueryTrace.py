@@ -161,7 +161,7 @@ class Session:
         self.last_write = 0
 
     def start(self):
-        init = write_scripts(self.folder)
+        init = self.prepare_scripts()
         self.save()
         self.process = subprocess.Popen([self.cdb, '-pd', '-p', str(self.pid), '-y', SYMBOLS, '-cf', str(init)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -169,6 +169,9 @@ class Session:
         self.record['cdb_pid'] = self.process.pid
         threading.Thread(target=self.follow, daemon=True).start()
         threading.Thread(target=self.watchdog, daemon=True).start()
+
+    def prepare_scripts(self):
+        return write_scripts(self.folder)
 
     def save(self):
         with self.save_lock:
