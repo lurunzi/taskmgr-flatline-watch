@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-07",
-  "purpose": "README watcher workflow with an opt-in address-provenance investigation card.",
+  "date": "2026-10-08",
+  "purpose": "README workflow with opt-in address provenance and bounded process/thread ETW correlation.",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -9,24 +9,21 @@
   },
   "diagram_type": "workflow",
   "quality_profile": "showcase",
-  "correction_rounds": 2,
-  "corrections": [
-    "An extra diagnostic lane overflowed desktop viewports; removing duplicate evidence cards reduced but did not resolve overflow.",
-    "Keep the established workflow geometry and describe the separate opt-in diagnostic sequence in one viewer card. All four viewport checks then passed."
-  ],
+  "correction_rounds": 0,
+  "corrections": [],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "bytes": 4752,
-        "sha256": "92e0da01957268582414f2d3961dff35b875215302b1177a09c22eebbab120b0"
+        "bytes": 4763,
+        "sha256": "55de2ff19e9db63d99c2b038de3d3defa2b591bee8d7019d281af84989dd302b"
       },
       "artifact": {
         "file": "overview.en.html",
         "committed": false,
-        "bytes": 713618,
-        "sha256": "770a5cb3512763cade15e6f4f8fc63193ef354a9e54aef271bd50f7a9b5cb96e"
+        "bytes": 713631,
+        "sha256": "7c3c2ad349753c6ffb379217b7607e828987f619256f8924a82abdacaa092989"
       },
       "validation": {
         "checksPassed": 9,
@@ -67,14 +64,14 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "bytes": 4773,
-        "sha256": "091194144830b079659f912c5c6f032204778a3ffc8ae5cde95bebdd82745d31"
+        "bytes": 4796,
+        "sha256": "744c9fd820547c9f93d52529f3ccdbccefa3402a211f33a96ee65d69da421700"
       },
       "artifact": {
         "file": "overview.zh.html",
         "committed": false,
-        "bytes": 713496,
-        "sha256": "d221fa7d63de0dce93aaf06ee99a6bfa2480a9c37bfab6b4e46eafba8b047e74"
+        "bytes": 713521,
+        "sha256": "e55815b27a39cb470eb451fe12ea2226ece89517a5b807f4c805e8e03b9d85a0"
       },
       "validation": {
         "checksPassed": 9,
@@ -112,7 +109,7 @@
       ]
     }
   ],
-  "review_scope": "Codex inspected English light at 1440x900 and Chinese dark at 2048x1320. Automated visual-check passed all four required desktop viewports in both language artifacts; the other endpoint theme screenshots were generated but not visually inspected. The viewer card holds the opt-in sequence; canonical PNG export includes the main SVG only, so all four regenerated PNGs are byte-identical to the prior baseline.",
+  "review_scope": "Codex inspected English light at 1440x900 and Chinese dark at 2048x1320. Automated browser checks passed all four required viewports in both languages. The updated diagnostic card is HTML viewer content; canonical SVG-only PNG exports exclude cards and remain byte-identical to baseline.",
   "generation_commands": [
     "node <archify>/bin/archify.mjs validate workflow docs/diagrams/overview.<lang>.workflow.json --quality showcase --json",
     "node <archify>/bin/archify.mjs deliver workflow docs/diagrams/overview.<lang>.workflow.json <out>/overview.<lang>.html --quality showcase --json",
@@ -120,5 +117,5 @@
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
   "static_export": "tools/archify-export-png.mjs opens the delivered HTML with ?theme=light or ?theme=dark in the headless Chrome that Archify visual-check drives (1600x1000) and invokes the viewer's own Export > PNG button, keeping only the image/png blob. Every export reported data-last-export-canonical=true and data-last-export-bytes equal to the saved size; a second export of overview.en.light was byte-identical. No SVG was hand-written and no screenshot stands in for a README image.",
-  "local_artifacts": ".local/address-chain-20261007/overview.<lang>.html and its artifact-bound visual-check sidecars (not committed)"
+  "local_artifacts": ".local/process-correlation-20261008/overview.<lang>.html and its artifact-bound visual-check sidecars (not committed)"
 }

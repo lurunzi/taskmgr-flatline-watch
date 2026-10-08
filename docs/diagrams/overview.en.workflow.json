@@ -213,11 +213,11 @@
   "cards": [
     {
       "dot": "cyan",
-      "title": "Address trace (opt-in)",
+      "title": "Address and process trace (opt-in)",
       "items": [
         "Pause recovery; query → raw record → live copies → Idle conflict",
         "Conflict dump → detach → observe 30 s → resume watcher",
-        "Bounded capture; address reuse and incomplete links are checked"
+        "Optional bounded ETW: process/thread candidates, not attribution"
       ]
     }
   ]

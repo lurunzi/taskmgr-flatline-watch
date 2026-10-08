@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 import AddressChain
+import ProcessTrace
 from AutomaticWatch import require_taskmgr, storage_available, validate_full_dump, write_dump, write_json
 from FlatlineDetection import FlatlineDetector
 from NativeCapture import worker
@@ -32,6 +33,7 @@ def main():
     parser.add_argument('--pid', type=int, required=True)
     parser.add_argument('--minutes', type=float, default=20)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--process-events', action='store_true',help='Record bounded ETW process/thread events for candidate correlation')
     args = parser.parse_args()
     if not 0 < args.minutes <= 60:
         parser.error('minutes must be in (0,60]')
@@ -47,12 +49,13 @@ def main():
     sources = args.output/'collector-source'
     sources.mkdir()
     source_manifest = {}
-    for path in (ROOT/'src/AddressChain.py',ROOT/'src/QueryTrace.py',Path(__file__)):
+    for path in (ROOT/'src/AddressChain.py',ROOT/'src/QueryTrace.py',ROOT/'src/ProcessTrace.py',Path(__file__)):
         data = path.read_bytes()
         (sources/path.name).write_bytes(data)
         source_manifest[path.name] = hashlib.sha256(data).hexdigest()
     write_json(args.output/'collector-source.json',source_manifest)
     session = child = pipe = None
+    process_trace = None
     stopped_watcher = False
     restart_args = []
     try:
@@ -87,6 +90,10 @@ def main():
         finally:
             watcher.close()
         require_taskmgr(args.pid)
+        if args.process_events:
+            process_trace = ProcessTrace.Session(args.output)
+            process_trace.start()
+            save(process_events=process_trace.name)
         ended = threading.Event()
         session = AddressChain.Session(find_cdb(),args.pid,args.output,write_json,lambda s:ended.set())
         session.start()
@@ -153,30 +160,41 @@ def main():
     except Exception as exc:
         save(status='incomplete',error=repr(exc),traceback=traceback.format_exc())
     finally:
-        if child:
-            if child.is_alive():
-                child.terminate()  # Only our chart worker, never cdb or Taskmgr.
-            child.join(5)
-        if pipe:
-            pipe.close()
-        if session and session.process:
-            if session.process.poll() is None:
-                session.record['cancelled'] = not session.conflict.is_set()
-                session.detach()
-            # Never restart automatic recovery while a debugger remains attached.
-            while session.process.poll() is None or session.memory.debugger():
-                save(status='detach_pending',recovery_resumed=False)
-                time.sleep(2)
-            for dump in args.output.glob('*.dmp'):
+        try:
+            if child:
+                if child.is_alive():
+                    child.terminate()  # Only our chart worker, never cdb or Taskmgr.
+                child.join(5)
+            if pipe:
+                pipe.close()
+            if session and session.process:
+                if session.process.poll() is None:
+                    session.record['cancelled'] = not session.conflict.is_set()
+                    session.detach()
+                # Never restart automatic recovery while a debugger remains attached.
+                while session.process.poll() is None or session.memory.debugger():
+                    save(status='detach_pending',recovery_resumed=False)
+                    time.sleep(2)
+                for dump in args.output.glob('*.dmp'):
+                    try:
+                        save(**{dump.stem+'_validation':validate_full_dump(dump)})
+                    except Exception as exc:
+                        save(**{dump.stem+'_validation_error':repr(exc)})
+                session.memory.close()
+            if stopped_watcher:
+                subprocess.Popen([str(ROOT/'.venv/Scripts/pythonw.exe'),str(ROOT/'src/FlatlineWatch.py'),*restart_args],
+                                 cwd=ROOT,creationflags=subprocess.CREATE_NO_WINDOW)
+                save(recovery_resumed=True)
+        except Exception as exc:
+            save(status='incomplete',cleanup_error=repr(exc))
+        finally:
+            # ETW ownership survives a chart/debugger/recovery cleanup error.
+            if process_trace:
                 try:
-                    save(**{dump.stem+'_validation':validate_full_dump(dump)})
+                    process_trace.stop()
+                    process_trace.decode()
                 except Exception as exc:
-                    save(**{dump.stem+'_validation_error':repr(exc)})
-            session.memory.close()
-        if stopped_watcher:
-            subprocess.Popen([str(ROOT/'.venv/Scripts/pythonw.exe'),str(ROOT/'src/FlatlineWatch.py'),*restart_args],
-                             cwd=ROOT,creationflags=subprocess.CREATE_NO_WINDOW)
-            save(recovery_resumed=True)
+                    save(process_trace_error=repr(exc),process_trace_active=process_trace.active)
         if state['status'] in ('preflight','tracing','observing_after_detach'):
             save(status='incomplete',reason='stop requested' if state.get('stop_requested') else 'bounded observation ended')
         save(finished=timestamp())

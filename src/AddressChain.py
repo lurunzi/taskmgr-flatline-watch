@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 
 import QueryTrace as QT
+from ProcessTrace import qpc, frequency
 
 MAX_BUFFER = 8 * 1024**2
 MAX_OBJECTS = 32
@@ -130,7 +131,8 @@ class Session(QT.Session):
             raise RuntimeError('target already has a debugger')
         self.instance = f'{pid}-{self.memory.created:x}-{uuid.uuid4().hex[:12]}'
         self.record.update(classification='address_chain', instance=self.instance,
-                           creation_filetime=self.memory.created, acceptance='incomplete')
+                           creation_filetime=self.memory.created, acceptance='incomplete',
+                           qpc_frequency=frequency(),query_clock='host receipt QPC; debugger latency unbounded')
         self.image = QT.DLL.read_bytes()
         if hashlib.sha256(self.image).hexdigest() != QT.DLL_SHA256:
             raise RuntimeError('DLL hash mismatch')
@@ -207,10 +209,16 @@ class Session(QT.Session):
 
     def query_event(self, kind, values):
         tid = values[0]
+        received = qpc()
+        if kind == 'R' and tid in self.open:
+            self.open[tid]['return_received_qpc'] = received
         super().query_event(kind, values)
         if kind == 'E':
             self.query_number += 1
             self.open[tid]['query'] = f'{self.instance}:Q{self.query_number}'
+            self.open[tid]['entry_received_qpc'] = received
+        elif kind == 'N':
+            self.open[tid]['calls'][-1]['received_qpc'] = received
 
     def finish_invocation(self, invocation):
         super().finish_invocation(invocation)
