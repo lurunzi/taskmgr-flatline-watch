@@ -47,7 +47,8 @@ def main():
             print(f"  PID {c['pid']:<6} {c['name']:<25} {c['type']:<15} +{c['thread_delta']} threads (+{c['bytes']}B, {c.get('share',0)*100:.1f}%)")
         return
 
-    print(f"Sampling SystemProcessInformation expansion for {args.duration}s (interval: {args.interval_ms}ms)...")
+    if not args.json:
+        print(f"Sampling SystemProcessInformation expansion for {args.duration}s (interval: {args.interval_ms}ms)...")
     res = sample_expansion_bursts(duration_seconds=args.duration, interval_ms=args.interval_ms)
 
     if args.json:

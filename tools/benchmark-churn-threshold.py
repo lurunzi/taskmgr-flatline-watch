@@ -109,18 +109,22 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
     args = parser.parse_args()
 
-    print("Loading TaskManagerDataLayer.dll native query...")
+    if not args.json:
+        print("Loading TaskManagerDataLayer.dll native query...")
     base, query_fn, tidy_fn = load_native_query()
 
     levels = [0, 1, 2, 4, args.max_workers]
     bench_results = []
 
-    print(f"Running Churn Sensitivity Matrix [Mode: {args.mode}] ({args.queries_per_level} queries per level)...")
+    if not args.json:
+        print(f"Running Churn Sensitivity Matrix [Mode: {args.mode}] ({args.queries_per_level} queries per level)...")
     for lvl in levels:
-        print(f"  Testing Churn Level: {lvl} worker {args.mode}s...", end="", flush=True)
+        if not args.json:
+            print(f"  Testing Churn Level: {lvl} worker {args.mode}s...", end="", flush=True)
         r = run_benchmark_level(query_fn, tidy_fn, churn_workers_count=lvl, queries=args.queries_per_level, mode=args.mode)
         bench_results.append(r)
-        print(f" Done. (OOM errors: {r['second_mismatch_oom']}, Vulnerability: {r['vulnerability_rate']*100:.1f}%)")
+        if not args.json:
+            print(f" Done. (OOM errors: {r['second_mismatch_oom']}, Vulnerability: {r['vulnerability_rate']*100:.1f}%)")
 
     if args.json:
         print(json.dumps(bench_results, indent=2))
