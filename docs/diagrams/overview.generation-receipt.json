@@ -1,6 +1,6 @@
 {
   "date": "2026-10-13",
-  "purpose": "Restart-only daily recovery; retired live tracing and offline Top Delta.",
+  "purpose": "Optional lightweight incident ETW, bounded recovery wait, offline candidate analysis.",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -9,53 +9,52 @@
   },
   "diagram_type": "workflow",
   "quality_profile": "showcase",
-  "correction_rounds": 0,
-  "corrections": [],
+  "correction_rounds": 4,
+  "corrections": [
+    "Kept workflow within six supported columns.",
+    "Removed crossing error branch; retry behavior remains documented.",
+    "Shortened node copy and widths to pass desktop readability."
+  ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "d2c355434348ae4e4b3d0b5146610535e154b70ea4e6f1eb63b560d8a0a9bae0",
-        "bytes": 4759
+        "sha256": "dfa93e68881b425d62c4f670fc31b13f92924c59c7ad1cb343614da7578498d9",
+        "bytes": 5250
       },
       "artifact": {
         "file": "overview.en.html",
-        "committed": false,
-        "sha256": "253aa6f218477f60f45b8c039b3674cb2ec8d9c938c7e29069d60b97d5c6eb43",
-        "bytes": 713699
+        "sha256": "70a626a5f2cb201beb55c7d8ecf57641eca5e1617bcedd673a4a0e5c6c2666ff",
+        "bytes": 716366,
+        "committed": false
       },
       "validation": {
-        "checksPassed": 9,
-        "checkCount": 9,
-        "compositionProfile": "showcase",
-        "compositionStatus": "pass",
-        "errors": 0,
-        "warnings": 0
+        "delivery_ok": true,
+        "browser_status": "pass"
       },
-      "browser_evidence": "pass",
       "browser_viewports": [
         "1440x900",
         "1600x1000",
         "1920x1080",
         "2048x1320"
       ],
-      "visual_review": "passed",
+      "visual_review": "English light and Chinese dark canonical exports inspected by Codex; labels and routes readable without clipping.",
       "exports": [
         {
           "file": "overview.en.light.png",
+          "sha256": "5d87180987f8d31ad86f6ad601d9af24f2efbd0198998a7fd66c87444c8ca255",
+          "bytes": 567522,
           "theme": "light",
-          "pixels": "4528x2608",
-          "bytes": 525000,
-          "sha256": "2ec85ae29b70abde4af3fafe6cb04d0bcc5b84157af95ec88cd7f6caac9d3ee9",
+          "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
+          "sha256": "822526af722f810e5715c8367eb70ecc718b9e11d94ae713f5f8fd515069da32",
+          "bytes": 581458,
           "theme": "dark",
-          "pixels": "4528x2608",
-          "bytes": 536087,
-          "sha256": "dea9e4f040ce09672257da25b143a99836a4d07a744656b12ac897df5d4f4b11",
+          "pixels": "4828x2608",
           "canonical": true
         }
       ]
@@ -64,58 +63,50 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "d070238e4913177dd179ca166b76754a6e4db6a13900ecf8f3d393e11702b753",
-        "bytes": 4745
+        "sha256": "5af6f5eb0d3f521817ace72a405cbc3dfb7b3fdc130d8cc0a4d49867e2d3aa0e",
+        "bytes": 5263
       },
       "artifact": {
         "file": "overview.zh.html",
-        "committed": false,
-        "sha256": "a3b948f12d0431e6141d13b5925c09bbd5170a16ee848aa4fe5cf504453fdc30",
-        "bytes": 713478
+        "sha256": "45a43c0d8eb2d9b347afbc012e465d0e9a7605f0542e8648c5427c67c3c20f62",
+        "bytes": 716086,
+        "committed": false
       },
       "validation": {
-        "checksPassed": 9,
-        "checkCount": 9,
-        "compositionProfile": "showcase",
-        "compositionStatus": "pass",
-        "errors": 0,
-        "warnings": 0
+        "delivery_ok": true,
+        "browser_status": "pass"
       },
-      "browser_evidence": "pass",
       "browser_viewports": [
         "1440x900",
         "1600x1000",
         "1920x1080",
         "2048x1320"
       ],
-      "visual_review": "passed",
+      "visual_review": "English light and Chinese dark canonical exports inspected by Codex; labels and routes readable without clipping.",
       "exports": [
         {
           "file": "overview.zh.light.png",
+          "sha256": "203274e650a6104f29972520fc3261ebf2f6053e1f896673d5195e10bd2d8cb2",
+          "bytes": 598137,
           "theme": "light",
-          "pixels": "4348x2608",
-          "bytes": 539159,
-          "sha256": "57bd2b181d1cab92df1e64d74bae133e5115a09f65635bc277ec91910619d9d4",
+          "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
+          "sha256": "38ef1b62a412f0d18b5894b4605eb5d6ed4ec6db37af8f40c09a0a925844ad7c",
+          "bytes": 609088,
           "theme": "dark",
-          "pixels": "4348x2608",
-          "bytes": 549794,
-          "sha256": "c35f0abdc7fc1983850be21dd821f55ac56a8766aad4af6584bd239106cf5ba7",
+          "pixels": "4488x2608",
           "canonical": true
         }
       ]
     }
   ],
-  "review_scope": "Codex inspected English light at 1440x900 and Chinese dark at 2048x1320; no clipped labels or unintended crossings. Browser checks passed all four viewports for both languages. Canonical PNGs contain the diagram; viewer-only cards are excluded.",
   "generation_commands": [
-    "node <archify>/bin/archify.mjs validate workflow docs/diagrams/overview.<lang>.workflow.json --quality showcase --json",
     "node <archify>/bin/archify.mjs deliver workflow docs/diagrams/overview.<lang>.workflow.json <out>/overview.<lang>.html --quality showcase --json",
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "static_export": "Generated with tools/archify-export-png.mjs through the delivered viewer Export > PNG action. All four exports reported canonical=true and matching byte counts. No SVG was hand-written.",
-  "local_artifacts": ".local/closeout-20261013/overview.<lang>.html, delivery/visual/export receipts and visual-check sidecars (not committed)"
+  "local_artifacts": ".local/work-inbox/20261013-light-etw/overview.<lang>.html and delivery/visual/export receipts"
 }

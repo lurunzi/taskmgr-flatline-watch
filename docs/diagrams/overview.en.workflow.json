@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Task Manager lightweight recovery",
+    "title": "Task Manager lightweight incident recording",
     "locale": "en",
     "quality_profile": "showcase",
     "legend": {
@@ -50,14 +50,14 @@
     },
     {
       "id": "capture",
-      "label": "Recovery mode",
+      "label": "Preserve incident",
       "fromCol": 3,
       "toCol": 4,
       "variant": "emphasis"
     },
     {
       "id": "recover",
-      "label": "Recover",
+      "label": "Recover and analyse",
       "fromCol": 5,
       "toCol": 5,
       "variant": "dashed"
@@ -69,7 +69,8 @@
     "detector",
     "target_check",
     "dumps",
-    "restart"
+    "restart",
+    "analysis"
   ],
   "nodes": [
     {
@@ -78,8 +79,8 @@
       "col": 0,
       "type": "frontend",
       "label": "CPU page",
-      "sublabel": "logical processors",
-      "width": 160
+      "sublabel": "all logical cores",
+      "width": 150
     },
     {
       "id": "chart_read",
@@ -88,70 +89,79 @@
       "type": "backend",
       "label": "Chart read",
       "sublabel": "PrintWindow every 2 s",
-      "width": 160
+      "width": 150
     },
     {
       "id": "detector",
       "lane": "watcher",
       "col": 2,
       "type": "backend",
-      "label": "Freeze detector",
-      "sublabel": "total flat 30 s, cores move",
-      "width": 160
+      "label": "Confirm flatline",
+      "sublabel": "30 s; cores move",
+      "width": 150
     },
     {
       "id": "target_check",
       "lane": "watcher",
       "col": 3,
-      "type": "security",
-      "label": "Target check",
-      "sublabel": "System32\\Taskmgr.exe",
-      "width": 160
+      "type": "backend",
+      "label": "Save observations",
+      "sublabel": "times and charts",
+      "width": 150
     },
     {
       "id": "dumps",
       "lane": "watcher",
       "col": 4,
       "type": "backend",
-      "label": "Restart only",
-      "sublabel": "no debugger or dumps",
-      "width": 160
+      "label": "Save ETW",
+      "sublabel": "wait at most 2 s",
+      "width": 150
     },
     {
       "id": "restart",
       "lane": "taskmgr",
       "col": 5,
       "type": "backend",
-      "label": "Restart Task Manager",
-      "sublabel": "relaunch + return to CPU",
-      "width": 180
+      "label": "Restart + CPU",
+      "sublabel": "verify target and restore",
+      "width": 150
     },
     {
       "id": "no_capture",
       "lane": "guard",
       "col": 2,
       "type": "security",
-      "label": "No capture",
-      "sublabel": "whole page static",
-      "width": 160
-    },
-    {
-      "id": "no_restart",
-      "lane": "guard",
-      "col": 5,
-      "type": "security",
-      "label": "Retry later",
-      "sublabel": "restart unsuccessful",
-      "width": 160
+      "label": "Keep observing",
+      "sublabel": "static page: no trigger",
+      "width": 150
     },
     {
       "id": "captures",
       "lane": "evidence",
       "col": 4,
       "type": "database",
-      "label": "Restart receipt",
-      "sublabel": "time, PID, result",
-      "width": 180
+      "label": "Incident evidence",
+      "sublabel": "ETL, markers, charts",
+      "width": 150
+    },
+    {
+      "id": "ring",
+      "lane": "evidence",
+      "col": 0,
+      "type": "database",
+      "label": "Circular ETW",
+      "sublabel": "process/thread events",
+      "width": 150
+    },
+    {
+      "id": "analysis",
+      "lane": "evidence",
+      "col": 5,
+      "type": "backend",
+      "label": "Offline candidates",
+      "sublabel": "parents, counts, coverage",
+      "width": 150
     }
   ],
   "edges": [
@@ -183,41 +193,54 @@
       "id": "recover",
       "from": "dumps",
       "to": "restart",
-      "label": "visual confirmation",
+      "label": "also on save failure",
       "variant": "emphasis"
     },
     {
       "id": "ignore",
       "from": "detector",
       "to": "no_capture",
-      "label": "not a freeze",
+      "label": "predicate not met",
       "variant": "dashed",
       "role": "branch"
     },
     {
-      "id": "hold",
-      "from": "restart",
-      "to": "no_restart",
-      "label": "failed",
-      "variant": "security",
-      "role": "error"
+      "id": "write",
+      "from": "dumps",
+      "to": "captures",
+      "label": "async save",
+      "variant": "dashed"
     },
     {
-      "id": "write",
-      "from": "restart",
+      "id": "ring_save",
+      "from": "ring",
       "to": "captures",
-      "label": "event.json",
+      "label": "raw events",
+      "variant": "dashed"
+    },
+    {
+      "id": "after_recovery",
+      "from": "restart",
+      "to": "analysis",
+      "label": "after recovery",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decode",
+      "from": "captures",
+      "to": "analysis",
+      "label": "decode",
       "variant": "dashed"
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Investigation closed; evidence retained",
+      "title": "Candidates, not causal proof",
       "items": [
-        "Binary retry defect + native reproduction + historical dumps",
-        "No further live address tracing; original evidence stays local",
-        "Offline Top 3 thread starts in 10 ms; temporal leads only"
+        "Visual observations are not native fault times",
+        "Missing required coverage or event loss suppresses named ranks",
+        "No debugger or dumps; retain raw evidence"
       ]
     }
   ]

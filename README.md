@@ -21,10 +21,34 @@ The confirmed retry-count defect in the investigated DLL build is ready for engi
 
 This workstation now uses the saved **Restart only, no evidence** preference with `Start.cmd`: after 30 seconds of a flat total curve while logical graphs move, restart Task Manager and restore its CPU page. No ProcDump/cdb origin monitor is attached in this mode. Autostart is unchanged. The current policy supersedes the historical capture-mode and validation descriptions below; the program still supports evidence mode if deliberately selected.
 
+### Lightweight incident recording update
+
+The preceding paragraph describes the earlier restart-only baseline. Optional **light event recording** now adds a separate 64 MiB circular process/thread ETW session to that recovery mode. It uses the existing Microsoft `logman`/`tracerpt` workflow, without Taskmgr breakpoints, injection, command-line collection or stress load. The byte limit does **not** guarantee a fixed history duration. No unique triggering application has been proved.
+
+After checking that `D:\TaskmgrFreezeCaptures\status.json` has `dump_running: false`, stop the watcher with `Stop.ps1` and wait for its `state: stopped`, then run `Start.cmd --light-etw`. Keep restart-only recovery selected; with this option its label becomes **Auto recover, no dumps**. The option is saved in `.local/preferences.ini`, so later `Start.cmd` launches retain it. To disable it, stop gracefully and restart with `Start.cmd --no-light-etw`. Logon autostart is unchanged. The existing status window shows recording errors; `status.json` includes `light_etw` and `incident_analysis` details. No new interface or background service is installed.
+
+Light recording locks the watcher to automatic recovery without dumps; disable the option before selecting the historical capture mode. The tray's **Open latest candidate report** item opens the latest available local report and is disabled until one exists.
+
+A fresh post-stop process snapshot identifies surviving parents after the circular file wraps; a missing snapshot leaves those identities unknown. Creation times must match exactly to merge identities, so differences in timestamp precision can reduce coverage. Candidate JSON also includes the largest direct-child birth count within any 10 ms interval inside the observation window; this is a burst metric, not the time or threshold of the Taskmgr failure.
+
+On a visual trigger, `restart-…` gains `observation.json`, selected chart PNGs, `trace-capture.json` and `process-trace/` containing the stopped raw ETL, baseline process identities and session metadata. The in-memory chart history is bounded to 61 pairs. Markers cover the last normal sample, first flat candidate, confirmation and recovery; these are watcher observations, **not exact native failure times**. Before recovery the worker waits at most two seconds for ETW preservation; a late or failed save is recorded and recovery continues. The collector serialises stop/save/rearm and records the gap. Its own cleanup can take up to 25 seconds; unresolved previous ownership prevents starting a duplicate session.
+
+After recovery, one bounded offline decoder produces `incident-analysis.json` and a bilingual `incident-analysis.md`, with at most three candidates ranked by direct child process starts, then own thread starts. Each row retains the process instance and parent chain; known monitor-related instances are tagged rather than removed by executable name. Reports include actual exposure, a contiguous visually normal control interval when available, unresolved identities, loss and coverage. Circular overwrite alone is allowed, but a missing required interval or lost events suppresses named rankings; overwritten identity history is not filled with a stale baseline. Parent chains are not call stacks. `analysis-status.json` records incomplete or deferred analysis, and the raw ETL remains available.
+
+For a retained incident, run the following locally; the first command decodes ETL and analyses it, the second only reanalyses existing XML into a new report folder:
+
+```powershell
+.\.venv\Scripts\python.exe tools\process-incident.py D:\TaskmgrFreezeCaptures\restart-<incident>
+.\.venv\Scripts\python.exe tools\analyze-incident.py D:\TaskmgrFreezeCaptures\restart-<incident> --output .local\incident-review
+```
+
+Decoding retains the existing 90-second / 256 MiB XML bounds; the automatic job has a 120-second limit and defers a new report while another decoder is busy. New ETW sessions pause at a 2 GiB accumulated ETL/XML budget or less than 1 GiB free disk space; an already active circular trace or decoder can exceed that soft budget. Existing evidence is never automatically deleted. Failures preserve automatic recovery and are visible in the status files. CPU measurements must state which processes were measured; neither zero overhead nor a universal churn threshold is promised. Repeated incident/control comparisons and separately authorised application stop/start tests can strengthen a candidate; these events do not expose Taskmgr's NtQSI return values, buffer sizes, HRESULTs or a same-incident buffer-to-freeze chain.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.en.dark.png">
-  <img alt="Current restart-only workflow: read native CPU charts every 2 seconds, confirm a flat total curve with moving logical graphs for 30 seconds, verify Taskmgr, restart it and restore the CPU page; retain an event.json receipt, without debugger attachment or dumps." src="docs/diagrams/overview.en.light.png">
+  <img alt="Lightweight incident workflow: circular process/thread events run beside chart detection; save observations and ETL with a bounded wait, recover Taskmgr, then analyse temporal candidates offline. No debugger attachment or dumps in restart-only mode." src="docs/diagrams/overview.en.light.png">
 </picture>
+<!-- Earlier restart-only diagram caption: Current restart-only workflow: read native CPU charts every 2 seconds, confirm a flat total curve with moving logical graphs for 30 seconds, verify Taskmgr, restart it and restore the CPU page; retain an event.json receipt, without debugger attachment or dumps. -->
 <!-- Historical capture-mode caption retained with the earlier operation records: Workflow diagram: the watcher reads Task Manager's native CPU charts every 2 seconds; the freeze detector fires when the total curve stays flat for 30 seconds while the logical-processor curves keep moving, otherwise nothing is captured; after the target is confirmed as System32\Taskmgr.exe, ProcDump writes two full dumps to TaskmgrFreezeCaptures on D:; only when both dumps are valid is Task Manager restarted and returned to the CPU page, and a failed dump or the storage limit means no restart. -->
 
 ## Operation
@@ -117,10 +141,29 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 本工作站现已保存「只重启，不取证」偏好，并用 `Start.cmd` 运行：总图平直且分线程图仍变化持续 30 秒后，重启任务管理器并恢复 CPU 页面。此模式不挂 ProcDump/cdb 首报监测，自启动设置不变。当前策略优先于下方保留的历史取证模式和验证记录；程序仍保留主动选择取证模式的能力。
 
+### 轻量异常记录更新
+
+上一段描述较早的只重启基线。现在可选用「轻量事件记录」，在自动恢复旁独立运行一个 64 MiB 的进程／线程 ETW 循环会话，复用微软 `logman`／`tracerpt`。不向 Taskmgr 设置断点或注入代码，不采集命令行，不制造压测负载。容量上限**不保证固定的历史秒数**，目前没有证明唯一的触发应用。
+
+先检查 `D:\TaskmgrFreezeCaptures\status.json` 的 `dump_running` 为 `false`，通过 `Stop.ps1` 正常停止，等待状态变为 `stopped`，再运行 `Start.cmd --light-etw`。保持只重启恢复模式；此选项启用后，模式标签改为「自动恢复，不抓转储」。选项保存到 `.local/preferences.ini`，之后普通 `Start.cmd` 仍会启用。关闭时先正常停止，再以 `Start.cmd --no-light-etw` 启动。登录自启动设置不变。原有状态窗口显示采集错误，`status.json` 的 `light_etw` 和 `incident_analysis` 提供详情；不安装新的界面或后台服务。
+
+轻量记录会锁定为不抓转储的自动恢复；如需选择历史取证模式，先关闭此选项。托盘的「打开最近候选报告」可打开已有的最新本地报告，报告尚未生成时不可点击。
+
+停止后的新鲜进程快照用于确认循环覆盖之后仍存活的父进程；快照缺失时，相应身份保持未知。只合并创建时间完全一致的身份，因此时间精度差异可能减少可解析范围。候选 JSON 还列出观察窗口内任意 10 毫秒区间的最大直接子进程新建数；这是突发活动指标，不是 Taskmgr 故障时刻或触发阈值。
+
+触发视觉异常后，`restart-…` 新增 `observation.json`、选定图表 PNG、`trace-capture.json` 和 `process-trace/` 下的已停止原始 ETL、初始进程身份及会话元数据。内存图表最多保留 61 对。记录最后正常样本、首次水平候选、确认和恢复时间；这些是监测器的观察，**不是底层故障的精确时刻**。恢复前最多等待 ETW 保存两秒，保存迟到或失败均会记录，恢复继续。采集器顺序执行停止、保存和重新布防，记录中间缺口；自身退出清理最多等待 25 秒，发现未解决的旧会话归属时拒绝重复启动。
+
+恢复之后，由一个有上限的离线解码任务生成 `incident-analysis.json` 和双语 `incident-analysis.md`，最多列出三个候选，按直接子进程启动数、再按自身线程启动数排序。保留进程实例和父链，已知与监测器有关的实例仅标记，不按程序名一律删除。报告列出实际观察时长、可用时的连续视觉正常对照、未知身份、事件丢失和覆盖范围。循环覆盖本身不使排行失效；但所需时段缺失或丢事件时不输出具名排行，身份历史被覆盖后不用旧快照强行补齐。父链不是调用栈。未完成或推迟分析会写入 `analysis-status.json`，原始 ETL 保留。
+
+离线命令见英文区：第一个命令从 ETL 解码并分析，第二个仅利用已有 XML，向新目录生成报告，不依赖旧的 `query-trace.jsonl`。
+
+解码沿用 90 秒／256 MiB XML 限额；自动任务上限 120 秒，另一解码器忙碌时推迟新报告。累计 ETL／XML 达到 2 GiB 或磁盘可用空间不足 1 GiB 时，暂停新建 ETW 会话；正在运行的循环会话或解码任务可能超过此软限额。旧证据不自动删除。失败仍保留自动恢复并在状态文件显示。CPU 实测必须说明覆盖哪些进程，不承诺零开销或通用扰动阈值。多次异常与正常对照，以及另行授权的应用停启实验可以加强候选证据；这些事件仍看不到 Taskmgr 的 NtQSI 返回值、缓冲长度、HRESULT 或同一现场完整的缓冲区到冻结链。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.zh.dark.png">
-  <img alt="当前只重启流程：每 2 秒读取原生 CPU 图表，总图平直且分线程图变化持续 30 秒后，核对 Taskmgr，重启并恢复 CPU 页面；仅保留 event.json 重启记录，不挂调试器、不写转储。" src="docs/diagrams/overview.zh.light.png">
+  <img alt="轻量异常记录流程：循环进程线程事件与图表检测并行，有限等待保存观察记录及 ETL，恢复任务管理器后离线分析时间关联候选。只重启模式不挂调试器、不写转储。" src="docs/diagrams/overview.zh.light.png">
 </picture>
+<!-- 较早的只重启模式图注：当前只重启流程：每 2 秒读取原生 CPU 图表，总图平直且分线程图变化持续 30 秒后，核对 Taskmgr，重启并恢复 CPU 页面；仅保留 event.json 重启记录，不挂调试器、不写转储。 -->
 <!-- 历史取证模式图注，随旧运行记录保留：流程图：监测程序每 2 秒读取任务管理器的原生 CPU 图表；总图持续水平 30 秒且逻辑处理器曲线仍在变化时判为疑似冻结，否则不取证；核对目标确为 System32\Taskmgr.exe 后，ProcDump 把两份完整转储写入 D 盘 TaskmgrFreezeCaptures；两份都有效才重启任务管理器并回到 CPU 页，转储失败或存储超限则不重启。 -->
 
 ## 使用

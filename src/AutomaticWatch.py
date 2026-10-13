@@ -17,6 +17,9 @@ from FlatlineDetection import FlatlineDetector
 from NativeCapture import worker, taskmgr_pids
 from OriginCapture import OriginWatch
 from TaskmgrRecovery import restart_taskmgr, restore_cpu_page
+from ProcessTrace import qpc
+from RollingProcessTrace import RollingRecorder
+from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS, mark_recovery
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path('D:/TaskmgrFreezeCaptures')
@@ -113,13 +116,16 @@ def write_dump(pid, destination):
     return result
 
 class Monitor:
-    def __init__(self, query_trace=False, restart_only=False):
-        # Restart-only mode skips graphs, dumps and the origin monitor; it only
-        # records when Task Manager was restarted.
-        self.restart_only = restart_only
+    def __init__(self, query_trace=False, restart_only=False, light_etw=False):
+        # Lightweight ETW is separate from the origin debugger/dump monitor.
+        self.restart_only = bool(restart_only or light_etw)
+        self.light_etw = light_etw
         OUTPUT.mkdir(parents=True, exist_ok=True)
         self.detector = FlatlineDetector(30)
-        self.frames = deque(maxlen=31)
+        self.frames = deque(maxlen=61 if light_etw else 31)
+        self.observations = Observations()
+        self.recorder = RollingRecorder(OUTPUT) if light_etw else None
+        self.offline = OfflineProcessor() if light_etw else None
         self.process = self.pipe = None
         self.pending = None
         self.identity = None
@@ -162,6 +168,13 @@ class Monitor:
             saved=json.loads(latest.read_text(encoding='utf-8'))
             if saved.get('recovery',{}).get('status')=='restarted_waiting_for_cpu_page':
                 self.pending_navigation=(latest.parent,saved)
+        if self.recorder:
+            self.recorder.start()
+
+    def reset_observations(self):
+        self.detector.reset()
+        self.frames.clear()
+        self.observations.reset()
 
     def reset_worker(self):
         if self.pipe:
@@ -193,6 +206,8 @@ class Monitor:
                       'capture_result':self.capture_result, 'recovery':self.recovery_result,
                       'origin_monitoring':sorted(self.origin.sessions), 'origin_error':self.origin_error,
                       'origin_mode':'query_trace' if self.origin.query_trace else 'procdump',
+                      'light_etw':self.recorder.status() if self.recorder else {'state':'disabled'},
+                      'incident_analysis':self.offline.status() if self.offline else {'status':'disabled'},
                       'mode':'restart_only' if self.restart_only else 'capture', **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
@@ -204,6 +219,8 @@ class Monitor:
             self.publish('stopped')
             return
         try:
+            if self.recorder and self.recorder.status()['state']=='stopped':
+                self.recorder.start()
             if self.pending_navigation:
                 folder,saved=self.pending_navigation
                 self.pending_navigation=None
@@ -228,8 +245,7 @@ class Monitor:
                     self.accept(sample)
                 elif now-self.pending > 8:
                     self.reset_worker()
-                    self.detector.reset()
-                    self.frames.clear()
+                    self.reset_observations()
                     self.publish('capture_timeout')
                 return
             if now-self.last_request >= 2:
@@ -237,18 +253,15 @@ class Monitor:
                 self.pending = self.last_request = now
         except Exception as exc:
             self.reset_worker()
-            self.detector.reset()
-            self.frames.clear()
+            self.reset_observations()
             self.publish('error', error=str(exc))
 
     def accept(self, sample):
         if self.rearm_requested:
-            self.detector.reset()
-            self.frames.clear()
+            self.reset_observations()
             self.rearm_requested = False
         if sample['state'] != 'captured':
-            self.detector.reset()
-            self.frames.clear()
+            self.reset_observations()
             self.publish(sample['state'], error=sample.get('error'))
             return
         self.watch_origin(sample['pid'])
@@ -256,8 +269,7 @@ class Monitor:
             self.retry = None  # A working CPU page from another Taskmgr ends the retry.
         identity = (sample['pid'], sample['hwnd'], sample['total'].shape, sample['cores'].shape)
         if identity != self.identity:
-            self.detector.reset()
-            self.frames.clear()
+            self.reset_observations()
             self.identity = identity
         if self.pending_recovery:
             folder, saved = self.pending_recovery
@@ -267,14 +279,18 @@ class Monitor:
                 self.capture_result='complete'
                 self.dump_thread=threading.Thread(target=self.recover,args=(folder,saved),daemon=False)
                 self.dump_thread.start()
-        result = self.detector.observe(time.monotonic(), sample['total'], sample['cores'])
-        frame = {'timestamp':timestamp(), 'result':result, 'images':{}}
+        now = time.monotonic()
+        if self.observations.last_time is not None and not 0 < now-self.observations.last_time <= 6:
+            self.reset_observations()
+        result = self.detector.observe(now, sample['total'], sample['cores'])
+        frame = {'timestamp':timestamp(), 'qpc':qpc(), 'monotonic':now, 'result':result, 'images':{}}
         for key in ('total','cores'):
             ok, encoded = cv2.imencode('.png',sample[key])
             if not ok:
                 raise RuntimeError('PNG encoding failed')
             frame['images'][key] = encoded.tobytes()
         self.frames.append(frame)
+        self.observations.observe(frame)
         if VERIFY_REQUEST.exists() and not (self.dump_thread and self.dump_thread.is_alive()):
             recovery_test=VERIFY_REQUEST.read_text(encoding='ascii').strip()=='recovery_check'
             VERIFY_REQUEST.unlink()
@@ -339,12 +355,43 @@ class Monitor:
         self.last_event = str(folder)
         self.capture_result = None
         self.recovery_result = None
-        self.dump_thread = threading.Thread(target=self.recover,args=(folder,record),daemon=False)
+        frames = list(self.frames)
+        observation = self.observations.record(frames, sample['pid'], os.getpid()) if self.recorder else None
+        self.dump_thread = threading.Thread(target=self.restart_with_trace,
+                                            args=(folder,record,frames,observation),daemon=False)
         self.dump_thread.start()
         self.publish('recovering',taskmgr_pid=sample['pid'])
 
+    def restart_with_trace(self, folder, record, frames, observation):
+        ready = None
+        if self.recorder:
+            try:
+                write_json(folder/'observation.json', observation)
+                markers = {m['qpc'] for m in observation['markers'].values() if m}
+                for i, frame in enumerate(frames):
+                    if i in {0,len(frames)//2,len(frames)-1} or frame['qpc'] in markers:
+                        for key, data in frame['images'].items():
+                            (folder/f'{i:02d}-{key}.png').write_bytes(data)
+                started = time.monotonic()
+                ready = self.recorder.snapshot(folder)
+                completed = ready.wait(SNAPSHOT_WAIT_SECONDS)
+                record['light_etw'] = {'snapshot_finished_before_recovery':completed,
+                                       'wait_seconds':round(time.monotonic()-started,3),
+                                       'wait_limit_seconds':SNAPSHOT_WAIT_SECONDS,
+                                       'result_file':'trace-capture.json'}
+            except Exception as exc:
+                record['light_etw'] = {'error':repr(exc)}
+        # Evidence collection failure must never disable the visual safety net.
+        self.recover(folder, record)
+        if ready is not None:
+            try:
+                self.offline.submit(folder, ready)
+            except Exception as exc:
+                write_json(folder/'analysis-status.json', {'status':'failed','error':repr(exc)})
+
     def set_restart_only(self, value):
-        self.restart_only = bool(value)
+        # Light daily recording never implicitly enables the old debugger mode.
+        self.restart_only = bool(value or self.light_etw)
         if self.restart_only:
             # Detaching can take seconds; never block the tray on it.
             threading.Thread(target=self.origin.cancel_all,daemon=True).start()
@@ -390,6 +437,7 @@ class Monitor:
             write_json(folder/'event.json',evidence)
             self.recovery_result=evidence['recovery']
             self.last_status_write=0
+            self.recovery_marker(folder,evidence,'recovery_started')
             result=restart_taskmgr(evidence['taskmgr_pid'],evidence['window'])
             if result.get('launch_pid'):
                 self.watch_origin(result['launch_pid'])
@@ -399,10 +447,17 @@ class Monitor:
             evidence['recovery']={'status':'failed','error':str(exc),'finished':timestamp()}
             self.capture_result='recovery_failed'
         finally:
+            self.recovery_marker(folder,evidence,'recovery_finished')
             self.schedule_retry(folder,evidence)
             write_json(folder/'event.json',evidence)
             self.recovery_result=evidence.get('recovery')
             self.rearm_requested=True
+
+    def recovery_marker(self, folder, evidence, name):
+        try:
+            mark_recovery(folder,name,timestamp())
+        except Exception as exc:
+            evidence.setdefault('observation_errors',[]).append(repr(exc))
 
     def resume_navigation(self,folder,evidence):
         self.recovery_result=evidence['recovery']
@@ -471,7 +526,8 @@ class Monitor:
         self.enabled = False
         self.origin.cancel_all()
         self.reset_worker()
-        self.detector.reset()
-        self.frames.clear()
+        if self.recorder:
+            self.recorder.stop()
+        self.reset_observations()
         self.last_status_write = 0
         self.publish('stopped')

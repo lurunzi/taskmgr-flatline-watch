@@ -22,7 +22,11 @@ TEXT = {
  'recovered':'取证完成，任务管理器已重启', 'recovery_failed':'取证已保存，自动恢复未完成',
  'autostart':'开机自启动', 'autostart_missing':'未安装自启动（运行 Install.cmd）', 'query_trace':'查询追踪',
  'restart_only':'只重启，不取证', 'hint_restart':'持续异常 30 秒后直接重启任务管理器，不保存转储和图表，然后继续检测。',
- 'restart_cooldown':'重启冷却中', 'restarted':'任务管理器已重启', 'restart_failed':'重启未完成，稍后重试'},
+ 'restart_cooldown':'重启冷却中', 'restarted':'任务管理器已重启', 'restart_failed':'重启未完成，稍后重试',
+ 'light_etw':'轻量事件记录', 'etw_error':'事件记录不可用，请查看状态记录',
+ 'restart_etw':'自动恢复，不抓转储',
+ 'report':'打开最近候选报告',
+ 'hint_etw':'持续异常 30 秒后保存图表和循环事件记录，重启任务管理器，再生成候选分析。候选不代表已证明的原因。'},
  'en': {'title':'Task Manager automatic capture', 'folder':'Open records on D:', 'quit':'Quit', 'show':'Status',
  'pause':'Pause', 'resume':'Resume', 'hint':'After 30 seconds of suspected freezing, saves and verifies two dumps, then restarts Task Manager and resumes detection.',
  'starting':'Starting', 'waiting':'Waiting for Task Manager CPU / logical processors page', 'normal':'Aggregate changing',
@@ -34,7 +38,11 @@ TEXT = {
  'recovered':'Evidence saved; Task Manager restarted', 'recovery_failed':'Evidence saved; recovery incomplete',
  'autostart':'Start at logon', 'autostart_missing':'Autostart not installed (run Install.cmd)', 'query_trace':'Query trace',
  'restart_only':'Restart only, no evidence', 'hint_restart':'After 30 seconds of suspected freezing, restarts Task Manager directly without saving dumps or graphs, then resumes detection.',
- 'restart_cooldown':'Restart cooldown', 'restarted':'Task Manager restarted', 'restart_failed':'Restart incomplete; retrying'}
+ 'restart_cooldown':'Restart cooldown', 'restarted':'Task Manager restarted', 'restart_failed':'Restart incomplete; retrying',
+ 'light_etw':'Light event recording', 'etw_error':'Event recording unavailable; see status record',
+ 'restart_etw':'Auto recover, no dumps',
+ 'report':'Open latest candidate report',
+ 'hint_etw':'After 30 seconds of suspected freezing, saves charts and circular events, restarts Task Manager, then reports candidates. Candidates are not proven causes.'}
 }
 
 class Watch(QWidget):
@@ -42,8 +50,15 @@ class Watch(QWidget):
         super().__init__()
         self.settings=QSettings(str(ROOT/'.local/preferences.ini'),QSettings.IniFormat)
         self.lang=self.settings.value('language','zh')
+        if '--light-etw' in sys.argv:
+            self.settings.setValue('light_etw','true')
+        if '--no-light-etw' in sys.argv:
+            self.settings.setValue('light_etw','false')
         self.monitor=Monitor(query_trace='--query-trace' in sys.argv,
-                             restart_only=self.settings.value('restart_only','false')=='true')
+                             restart_only=self.settings.value('restart_only','false')=='true',
+                             light_etw=self.settings.value('light_etw','false')=='true')
+        if self.monitor.light_etw:
+            self.settings.setValue('restart_only','true')
         self.setWindowIcon(QIcon(str(ROOT/'assets/icon.png')))
         layout=QVBoxLayout(self)
         row=QHBoxLayout()
@@ -66,13 +81,15 @@ class Watch(QWidget):
         QApplication.styleHints().colorSchemeChanged.connect(self.apply_theme)
         self.tray=QSystemTrayIcon(self.windowIcon(),self)
         self.menu=QMenu();self.show_action=QAction(self);self.quit_action=QAction(self)
+        self.report_action=QAction(self)
+        self.report_action.triggered.connect(self.open_report)
         self.autostart_action=QAction(self);self.autostart_action.setCheckable(True)
         self.restart_only_action=QAction(self);self.restart_only_action.setCheckable(True)
         self.restart_only_action.triggered.connect(self.set_restart_only)
         self.show_action.triggered.connect(self.show);self.quit_action.triggered.connect(self.quit)
         self.autostart_action.triggered.connect(self.set_autostart)
         self.menu.aboutToShow.connect(self.refresh_autostart)
-        self.menu.addAction(self.show_action);self.menu.addAction(self.restart_only_action);self.menu.addAction(self.autostart_action);self.menu.addAction(self.quit_action)
+        self.menu.addAction(self.show_action);self.menu.addAction(self.report_action);self.menu.addAction(self.restart_only_action);self.menu.addAction(self.autostart_action);self.menu.addAction(self.quit_action)
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(lambda reason:self.show() if reason==QSystemTrayIcon.DoubleClick else None)
         self.tray.show()
@@ -84,8 +101,12 @@ class Watch(QWidget):
         self.lang='zh' if self.language.currentIndex()==0 else 'en'
         self.settings.setValue('language',self.lang)
         self.setWindowTitle(self.text('title'));self.note.setText(self.text('hint_restart' if self.monitor.restart_only else 'hint'))
-        self.restart_only.setText(self.text('restart_only'));self.restart_only_action.setText(self.text('restart_only'))
+        if self.monitor.light_etw and self.monitor.restart_only:
+            self.note.setText(self.text('hint_etw'))
+        mode_label=self.text('restart_etw' if self.monitor.light_etw else 'restart_only')
+        self.restart_only.setText(mode_label);self.restart_only_action.setText(mode_label)
         self.folder.setText(self.text('folder'));self.show_action.setText(self.text('show'));self.quit_action.setText(self.text('quit'))
+        self.report_action.setText(self.text('report'))
         self.autostart.setText(self.text('autostart'));self.autostart_action.setText(self.text('autostart'))
         for i,key in enumerate(('system','light','dark')):self.theme.setItemText(i,self.text(key))
         self.update_status()
@@ -101,7 +122,8 @@ class Watch(QWidget):
         key=state['state']
         if restart_only and key=='cooldown':key='restart_cooldown'
         self.status.setText(self.text(key) + (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else '')
-                            + (f" · {self.text('query_trace')}" if self.monitor.origin.query_trace else ''))
+                            + (f" · {self.text('query_trace')}" if self.monitor.origin.query_trace and not restart_only else '')
+                            + (f" · {self.text('light_etw')}" if self.monitor.light_etw else ''))
         result=self.monitor.capture_result
         if state['state']=='cooldown':
             self.details.setText(f"{state.get('cooldown_remaining',0):.0f}s")
@@ -111,8 +133,27 @@ class Watch(QWidget):
             if restart_only and result in ('recovered','recovery_failed'):
                 result={'recovered':'restarted','recovery_failed':'restart_failed'}[result]
             self.details.setText(self.text(result) if result else str(OUTPUT))
+        trace=state.get('light_etw',{})
+        if self.monitor.light_etw and trace.get('state') in ('error','stop_pending'):
+            self.details.setText(self.text('etw_error'))
+            self.details.setToolTip(trace.get('error',''))
+        else:
+            self.details.setToolTip('')
         self.pause.setText(self.text('pause' if self.monitor.enabled else 'resume'))
+        self.report_action.setEnabled(bool(self.report_path()))
         self.tray.setToolTip(self.text('title')+'\n'+self.status.text())
+    def report_path(self):
+        from pathlib import Path
+        current=self.monitor.offline.status() if self.monitor.offline else {}
+        path=Path(current['report']) if current.get('report') else None
+        if path and path.is_file():return path
+        if self.monitor.last_event:
+            path=Path(self.monitor.last_event)/'incident-analysis.md'
+            if path.is_file():return path
+        return None
+    def open_report(self):
+        path=self.report_path()
+        if path:QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
     def tick(self):
         request=ROOT/'.local/stop.request'
         if request.exists():
@@ -124,10 +165,10 @@ class Watch(QWidget):
         self.update_status()
     def refresh_restart_only(self):
         for control in (self.restart_only,self.restart_only_action):
-            control.blockSignals(True);control.setChecked(self.monitor.restart_only);control.blockSignals(False)
+            control.blockSignals(True);control.setChecked(self.monitor.restart_only);control.setEnabled(not self.monitor.light_etw);control.blockSignals(False)
     def set_restart_only(self,checked):
         self.monitor.set_restart_only(checked)
-        self.settings.setValue('restart_only','true' if checked else 'false')
+        self.settings.setValue('restart_only','true' if self.monitor.restart_only else 'false')
         self.refresh_restart_only();self.translate()
     def refresh_autostart(self,current=None):
         current=Autostart.state() if current is None else current

@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "任务管理器轻量恢复",
+    "title": "任务管理器轻量异常记录",
     "locale": "zh-CN",
     "quality_profile": "showcase",
     "legend": {
@@ -50,14 +50,14 @@
     },
     {
       "id": "capture",
-      "label": "恢复模式",
+      "label": "保存现场",
       "fromCol": 3,
       "toCol": 4,
       "variant": "emphasis"
     },
     {
       "id": "recover",
-      "label": "恢复",
+      "label": "恢复及离线分析",
       "fromCol": 5,
       "toCol": 5,
       "variant": "dashed"
@@ -69,7 +69,8 @@
     "detector",
     "target_check",
     "dumps",
-    "restart"
+    "restart",
+    "analysis"
   ],
   "nodes": [
     {
@@ -79,7 +80,7 @@
       "type": "frontend",
       "label": "CPU 页面",
       "sublabel": "逻辑处理器视图",
-      "width": 160
+      "width": 150
     },
     {
       "id": "chart_read",
@@ -88,7 +89,7 @@
       "type": "backend",
       "label": "读取图表",
       "sublabel": "每 2 秒 PrintWindow",
-      "width": 160
+      "width": 150
     },
     {
       "id": "detector",
@@ -97,25 +98,25 @@
       "type": "backend",
       "label": "冻结检测",
       "sublabel": "总图平 30 秒、分线程在动",
-      "width": 160
+      "width": 150
     },
     {
       "id": "target_check",
       "lane": "watcher",
       "col": 3,
-      "type": "security",
-      "label": "核对目标",
-      "sublabel": "System32\\Taskmgr.exe",
-      "width": 160
+      "type": "backend",
+      "label": "保存观察",
+      "sublabel": "时间与图表",
+      "width": 150
     },
     {
       "id": "dumps",
       "lane": "watcher",
       "col": 4,
       "type": "backend",
-      "label": "只重启",
-      "sublabel": "不挂调试器，不写转储",
-      "width": 160
+      "label": "请求保存事件",
+      "sublabel": "最多等待两秒",
+      "width": 150
     },
     {
       "id": "restart",
@@ -124,34 +125,43 @@
       "type": "backend",
       "label": "重启任务管理器",
       "sublabel": "重新打开并回到 CPU 页",
-      "width": 180
+      "width": 150
     },
     {
       "id": "no_capture",
       "lane": "guard",
       "col": 2,
       "type": "security",
-      "label": "不取证",
-      "sublabel": "整页静止",
-      "width": 160
-    },
-    {
-      "id": "no_restart",
-      "lane": "guard",
-      "col": 5,
-      "type": "security",
-      "label": "稍后重试",
-      "sublabel": "重启未成功",
-      "width": 160
+      "label": "继续观察",
+      "sublabel": "整页静止不触发",
+      "width": 150
     },
     {
       "id": "captures",
       "lane": "evidence",
       "col": 4,
       "type": "database",
-      "label": "重启记录",
-      "sublabel": "时间、PID、结果",
-      "width": 180
+      "label": "异常证据",
+      "sublabel": "ETL、时间、图表",
+      "width": 150
+    },
+    {
+      "id": "ring",
+      "lane": "evidence",
+      "col": 0,
+      "type": "database",
+      "label": "循环 ETW",
+      "sublabel": "进程与线程，64 MiB",
+      "width": 150
+    },
+    {
+      "id": "analysis",
+      "lane": "evidence",
+      "col": 5,
+      "type": "backend",
+      "label": "离线候选分析",
+      "sublabel": "父链、计数、覆盖",
+      "width": 150
     }
   ],
   "edges": [
@@ -183,41 +193,54 @@
       "id": "recover",
       "from": "dumps",
       "to": "restart",
-      "label": "视觉确认",
+      "label": "保存失败也恢复",
       "variant": "emphasis"
     },
     {
       "id": "ignore",
       "from": "detector",
       "to": "no_capture",
-      "label": "不是冻结",
+      "label": "不满足条件",
       "variant": "dashed",
       "role": "branch"
     },
     {
-      "id": "hold",
-      "from": "restart",
-      "to": "no_restart",
-      "label": "失败",
-      "variant": "security",
-      "role": "error"
+      "id": "write",
+      "from": "dumps",
+      "to": "captures",
+      "label": "异步保存",
+      "variant": "dashed"
     },
     {
-      "id": "write",
-      "from": "restart",
+      "id": "ring_save",
+      "from": "ring",
       "to": "captures",
-      "label": "event.json",
+      "label": "原始事件",
+      "variant": "dashed"
+    },
+    {
+      "id": "after_recovery",
+      "from": "restart",
+      "to": "analysis",
+      "label": "恢复后",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decode",
+      "from": "captures",
+      "to": "analysis",
+      "label": "解码",
       "variant": "dashed"
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "调查结案，证据保留",
+      "title": "候选，不是因果结论",
       "items": [
-        "二进制重试缺陷、原函数复现、历史转储",
-        "结束活体地址追踪，原始证据留在本机",
-        "离线统计 10 毫秒线程新建 Top 3，仅作时间线索"
+        "观察时刻不是底层故障时刻",
+        "缺失时段或丢事件时不输出具名排行",
+        "不挂调试器，不写转储，保留原始证据"
       ]
     }
   ]

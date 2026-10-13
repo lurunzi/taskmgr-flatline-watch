@@ -33,12 +33,27 @@ def frequency():
 
 
 class Session:
-    def __init__(self, folder):
+    @classmethod
+    def open_stopped(cls, folder):
+        """Open retained evidence for offline decoding, never start an ETW session."""
+        obj = cls.__new__(cls)
+        obj.folder = Path(folder)/'process-trace'
+        obj.record = json.loads((obj.folder/'session.json').read_text(encoding='utf-8'))
+        if obj.record.get('status') != 'stopped':
+            raise ValueError('ETW stop not verified; retain raw files without decoding')
+        obj.name = obj.record['session']
+        obj.system = Path(os.environ.get('SystemRoot', r'C:\Windows'))/'System32'
+        obj.active = False
+        return obj
+
+    def __init__(self, folder, command_timeout=30, baseline_timeout=30):
         self.folder = Path(folder)/'process-trace'
         self.folder.mkdir()
         self.name = 'TaskmgrCorrelation-'+uuid.uuid4().hex
         self.system = Path(os.environ.get('SystemRoot',r'C:\Windows'))/'System32'
         self.active = False
+        self.command_timeout = command_timeout
+        self.baseline_timeout = baseline_timeout
         self.record = {'session':self.name,'provider':PROVIDER,'keywords':'0x30',
                        'max_etl_mb':LIMIT_MB,'clock':'raw QPC','qpc_frequency':frequency(),
                        'attribution':'unproven','status':'preflight'}
@@ -48,7 +63,7 @@ class Session:
         (self.folder/'session.json').write_text(json.dumps(self.record,indent=2)+'\n',encoding='utf-8')
 
     def command(self, args, label):
-        result = subprocess.run(args,capture_output=True,timeout=30,
+        result = subprocess.run(args,capture_output=True,timeout=self.command_timeout,
                                 creationflags=subprocess.CREATE_NO_WINDOW)
         (self.folder/(label+'.log')).write_bytes(result.stdout+result.stderr)
         if result.returncode:
@@ -64,19 +79,24 @@ class Session:
                       '-f','bincirc','-max',str(LIMIT_MB),'-bs','64','-nb','16','64',
                       '-ct','perf','-ets'],'start')
         self.save(status='running',started_qpc=qpc())
+        self.baseline()
+
+    def baseline(self, final=False):
         # Baseline identifies pre-existing processes. Creation time prevents PID
         # reuse; missing paths remain unknown. Never collect command-line secrets.
         command = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); " \
             "@(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,ExecutablePath,Name," \
             "@{n='CreateTime';e={$_.CreationDate.ToUniversalTime().ToString('o')}}) | ConvertTo-Json -Depth 3"
-        self.save(baseline_begin_qpc=qpc())
+        prefix = 'end_baseline' if final else 'baseline'
+        self.save(**{prefix+'_begin_qpc':qpc()})
         result = subprocess.run(['powershell.exe','-NoProfile','-Command',command],
-                                capture_output=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
+                                capture_output=True,timeout=self.baseline_timeout,creationflags=subprocess.CREATE_NO_WINDOW)
         if result.returncode:
             raise RuntimeError('process baseline failed')
         data = json.loads(result.stdout.decode('utf-8-sig'))
-        (self.folder/'baseline.json').write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
-        self.save(baseline_end_qpc=qpc())
+        name = 'end-baseline.json' if final else 'baseline.json'
+        (self.folder/name).write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
+        self.save(**{prefix+'_end_qpc':qpc()})
 
     def stop(self):
         if self.active:
