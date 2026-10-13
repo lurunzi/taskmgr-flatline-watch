@@ -1,8 +1,10 @@
-"""List temporal candidates, never a verdict, using raw ETW QPC and query receipts."""
+"""Rank the top three thread creators before an abnormal query receipt (not causality)."""
 import argparse
+import bisect
 import collections
 import csv
 import json
+import math
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -107,15 +109,21 @@ def identities(events,baseline,header):
     return events
 
 
-def correlate(folder,margin_ms=100):
+def correlate(folder,lookback_ms=10,output=None):
+    if not math.isfinite(lookback_ms) or not 0<lookback_ms<=10:
+        raise ValueError('lookback-ms must be in (0,10]')
+    folder = Path(folder)
+    output = Path(output) if output is not None else folder
     trace = folder/'process-trace'
     events,header,errors = decode(trace/'events.xml')
     origin = json.loads((folder/'origin.json').read_text(encoding='utf-8'))
-    if origin.get('qpc_frequency')!=header['PerfFreq']:
+    if header['PerfFreq']<=0 or origin.get('qpc_frequency')!=header['PerfFreq']:
         raise ValueError('query/ETW clock frequencies do not match')
     session = json.loads((trace/'session.json').read_text(encoding='utf-8'))
     if session.get('status')!='stopped' or session.get('decode_exit')!=0:
         errors.append('ETW stop/decode not verified')
+    if session.get('qpc_frequency')!=header['PerfFreq']:
+        errors.append('session/ETW clock frequencies do not match')
     baseline = json.loads((trace/'baseline.json').read_text(encoding='utf-8-sig'))
     # With loss/overwriting/decode gaps, a stale baseline PID may appear alive
     # after unobserved reuse. Do not emit named candidates from incomplete data.
@@ -123,45 +131,70 @@ def correlate(folder,margin_ms=100):
         events = identities(events,baseline,header)
     queries_path = folder/'query-trace.jsonl'
     queries = [json.loads(s) for s in queries_path.read_text(encoding='utf-8').splitlines()] if queries_path.exists() else []
-    rows,windows = [],[]
+    rows,windows,skipped = [],[],[]
     freq = header['PerfFreq']
-    margin = int(freq*margin_ms/1000)
+    lookback = int(freq*lookback_ms/1000)
+    if lookback<1:
+        raise ValueError('lookback is below one QPC tick')
+    # Thread creation, not net count or every process event, is the ranking key.
+    starts = [e for e in events if e['kind']=='thread_start']
+    clocks = [e['qpc'] for e in starts]
     for q in queries:
         if errors:
             break
         begin,end = q.get('entry_received_qpc'),q.get('return_received_qpc')
-        if not begin or not end or not q.get('query','').startswith(origin['instance']+':'):
-            errors.append('query missing clock or instance identity')
+        calls = q.get('calls',[])
+        # The final NtQSI return marker is closer to the query than the wrapper
+        # return. Do not silently fall back to wall time or claim target timing.
+        anchor = calls[-1].get('received_qpc') if calls else None
+        reason = None
+        if not all(isinstance(t,int) and t>0 for t in (begin,anchor,end)) or not q.get('query','').startswith(origin['instance']+':'):
+            reason = 'query missing QPC receipt or instance identity'
+        elif not begin<=anchor<=end:
+            reason = 'query receipt clocks out of order'
+        elif min(begin,anchor-lookback)<session['baseline_end_qpc'] or end>session['stopped_qpc']:
+            reason = 'query/lookback outside baseline-to-stop coverage'
+        if reason:
+            skipped.append({'query':q.get('query'),'reason':reason})
             continue
-        if begin<session['baseline_end_qpc'] or end>session['stopped_qpc']:
-            errors.append('query outside baseline-to-stop coverage')
-            continue
-        selected = [e for e in events if begin-margin<=e['qpc']<=end+margin]
-        windows.append({'query':q['query'],'kind':q['kind'],'receipt_begin_qpc':begin,'receipt_end_qpc':end,
-                        'margin_ms':margin_ms,'events':selected,'calls':q['calls']})
+        lower = anchor-lookback
+        selected = starts[bisect.bisect_left(clocks,lower):bisect.bisect_right(clocks,anchor)]
         groups = collections.defaultdict(list)
         for e in selected:
-            groups[e['identity']].append(e)
-        for identity,group in groups.items():
+            # Unknown lifetimes must not collapse reused PIDs into one creator.
+            if e['process'] is not None:
+                groups[(e['identity'],e['process'].get('image') or 'unknown')].append(e)
+        ranked = sorted(groups.items(),key=lambda pair:(-len(pair[1]),pair[0]))[:3]
+        top = []
+        for rank,((identity,image),group) in enumerate(ranked,1):
             p = group[0]['process'] or {}
-            counts = collections.Counter(e['kind'] for e in group)
-            inside = sum(begin<=e['qpc']<=end for e in group)
-            rows.append({'query':q['query'],'query_kind':q['kind'],'identity':identity,
-                         'image':p.get('image') or 'unknown','parent_pid':p.get('parent_pid'),
-                         'process_start':counts['process_start'],'process_stop':counts['process_stop'],
-                         'thread_start':counts['thread_start'],'thread_stop':counts['thread_stop'],
-                         'inside_receipt_window':inside,'margin_only':len(group)-inside,
-                         'net_threads':counts['thread_start']-counts['thread_stop'],
-                         'assessment':'temporal candidate only'})
+            row = {'query':q['query'],'query_kind':q['kind'],'rank':rank,'identity':identity,
+                   'pid':group[0]['pid'],'create_time':p['created'],'image':image,
+                   'parent_pid':p.get('parent_pid'),'thread_start_count':len(group),
+                   'thread_starts_per_second':len(group)*freq/lookback,
+                   'lookback_ms':lookback*1000/freq,'window_begin_qpc':lower,'anchor_qpc':anchor,
+                   'first_start_qpc':group[0]['qpc'],'last_start_qpc':group[-1]['qpc'],
+                   'assessment':'temporal ranking only; not a fault threshold'}
+            rows.append(row)
+            top.append(row)
+        windows.append({'query':q['query'],'kind':q['kind'],'receipt_begin_qpc':begin,'receipt_end_qpc':end,
+                        'window_begin_qpc':lower,'anchor_qpc':anchor,'lookback_ms':lookback*1000/freq,
+                        'thread_start_count':len(selected),
+                        'unresolved_thread_starts':sum(e['process'] is None for e in selected),
+                        'ranked_processes_available':len(groups),'top':top,'calls':calls})
     result = {'instance':origin['instance'],'etw_events':len(events),'queries':len(windows),
-              'abnormal_queries_seen':len(queries),
+              'abnormal_queries_seen':len(queries),'query_kinds':dict(collections.Counter(q['kind'] for q in queries)),
+              'lookback_ms':lookback_ms,'top_limit':3,'ranking_rows':len(rows),'skipped_queries':skipped,
               'errors':sorted(set(errors)),'trace_header':header,'attribution':'unproven',
-              'clock_limit':'Query times are debugger-host receipts; latency has no measured upper bound. Margin is a search heuristic, not an error bound. Coincidence and net growth do not prove kernel buffer contribution.',
+              'anchor':'final NtQSI return marker received by debugger host',
+              'clock_limit':'Query times are debugger-host receipts; latency has no measured upper bound. The inclusive lookback window is a search heuristic, not microsecond target timing. Thread starts do not prove snapshot growth, kernel buffer contribution or a universal churn threshold.',
               'windows':windows}
-    (folder/'process-correlation.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
-    fields = ['query','query_kind','identity','image','parent_pid','process_start','process_stop',
-              'thread_start','thread_stop','inside_receipt_window','margin_only','net_threads','assessment']
-    with (folder/'process-candidates.tsv').open('w',encoding='utf-8',newline='') as f:
+    output.mkdir(parents=True,exist_ok=True)
+    (output/'thread-top-delta.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+    fields = ['query','query_kind','rank','identity','pid','create_time','image','parent_pid',
+              'thread_start_count','thread_starts_per_second','lookback_ms','window_begin_qpc','anchor_qpc',
+              'first_start_qpc','last_start_qpc','assessment']
+    with (output/'thread-top-delta.tsv').open('w',encoding='utf-8',newline='') as f:
         writer = csv.DictWriter(f,fields,delimiter='\t')
         writer.writeheader()
         writer.writerows(rows)
@@ -171,8 +204,12 @@ def correlate(folder,margin_ms=100):
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('folder',type=Path)
-    parser.add_argument('--margin-ms',type=float,default=100)
+    parser.add_argument('--lookback-ms',type=float,default=10,help='inclusive lookback before final NtQSI receipt, (0,10] ms')
+    parser.add_argument('--output',type=Path,help='write new Top Delta reports here, preserving historical evidence')
     args = parser.parse_args()
-    if not 0<=args.margin_ms<=1000:
-        parser.error('margin-ms must be in [0,1000]')
-    print(json.dumps(correlate(args.folder,args.margin_ms),indent=2))
+    if not math.isfinite(args.lookback_ms) or not 0<args.lookback_ms<=10:
+        parser.error('lookback-ms must be in (0,10]')
+    summary = correlate(args.folder,args.lookback_ms,args.output)
+    print(json.dumps(summary,indent=2))
+    if summary['errors'] or summary['skipped_queries']:
+        raise SystemExit(2)

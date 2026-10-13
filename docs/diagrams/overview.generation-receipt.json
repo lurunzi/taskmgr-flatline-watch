@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-08",
-  "purpose": "README workflow with opt-in address provenance and bounded process/thread ETW correlation.",
+  "date": "2026-10-13",
+  "purpose": "Restart-only daily recovery; retired live tracing and offline Top Delta.",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -16,14 +16,14 @@
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "bytes": 4763,
-        "sha256": "55de2ff19e9db63d99c2b038de3d3defa2b591bee8d7019d281af84989dd302b"
+        "sha256": "d2c355434348ae4e4b3d0b5146610535e154b70ea4e6f1eb63b560d8a0a9bae0",
+        "bytes": 4759
       },
       "artifact": {
         "file": "overview.en.html",
         "committed": false,
-        "bytes": 713631,
-        "sha256": "7c3c2ad349753c6ffb379217b7607e828987f619256f8924a82abdacaa092989"
+        "sha256": "253aa6f218477f60f45b8c039b3674cb2ec8d9c938c7e29069d60b97d5c6eb43",
+        "bytes": 713699
       },
       "validation": {
         "checksPassed": 9,
@@ -45,17 +45,17 @@
         {
           "file": "overview.en.light.png",
           "theme": "light",
-          "pixels": "4452x2608",
-          "bytes": 522623,
-          "sha256": "8b3ea8eda1475be7b64db4cb8689deb7ffc68d04096847c5317a930d1cd9494a",
+          "pixels": "4528x2608",
+          "bytes": 525000,
+          "sha256": "2ec85ae29b70abde4af3fafe6cb04d0bcc5b84157af95ec88cd7f6caac9d3ee9",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
           "theme": "dark",
-          "pixels": "4452x2608",
-          "bytes": 532706,
-          "sha256": "2b1bae6ba85fc6e38556e378da7f2a7bcc5b2153586cc2646a1bd2b356bb88c6",
+          "pixels": "4528x2608",
+          "bytes": 536087,
+          "sha256": "dea9e4f040ce09672257da25b143a99836a4d07a744656b12ac897df5d4f4b11",
           "canonical": true
         }
       ]
@@ -64,14 +64,14 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "bytes": 4796,
-        "sha256": "744c9fd820547c9f93d52529f3ccdbccefa3402a211f33a96ee65d69da421700"
+        "sha256": "d070238e4913177dd179ca166b76754a6e4db6a13900ecf8f3d393e11702b753",
+        "bytes": 4745
       },
       "artifact": {
         "file": "overview.zh.html",
         "committed": false,
-        "bytes": 713521,
-        "sha256": "e55815b27a39cb470eb451fe12ea2226ece89517a5b807f4c805e8e03b9d85a0"
+        "sha256": "a3b948f12d0431e6141d13b5925c09bbd5170a16ee848aa4fe5cf504453fdc30",
+        "bytes": 713478
       },
       "validation": {
         "checksPassed": 9,
@@ -94,28 +94,28 @@
           "file": "overview.zh.light.png",
           "theme": "light",
           "pixels": "4348x2608",
-          "bytes": 552937,
-          "sha256": "856f0b86eabd091386343b64bbe4ff28bce3388b049225d3919333848547c3f8",
+          "bytes": 539159,
+          "sha256": "57bd2b181d1cab92df1e64d74bae133e5115a09f65635bc277ec91910619d9d4",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
           "theme": "dark",
           "pixels": "4348x2608",
-          "bytes": 564127,
-          "sha256": "5a6ea9fc88e1f30686fbdbee5abdd2c9b3742bfb7e3bea21986774e9a2003014",
+          "bytes": 549794,
+          "sha256": "c35f0abdc7fc1983850be21dd821f55ac56a8766aad4af6584bd239106cf5ba7",
           "canonical": true
         }
       ]
     }
   ],
-  "review_scope": "Codex inspected English light at 1440x900 and Chinese dark at 2048x1320. Automated browser checks passed all four required viewports in both languages. The updated diagnostic card is HTML viewer content; canonical SVG-only PNG exports exclude cards and remain byte-identical to baseline.",
+  "review_scope": "Codex inspected English light at 1440x900 and Chinese dark at 2048x1320; no clipped labels or unintended crossings. Browser checks passed all four viewports for both languages. Canonical PNGs contain the diagram; viewer-only cards are excluded.",
   "generation_commands": [
     "node <archify>/bin/archify.mjs validate workflow docs/diagrams/overview.<lang>.workflow.json --quality showcase --json",
     "node <archify>/bin/archify.mjs deliver workflow docs/diagrams/overview.<lang>.workflow.json <out>/overview.<lang>.html --quality showcase --json",
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "static_export": "tools/archify-export-png.mjs opens the delivered HTML with ?theme=light or ?theme=dark in the headless Chrome that Archify visual-check drives (1600x1000) and invokes the viewer's own Export > PNG button, keeping only the image/png blob. Every export reported data-last-export-canonical=true and data-last-export-bytes equal to the saved size; a second export of overview.en.light was byte-identical. No SVG was hand-written and no screenshot stands in for a README image.",
-  "local_artifacts": ".local/process-correlation-20261008/overview.<lang>.html and its artifact-bound visual-check sidecars (not committed)"
+  "static_export": "Generated with tools/archify-export-png.mjs through the delivered viewer Export > PNG action. All four exports reported canonical=true and matching byte counts. No SVG was hand-written.",
+  "local_artifacts": ".local/closeout-20261013/overview.<lang>.html, delivery/visual/export receipts and visual-check sidecars (not committed)"
 }

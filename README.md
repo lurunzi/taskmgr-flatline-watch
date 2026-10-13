@@ -15,10 +15,17 @@ The English version governs.
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
 The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
 
+## Current operation and investigation closure (2026-10-13)
+
+The confirmed retry-count defect in the investigated DLL build is ready for engineering escalation. The three evidence layers are binary control flow, execution of the original native function, and historical aggregation/frozen-state dumps. This closes the local defect investigation; the same-incident buffer-to-freeze address lineage remains unobserved. It is not a Microsoft confirmation or a Windows fix. Live address-chain collection is retired for this investigation; the diagnostic tools and older instructions below are retained for reproducibility, not as a request to resume collection.
+
+This workstation now uses the saved **Restart only, no evidence** preference with `Start.cmd`: after 30 seconds of a flat total curve while logical graphs move, restart Task Manager and restore its CPU page. No ProcDump/cdb origin monitor is attached in this mode. Autostart is unchanged. The current policy supersedes the historical capture-mode and validation descriptions below; the program still supports evidence mode if deliberately selected.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.en.dark.png">
-  <img alt="Workflow diagram: the watcher reads Task Manager's native CPU charts every 2 seconds; the freeze detector fires when the total curve stays flat for 30 seconds while the logical-processor curves keep moving, otherwise nothing is captured; after the target is confirmed as System32\Taskmgr.exe, ProcDump writes two full dumps to TaskmgrFreezeCaptures on D:; only when both dumps are valid is Task Manager restarted and returned to the CPU page, and a failed dump or the storage limit means no restart." src="docs/diagrams/overview.en.light.png">
+  <img alt="Current restart-only workflow: read native CPU charts every 2 seconds, confirm a flat total curve with moving logical graphs for 30 seconds, verify Taskmgr, restart it and restore the CPU page; retain an event.json receipt, without debugger attachment or dumps." src="docs/diagrams/overview.en.light.png">
 </picture>
+<!-- Historical capture-mode caption retained with the earlier operation records: Workflow diagram: the watcher reads Task Manager's native CPU charts every 2 seconds; the freeze detector fires when the total curve stays flat for 30 seconds while the logical-processor curves keep moving, otherwise nothing is captured; after the target is confirmed as System32\Taskmgr.exe, ProcDump writes two full dumps to TaskmgrFreezeCaptures on D:; only when both dumps are valid is Task Manager restarted and returned to the CPU page, and a failed dump or the storage limit means no restart. -->
 
 ## Operation
 
@@ -61,6 +68,8 @@ Each Task Manager instance gets one debugger. By default ProcDump waits for the 
 
 ## Address provenance capture (opt-in)
 
+Historical procedure, retired from the current investigation on 2026-10-13. Do not run another 20–60 minute session as part of this closeout.
+
 `tools/capture-address-chain.py --pid <current PID> --minutes 20 --output D:/TaskmgrFreezeCaptures/address-chain-<unique name>` runs with `.venv/Scripts/python.exe` in an administrator terminal. The output folder must be new and contain no spaces. It verifies the Taskmgr image, process creation time, DLL hash and breakpoint instructions, stops the existing watcher through `Stop.ps1`, and restores its previous mode only after the debugger has exited and detached. It refuses to stop an active dump. No saved preference, autostart or system setting is changed. Creating `stop.request` inside that capture folder requests an early graceful detach.
 
 An exhausted query receives an instance-specific query ID and a saved raw buffer. Only then are sparse address-conditioned breakpoints enabled: `ConvertFrom`, native copy/move/assignment entry and return, destructor/default construction, buffer disposal, cache swaps, vector publication and the exact Idle conflict branch at RVA `0x3E5CF`. The collector records completed source-to-destination operations and retires destroyed or overwritten addresses; equal PID/CreateTime fields alone never establish provenance. Unknown paths, malformed memory or exhausted bounds end that attempt as incomplete. Detailed tracing is limited to 120 seconds, 32 live tracked objects and 4,096 events; raw buffers to 8 MiB and the cdb log to 50 MiB. The overall capture defaults to 20 minutes (maximum 60).
@@ -70,6 +79,10 @@ At the precise conflict it saves a full dump and detaches using the existing two
 Run `tools/audit-address-chain.py <capture folder>` with Python to rebuild the address lineage from operations and lifetimes, check raw-buffer hashes and the conflict dump, and write `audit.json` and `address-chain.tsv`. `address-events.jsonl`, `query-trace.jsonl`, `cdb.log`, generated scripts and the binary buffers are the retained raw evidence. A successful address audit does not itself prove the update task stopped: independently inspect the conflict and post-freeze dumps. The tool deliberately keeps overall acceptance incomplete until that separate investigation is documented. Historical report packages are not changed automatically.
 
 ### Process and thread correlation
+
+Current offline analysis uses **Top Delta**: `tools/correlate-process-trace.py <capture folder> --lookback-ms 10 --output <new report folder>`. It writes `thread-top-delta.tsv` and `thread-top-delta.json`, with at most three process instances per abnormal query, ranked by **Thread Start Count** in the inclusive 0–10 ms window before the final NtQSI return marker is received. `--lookback-ms` accepts a positive value up to 10; rates are counts divided by that window. Each row retains PID, creation time, image path (or available name), query kind and raw QPC boundaries. Unresolved identities are counted separately, never combined into a named creator; event loss suppresses rankings and incomplete query coverage is reported. Historical reports are not overwritten.
+
+These are debugger-host receipt times with unbounded, unmeasured transport latency, not microsecond-accurate target execution times. Thread-start counts are neither net snapshot growth nor proof of responsibility, and no universal churn threshold is claimed. The 8 October trace replays to 12 ranked rows across 15 covered abnormal queries, all `third_success`; it contains no three-failure/S_OK query. No new live trace or stress test is required. The former `--margin-ms` interface and broad candidate output described below apply only to the historical analyser through 2026-10-08.
 
 Data loss or circular overwrite risk suppresses named candidate output. Failed session stop is retried three times; if all fail, stop only the session named in `process-trace/session.json` with `logman stop <saved session name> -ets` from an administrator terminal.
 
@@ -98,10 +111,17 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
 上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
 
+## 当前运行与调查结案（2026-10-13）
+
+所查 DLL 版本的重试计数缺陷已证实，可以提交工程升级处理。三层证据包括二进制控制流、原生函数机器码执行结果，以及历史聚合错误／冻结状态转储。本地缺陷调查至此结案；同一现场从缓冲区到冻结的完整地址来源仍未观测到。这不代表微软确认或 Windows 已修复。本次调查结束活体地址链采集；下方旧工具与说明仅为保留可复现性，不是继续采集的要求。
+
+本工作站现已保存「只重启，不取证」偏好，并用 `Start.cmd` 运行：总图平直且分线程图仍变化持续 30 秒后，重启任务管理器并恢复 CPU 页面。此模式不挂 ProcDump/cdb 首报监测，自启动设置不变。当前策略优先于下方保留的历史取证模式和验证记录；程序仍保留主动选择取证模式的能力。
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.zh.dark.png">
-  <img alt="流程图：监测程序每 2 秒读取任务管理器的原生 CPU 图表；总图持续水平 30 秒且逻辑处理器曲线仍在变化时判为疑似冻结，否则不取证；核对目标确为 System32\Taskmgr.exe 后，ProcDump 把两份完整转储写入 D 盘 TaskmgrFreezeCaptures；两份都有效才重启任务管理器并回到 CPU 页，转储失败或存储超限则不重启。" src="docs/diagrams/overview.zh.light.png">
+  <img alt="当前只重启流程：每 2 秒读取原生 CPU 图表，总图平直且分线程图变化持续 30 秒后，核对 Taskmgr，重启并恢复 CPU 页面；仅保留 event.json 重启记录，不挂调试器、不写转储。" src="docs/diagrams/overview.zh.light.png">
 </picture>
+<!-- 历史取证模式图注，随旧运行记录保留：流程图：监测程序每 2 秒读取任务管理器的原生 CPU 图表；总图持续水平 30 秒且逻辑处理器曲线仍在变化时判为疑似冻结，否则不取证；核对目标确为 System32\Taskmgr.exe 后，ProcDump 把两份完整转储写入 D 盘 TaskmgrFreezeCaptures；两份都有效才重启任务管理器并回到 CPU 页，转储失败或存储超限则不重启。 -->
 
 ## 使用
 
@@ -144,6 +164,8 @@ D 盘剩余不足 10 GiB，或已有转储超过 50 GiB 时，暂停新增转储
 
 ## 地址来源采集（可选）
 
+以下为历史流程，自 2026-10-13 起退出本次调查。结案不再运行新的 20–60 分钟采集。
+
 在管理员终端用 `.venv/Scripts/python.exe` 运行 `tools/capture-address-chain.py --pid <当前 PID> --minutes 20 --output D:/TaskmgrFreezeCaptures/address-chain-<唯一名称>`。输出目录必须是新目录且不含空格。程序核对 Taskmgr 路径、进程创建时间、DLL 哈希和断点指令，通过 `Stop.ps1` 正常停止原监测器，仅在调试器退出并分离后恢复原模式；正在转储时拒绝停止。不改变保存的偏好、自启动或系统设置。在本次采集目录创建 `stop.request` 可请求提前正常分离。
 
 重试耗尽的查询获得包含实例身份的唯一编号，并保存原始缓冲区。此后才启用按地址筛选的断点：`ConvertFrom`、原生复制／移动／赋值的入口和返回、析构／默认构造、缓冲区释放、缓存交换、向量发布，以及 RVA `0x3E5CF` 的精确 Idle 冲突分支。采集器记录已完成的源到目标操作，并淘汰已析构或覆盖的地址；相同 PID/CreateTime 字段本身不构成来源证明。未知路径、异常内存或超出边界均记为本次未完成。密集跟踪上限为 120 秒、32 个存活跟踪对象和 4,096 个事件；原始缓冲区上限 8 MiB，cdb 日志上限 50 MiB。整体默认采集 20 分钟，最多 60 分钟。
@@ -153,6 +175,10 @@ D 盘剩余不足 10 GiB，或已有转储超过 50 GiB 时，暂停新增转储
 用 Python 运行 `tools/audit-address-chain.py <采集目录>`，根据操作及生命周期重建地址来源，核对原始缓冲区哈希与冲突转储，生成 `audit.json` 和 `address-chain.tsv`。`address-events.jsonl`、`query-trace.jsonl`、`cdb.log`、生成的脚本和二进制缓冲区保留为原始证据。地址核对通过本身不能证明更新任务已停止，还须独立检查冲突及冻结后转储；工具会把整体验收保持为未完成，直到另行记录该调查结果。不会自动改写历史报告包。
 
 ### 进程与线程关联
+
+当前离线分析采用 **Top Delta**，命令见英文区。新增 `thread-top-delta.tsv` 和 `thread-top-delta.json`：以宿主收到最后一次 NtQSI 返回标记为锚点，统计此前 0–10 毫秒闭区间内的**新建线程数**，每次异常最多输出三个进程实例。`--lookback-ms` 可设为大于零且不超过 10 的值；速率为计数除以窗口时长。每行保留 PID、创建时间、镜像路径（或可用名称）、查询类型和原始 QPC 边界。无法确认的身份单列数量，不合并成具名制造者；数据丢失时不排行，查询覆盖不全时明确报告。历史报告不覆盖。
+
+查询时间是调试器宿主的接收时间，传输延迟没有测得上界，不能当成目标执行的微秒级精确时间。新建线程数不等于快照净增长，也不能证明应用责任；不声明通用 Churn 临界速率。重算 10 月 8 日的记录得到 12 行排行、覆盖 15 次异常，全是 `third_success`，没有三次失败仍返回 S_OK 的查询。不需要新开活体跟踪或压测。下方保留的 `--margin-ms` 接口与全活动候选输出仅适用于截至 2026-10-08 的历史分析器。
 
 出现数据丢失或循环覆盖风险时，不输出具名候选。停止会话失败会重试至三次；若全部失败，应在管理员终端按英文部分命令，仅停止 `process-trace/session.json` 中记录的本任务会话。
 

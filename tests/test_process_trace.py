@@ -67,29 +67,98 @@ class ProcessTraceTests(unittest.TestCase):
         self.assertIn('ETW lost events or buffers',errors)
         self.assertIn('circular trace may have overwritten earlier buffers',errors)
 
-    def test_margin_is_not_inside_window_or_attribution(self):
+    def rank_fixture(self, folder):
+        trace=folder/'process-trace';trace.mkdir()
+        (folder/'origin.json').write_text(json.dumps({'instance':'I','qpc_frequency':1000}))
+        (trace/'session.json').write_text(json.dumps({'status':'stopped','decode_exit':0,'qpc_frequency':1000,
+            'baseline_end_qpc':1,'stopped_qpc':1000}))
+        (trace/'baseline.json').write_text('[]')
+        query={'query':'I:Q1','kind':'exhausted','calls':[{'received_qpc':110}],
+               'entry_received_qpc':95,'return_received_qpc':120}
+        (folder/'query-trace.jsonl').write_text(json.dumps(query)+'\n')
+        return trace,query
+
+    def ranked_event(self,pid,q,created=1,kind='thread_start'):
+        return {'qpc':q,'kind':kind,'pid':pid,'identity':f'{pid}:{created}',
+                'process':{'created':created,'image':f'{pid}.exe','parent_pid':7}}
+
+    def test_top_three_starts_in_inclusive_lookback_not_after_or_net_growth(self):
         with tempfile.TemporaryDirectory() as directory:
-            folder=Path(directory); trace=folder/'process-trace';trace.mkdir()
-            (folder/'origin.json').write_text(json.dumps({'instance':'I','qpc_frequency':1000}))
-            (trace/'session.json').write_text(json.dumps({'status':'stopped','decode_exit':0,'baseline_end_qpc':0,'stopped_qpc':1000}))
-            (trace/'baseline.json').write_text('[]')
-            (folder/'query-trace.jsonl').write_text(json.dumps({'query':'I:Q1','kind':'exhausted','calls':[],
-                'entry_received_qpc':100,'return_received_qpc':120})+'\n')
-            event={'qpc':95,'kind':'thread_start','pid':42,'identity':'42:unresolved','process':None}
-            h={'PerfFreq':1000}
-            with patch.object(C,'decode',return_value=([event],h,[])),patch.object(C,'identities',side_effect=lambda e,*_:e):
-                result=C.correlate(folder,10)
+            folder=Path(directory);self.rank_fixture(folder)
+            events=[self.ranked_event(42,q) for q in (99,100,105,110,111)]
+            events += [self.ranked_event(42,107,kind='thread_stop')]
+            events += [self.ranked_event(pid,106) for pid in (2,2,3,3,4,4)]
+            events += [self.ranked_event(5,107,kind='process_start')]
+            unknown=self.ranked_event(9,108);unknown.update(identity='9:unresolved',process=None)
+            events.append(unknown);events.sort(key=lambda e:e['qpc'])
+            old=folder/'process-candidates.tsv';old.write_text('historical report')
+            out=folder/'new-report'
+            with patch.object(C,'decode',return_value=(events,{'PerfFreq':1000},[])), \
+                 patch.object(C,'identities',side_effect=lambda e,*_:e):
+                result=C.correlate(folder,10,out)
+            report=json.loads((out/'thread-top-delta.json').read_text())
+            window=report['windows'][0];top=window['top']
+            self.assertEqual([r['pid'] for r in top],[42,2,3])
+            self.assertEqual([r['thread_start_count'] for r in top],[3,2,2])
+            self.assertEqual(top[0]['thread_starts_per_second'],300)
+            self.assertEqual(window['unresolved_thread_starts'],1)
+            self.assertEqual(window['thread_start_count'],10)
+            self.assertEqual(window['ranked_processes_available'],4)
             self.assertEqual(result['attribution'],'unproven')
-            import csv
-            with (folder/'process-candidates.tsv').open() as f:
-                row=next(csv.DictReader(f,delimiter='\t'))
-            self.assertEqual(row['inside_receipt_window'],'0')
-            self.assertEqual(row['margin_only'],'1')
-            with patch.object(C,'decode',return_value=([event],h,['ETW lost events or buffers'])):
+            self.assertEqual(old.read_text(),'historical report')
+            self.assertFalse((folder/'thread-top-delta.json').exists())
+
+    def test_ranking_keeps_reused_pid_instances_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);self.rank_fixture(folder)
+            events=[self.ranked_event(42,101,1),self.ranked_event(42,109,2)]
+            with patch.object(C,'decode',return_value=(events,{'PerfFreq':1000},[])), \
+                 patch.object(C,'identities',side_effect=lambda e,*_:e):
+                C.correlate(folder)
+            report=json.loads((folder/'thread-top-delta.json').read_text())
+            self.assertEqual([r['identity'] for r in report['windows'][0]['top']],['42:1','42:2'])
+
+    def test_missing_query_clock_does_not_drop_later_valid_query(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);_,query=self.rank_fixture(folder)
+            bad={**query,'query':'I:Q0','calls':[]}
+            (folder/'query-trace.jsonl').write_text(json.dumps(bad)+'\n'+json.dumps(query)+'\n')
+            with patch.object(C,'decode',return_value=([],{'PerfFreq':1000},[])), \
+                 patch.object(C,'identities',return_value=[]):
+                result=C.correlate(folder)
+            self.assertEqual(result['queries'],1)
+            self.assertEqual(result['ranking_rows'],0)
+            self.assertEqual(len(result['skipped_queries']),1)
+
+    def test_lookback_requires_full_coverage_and_valid_receipt_order(self):
+        for baseline,anchor in ((101,110),(1,94),(1,121)):
+            with self.subTest(baseline=baseline,anchor=anchor),tempfile.TemporaryDirectory() as directory:
+                folder=Path(directory);trace,query=self.rank_fixture(folder)
+                session=json.loads((trace/'session.json').read_text());session['baseline_end_qpc']=baseline
+                (trace/'session.json').write_text(json.dumps(session))
+                query['calls'][-1]['received_qpc']=anchor
+                (folder/'query-trace.jsonl').write_text(json.dumps(query)+'\n')
+                with patch.object(C,'decode',return_value=([],{'PerfFreq':1000},[])), \
+                     patch.object(C,'identities',return_value=[]):
+                    result=C.correlate(folder)
+                self.assertEqual(result['queries'],0)
+                self.assertEqual(len(result['skipped_queries']),1)
+
+    def test_loss_suppresses_all_named_rankings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);self.rank_fixture(folder)
+            event=self.ranked_event(42,105)
+            with patch.object(C,'decode',return_value=([event],{'PerfFreq':1000},['ETW lost events or buffers'])):
                 lost=C.correlate(folder,10)
             self.assertEqual(lost['queries'],0)
-            with (folder/'process-candidates.tsv').open() as f:
+            import csv
+            with (folder/'thread-top-delta.tsv').open() as f:
                 self.assertEqual(list(csv.DictReader(f,delimiter='\t')),[])
+
+    def test_invalid_lookback_rejected_before_reading(self):
+        for lookback in (0,-1,10.01,float('nan'),float('inf')):
+            with self.subTest(lookback=lookback),self.assertRaises(ValueError):
+                C.correlate(Path('unused'),lookback)
 
     def test_debugger_cleanup_error_still_stops_owned_etw(self):
         spec=importlib.util.spec_from_file_location('capture',ROOT/'tools/capture-address-chain.py')

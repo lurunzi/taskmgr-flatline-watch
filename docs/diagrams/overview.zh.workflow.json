@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "任务管理器冻结取证",
+    "title": "任务管理器轻量恢复",
     "locale": "zh-CN",
     "quality_profile": "showcase",
     "legend": {
@@ -50,7 +50,7 @@
     },
     {
       "id": "capture",
-      "label": "取证",
+      "label": "恢复模式",
       "fromCol": 3,
       "toCol": 4,
       "variant": "emphasis"
@@ -113,8 +113,8 @@
       "lane": "watcher",
       "col": 4,
       "type": "backend",
-      "label": "两份完整转储",
-      "sublabel": "ProcDump -ma，已校验",
+      "label": "只重启",
+      "sublabel": "不挂调试器，不写转储",
       "width": 160
     },
     {
@@ -140,8 +140,8 @@
       "lane": "guard",
       "col": 5,
       "type": "security",
-      "label": "不重启",
-      "sublabel": "转储失败或存储超限",
+      "label": "稍后重试",
+      "sublabel": "重启未成功",
       "width": 160
     },
     {
@@ -149,8 +149,8 @@
       "lane": "evidence",
       "col": 4,
       "type": "database",
-      "label": "TaskmgrFreezeCaptures",
-      "sublabel": "转储、图表、event.json",
+      "label": "重启记录",
+      "sublabel": "时间、PID、结果",
       "width": 180
     }
   ],
@@ -183,7 +183,7 @@
       "id": "recover",
       "from": "dumps",
       "to": "restart",
-      "label": "两份有效",
+      "label": "视觉确认",
       "variant": "emphasis"
     },
     {
@@ -196,28 +196,28 @@
     },
     {
       "id": "hold",
-      "from": "dumps",
+      "from": "restart",
       "to": "no_restart",
-      "label": "无效",
+      "label": "失败",
       "variant": "security",
       "role": "error"
     },
     {
       "id": "write",
-      "from": "dumps",
+      "from": "restart",
       "to": "captures",
-      "label": "保存",
+      "label": "event.json",
       "variant": "dashed"
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "地址与进程跟踪（可选）",
+      "title": "调查结案，证据保留",
       "items": [
-        "暂停恢复；查询 → 原始记录 → 存活对象复制 → Idle 冲突",
-        "冲突转储 → 分离 → 观察 30 秒 → 恢复监测",
-        "可选有界 ETW：关联进程／线程候选，不据此归责"
+        "二进制重试缺陷、原函数复现、历史转储",
+        "结束活体地址追踪，原始证据留在本机",
+        "离线统计 10 毫秒线程新建 Top 3，仅作时间线索"
       ]
     }
   ]

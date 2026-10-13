@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Task Manager freeze capture",
+    "title": "Task Manager lightweight recovery",
     "locale": "en",
     "quality_profile": "showcase",
     "legend": {
@@ -50,7 +50,7 @@
     },
     {
       "id": "capture",
-      "label": "Capture",
+      "label": "Recovery mode",
       "fromCol": 3,
       "toCol": 4,
       "variant": "emphasis"
@@ -113,8 +113,8 @@
       "lane": "watcher",
       "col": 4,
       "type": "backend",
-      "label": "Two full dumps",
-      "sublabel": "ProcDump -ma, validated",
+      "label": "Restart only",
+      "sublabel": "no debugger or dumps",
       "width": 160
     },
     {
@@ -140,8 +140,8 @@
       "lane": "guard",
       "col": 5,
       "type": "security",
-      "label": "No restart",
-      "sublabel": "dump failed or storage limit",
+      "label": "Retry later",
+      "sublabel": "restart unsuccessful",
       "width": 160
     },
     {
@@ -149,8 +149,8 @@
       "lane": "evidence",
       "col": 4,
       "type": "database",
-      "label": "TaskmgrFreezeCaptures",
-      "sublabel": "dumps, graphs, event.json",
+      "label": "Restart receipt",
+      "sublabel": "time, PID, result",
       "width": 180
     }
   ],
@@ -183,7 +183,7 @@
       "id": "recover",
       "from": "dumps",
       "to": "restart",
-      "label": "both valid",
+      "label": "visual confirmation",
       "variant": "emphasis"
     },
     {
@@ -196,28 +196,28 @@
     },
     {
       "id": "hold",
-      "from": "dumps",
+      "from": "restart",
       "to": "no_restart",
-      "label": "invalid",
+      "label": "failed",
       "variant": "security",
       "role": "error"
     },
     {
       "id": "write",
-      "from": "dumps",
+      "from": "restart",
       "to": "captures",
-      "label": "save",
+      "label": "event.json",
       "variant": "dashed"
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Address and process trace (opt-in)",
+      "title": "Investigation closed; evidence retained",
       "items": [
-        "Pause recovery; query → raw record → live copies → Idle conflict",
-        "Conflict dump → detach → observe 30 s → resume watcher",
-        "Optional bounded ETW: process/thread candidates, not attribution"
+        "Binary retry defect + native reproduction + historical dumps",
+        "No further live address tracing; original evidence stays local",
+        "Offline Top 3 thread starts in 10 ms; temporal leads only"
       ]
     }
   ]
