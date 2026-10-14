@@ -106,7 +106,7 @@
       "col": 3,
       "type": "backend",
       "label": "保存观察",
-      "sublabel": "时间与图表",
+      "sublabel": "时间、图表、重置原因",
       "width": 150
     },
     {
@@ -151,7 +151,7 @@
       "col": 0,
       "type": "database",
       "label": "循环 ETW",
-      "sublabel": "进程与线程，64 MiB",
+      "sublabel": "核对跨启动会话归属",
       "width": 150
     },
     {
@@ -160,7 +160,7 @@
       "col": 5,
       "type": "backend",
       "label": "离线候选分析",
-      "sublabel": "父链、计数、覆盖",
+      "sublabel": "压缩、对照、覆盖",
       "width": 150
     }
   ],

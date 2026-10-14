@@ -4,6 +4,8 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 from ProcessTrace import frequency, qpc
@@ -14,16 +16,25 @@ SNAPSHOT_WAIT_SECONDS = 2
 
 class Observations:
     def __init__(self):
-        self.reset()
+        self.breaks = deque(maxlen=32)
+        self.previous_normal = None
+        self.break_count = 0
+        self.reset('watcher_start')
 
-    def reset(self):
+    def reset(self, reason='unspecified', detail=None):
+        prior = getattr(self,'last_normal',None)
+        if prior is not None:
+            self.previous_normal = prior
+        self.break_count += 1
+        self.breaks.append({'qpc':qpc(),'utc':datetime.now().astimezone().isoformat(),
+                            'reason':reason,'detail':detail,'last_connected_normal':prior})
         self.last_normal = self.first_candidate = self.confirmed = None
         self.last_time = None
 
     def observe(self, frame):
         now = frame['monotonic']
         if self.last_time is not None and not 0 < now-self.last_time <= 6:
-            self.reset()
+            self.reset('sample_clock_gap', {'seconds':now-self.last_time})
         self.last_time = now
         marker = {'qpc': frame['qpc'], 'utc': frame['timestamp']}
         state = frame['result']['state']
@@ -36,12 +47,15 @@ class Observations:
             if state == 'suspect' and self.confirmed is None:
                 self.confirmed = marker
         else:
-            self.reset()
+            self.reset('detector_state', {'state':state})
 
     def record(self, frames, taskmgr_pid, watcher_pid):
-        return {'schema_version': 1, 'qpc_frequency': frequency(),
+        return {'schema_version': 2, 'qpc_frequency': frequency(),
                 'taskmgr_pid': taskmgr_pid, 'watcher_pid': watcher_pid,
                 'clock_basis': 'watcher sample receipt; not native fault timing',
+                'continuity': {'break_count':self.break_count,'recent_breaks':list(self.breaks),
+                               'previous_normal_disconnected':self.previous_normal,
+                               'limit':'Disconnected normal is context only, never a control or native fault boundary.'},
                 'markers': {'last_normal': self.last_normal, 'first_candidate': self.first_candidate,
                             'confirmed': self.confirmed, 'recovery_started': None, 'recovery_finished': None},
                 'samples': [{'qpc': f['qpc'], 'utc': f['timestamp'], **f['result']} for f in frames]}

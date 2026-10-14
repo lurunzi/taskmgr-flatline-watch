@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-13",
-  "purpose": "Optional lightweight incident ETW, bounded recovery wait, offline candidate analysis.",
+  "date": "2026-10-14",
+  "purpose": "Bounded compressed decoding, continuity audit and previous-boot ownership reconciliation.",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -9,24 +9,22 @@
   },
   "diagram_type": "workflow",
   "quality_profile": "showcase",
-  "correction_rounds": 4,
+  "correction_rounds": 1,
   "corrections": [
-    "Kept workflow within six supported columns.",
-    "Removed crossing error branch; retry behavior remains documented.",
-    "Shortened node copy and widths to pass desktop readability."
+    "Updated ownership, continuity reset and compressed decode labels; retained validated layout."
   ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "dfa93e68881b425d62c4f670fc31b13f92924c59c7ad1cb343614da7578498d9",
-        "bytes": 5250
+        "sha256": "a16de08c2ad71748382a35cf79f2346d36dac8c12be94227e6206fc3992129d4",
+        "bytes": 5255
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "70a626a5f2cb201beb55c7d8ecf57641eca5e1617bcedd673a4a0e5c6c2666ff",
-        "bytes": 716366,
+        "sha256": "131cea3ede9b5e0b03044b30dbffd2a8b7103e66673faae9fc95e443bb4740da",
+        "bytes": 716386,
         "committed": false
       },
       "validation": {
@@ -43,16 +41,16 @@
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "5d87180987f8d31ad86f6ad601d9af24f2efbd0198998a7fd66c87444c8ca255",
-          "bytes": 567522,
+          "sha256": "258677b7808fbf74f82d05a55e12d1a1bf27c69dcd00d7d57980768528146774",
+          "bytes": 568573,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "822526af722f810e5715c8367eb70ecc718b9e11d94ae713f5f8fd515069da32",
-          "bytes": 581458,
+          "sha256": "b7544dbafec56f09281375ff571157a1ffe3684f58f577e32f265c33ed42620a",
+          "bytes": 582067,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -63,13 +61,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "5af6f5eb0d3f521817ace72a405cbc3dfb7b3fdc130d8cc0a4d49867e2d3aa0e",
-        "bytes": 5263
+        "sha256": "f599267b07ca4044a8becefb2bb36861f29450f24f4347434bab2970fb9fd8c3",
+        "bytes": 5281
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "45a43c0d8eb2d9b347afbc012e465d0e9a7605f0542e8648c5427c67c3c20f62",
-        "bytes": 716086,
+        "sha256": "bf9315da78956da0701ac33f0c8c8f8f8e0e6865b6bf7882d419ac9286326158",
+        "bytes": 716158,
         "committed": false
       },
       "validation": {
@@ -86,16 +84,16 @@
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "203274e650a6104f29972520fc3261ebf2f6053e1f896673d5195e10bd2d8cb2",
-          "bytes": 598137,
+          "sha256": "2f3f39dafb2c82af7c80a21ee8e5adb7066b43ffebafca3b6e374799e26ce5a5",
+          "bytes": 601573,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "38ef1b62a412f0d18b5894b4605eb5d6ed4ec6db37af8f40c09a0a925844ad7c",
-          "bytes": 609088,
+          "sha256": "8fd94ae912773d4fb868801681117798debd8d7ffad4a8486f9129b2a7b8329a",
+          "bytes": 612562,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true
@@ -108,5 +106,5 @@
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "local_artifacts": ".local/work-inbox/20261013-light-etw/overview.<lang>.html and delivery/visual/export receipts"
+  "local_artifacts": ".local/work-inbox/20261014-etw-recovery/overview.<lang>.html and delivery/visual/export receipts"
 }

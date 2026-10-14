@@ -2,6 +2,7 @@
 import argparse
 import bisect
 import collections
+import gzip
 import csv
 import json
 import math
@@ -27,9 +28,19 @@ def ticks(text):
     return int(dt.timestamp())*10_000_000+EPOCH+int(((frac or '')+'0000000')[:7])
 
 
-def decode(path):
+def decode(path, thread_window=None):
+    source = gzip.open(path,'rb') if str(path).endswith('.gz') else open(path,'rb')
+    try:
+        return _decode_stream(source, thread_window)
+    finally:
+        source.close()
+
+
+def _decode_stream(source, thread_window):
     events,header,errors = [],None,[]
-    iterator = ET.iterparse(path,events=('start','end'))
+    first_clock = last_clock = None
+    total = 0
+    iterator = ET.iterparse(source,events=('start','end'))
     _,root = next(iterator)
     for action,node in iterator:
         if action!='end' or node.tag!='{'+NS['e']+'}Event':
@@ -43,13 +54,24 @@ def decode(path):
             header['raw_start'] = int(raw) if raw else None
             header['clock_type'] = int(data.get('ReservedFlags','0'),0)
         if provider==PROVIDER:
+            total += 1
+            if total>2_000_000:
+                raise ValueError('scanned event count bound exceeded; raw ETL retained')
             event_id = int(node.findtext('e:System/e:EventID',namespaces=NS))
             if not raw or node.find('e:ProcessingErrorData',NS) is not None:
                 errors.append('provider event lacked raw clock or could not be decoded')
             elif event_id not in KINDS:
                 errors.append(f'unknown provider event {event_id}')
             else:
-                events.append({'qpc':int(raw),'kind':KINDS[event_id],'pid':int(data['ProcessID']),
+                stamp = int(raw)
+                first_clock = stamp if first_clock is None else min(first_clock,stamp)
+                last_clock = stamp if last_clock is None else max(last_clock,stamp)
+                # Keep all process lifetimes for PID reuse/parent resolution.
+                # Excluded thread events remain in the lossless XML.gz and ETL.
+                keep = (event_id in (1,2) or thread_window is None or
+                        thread_window[0]<=stamp<=thread_window[1])
+                if keep:
+                    events.append({'qpc':stamp,'kind':KINDS[event_id],'pid':int(data['ProcessID']),
                                'tid':int(data.get('ThreadID','0')),'parent_pid':int(data.get('ParentProcessID','0')),
                                'create_time':ticks(data['CreateTime']) if data.get('CreateTime') else None,
                                'image':data.get('ImageName'),'sequence':data.get('ProcessSequenceNumber')})
@@ -64,6 +86,8 @@ def decode(path):
     if header['BuffersWritten']*header['BufferSize']>=header['MaxFileSize']*1024**2:
         errors.append('circular trace may have overwritten earlier buffers')
     events.sort(key=lambda e:e['qpc'])
+    header.update(retained_first_qpc=first_clock,retained_last_qpc=last_clock,
+                  scanned_events=total,selected_events=len(events))
     return events,header,errors
 
 

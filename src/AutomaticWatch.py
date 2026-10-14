@@ -171,10 +171,10 @@ class Monitor:
         if self.recorder:
             self.recorder.start()
 
-    def reset_observations(self):
+    def reset_observations(self, reason='unspecified', detail=None):
         self.detector.reset()
         self.frames.clear()
-        self.observations.reset()
+        self.observations.reset(reason, detail)
 
     def reset_worker(self):
         if self.pipe:
@@ -245,7 +245,7 @@ class Monitor:
                     self.accept(sample)
                 elif now-self.pending > 8:
                     self.reset_worker()
-                    self.reset_observations()
+                    self.reset_observations('capture_timeout')
                     self.publish('capture_timeout')
                 return
             if now-self.last_request >= 2:
@@ -253,15 +253,15 @@ class Monitor:
                 self.pending = self.last_request = now
         except Exception as exc:
             self.reset_worker()
-            self.reset_observations()
+            self.reset_observations('capture_error', {'error':str(exc)})
             self.publish('error', error=str(exc))
 
     def accept(self, sample):
         if self.rearm_requested:
-            self.reset_observations()
+            self.reset_observations('recovery_rearm')
             self.rearm_requested = False
         if sample['state'] != 'captured':
-            self.reset_observations()
+            self.reset_observations('capture_state', {'state':sample['state'],'error':sample.get('error')})
             self.publish(sample['state'], error=sample.get('error'))
             return
         self.watch_origin(sample['pid'])
@@ -269,7 +269,7 @@ class Monitor:
             self.retry = None  # A working CPU page from another Taskmgr ends the retry.
         identity = (sample['pid'], sample['hwnd'], sample['total'].shape, sample['cores'].shape)
         if identity != self.identity:
-            self.reset_observations()
+            self.reset_observations('identity_or_geometry_changed', {'previous':self.identity,'current':identity})
             self.identity = identity
         if self.pending_recovery:
             folder, saved = self.pending_recovery
@@ -281,7 +281,7 @@ class Monitor:
                 self.dump_thread.start()
         now = time.monotonic()
         if self.observations.last_time is not None and not 0 < now-self.observations.last_time <= 6:
-            self.reset_observations()
+            self.reset_observations('sample_clock_gap', {'seconds':now-self.observations.last_time})
         result = self.detector.observe(now, sample['total'], sample['cores'])
         frame = {'timestamp':timestamp(), 'qpc':qpc(), 'monotonic':now, 'result':result, 'images':{}}
         for key in ('total','cores'):
@@ -528,6 +528,6 @@ class Monitor:
         self.reset_worker()
         if self.recorder:
             self.recorder.stop()
-        self.reset_observations()
+        self.reset_observations('monitor_stopped')
         self.last_status_write = 0
         self.publish('stopped')

@@ -80,5 +80,23 @@ class IncidentWatchTests(unittest.TestCase):
             self.assertFalse(p.submit(Path(d),Mock()))
             self.assertEqual(json.loads((Path(d)/'analysis-status.json').read_text())['status'],'deferred')
 
+    def test_reset_keeps_disconnected_normal_and_reason_but_never_control(self):
+        o=Observations();o.observe(self.frame(1,'normal'))
+        o.reset('capture_state',{'state':'wrong_page'})
+        o.observe(self.frame(10,'candidate'))
+        record=o.record([],123,456)
+        self.assertIsNone(record['markers']['last_normal'])
+        self.assertEqual(record['continuity']['previous_normal_disconnected']['qpc'],1000)
+        self.assertEqual(record['continuity']['recent_breaks'][-1]['detail']['state'],'wrong_page')
+        for _ in range(50):o.reset('invalid')
+        self.assertEqual(len(o.breaks),32)
+        self.assertGreater(o.break_count,32)
+
+    def test_capture_state_reset_is_recorded_by_monitor(self):
+        with tempfile.TemporaryDirectory() as d,patch.object(W,'OUTPUT',Path(d)):
+            monitor=W.Monitor(restart_only=True)
+            monitor.accept({'state':'wrong_page'})
+            self.assertEqual(monitor.observations.breaks[-1]['detail']['state'],'wrong_page')
+
 
 if __name__=='__main__':unittest.main()

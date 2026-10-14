@@ -106,7 +106,7 @@
       "col": 3,
       "type": "backend",
       "label": "Save observations",
-      "sublabel": "times and charts",
+      "sublabel": "times, charts, resets",
       "width": 150
     },
     {
@@ -151,7 +151,7 @@
       "col": 0,
       "type": "database",
       "label": "Circular ETW",
-      "sublabel": "process/thread events",
+      "sublabel": "boot ownership checked",
       "width": 150
     },
     {
@@ -160,7 +160,7 @@
       "col": 5,
       "type": "backend",
       "label": "Offline candidates",
-      "sublabel": "parents, counts, coverage",
+      "sublabel": "gzip, controls, coverage",
       "width": 150
     }
   ],

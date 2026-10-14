@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from datetime import datetime,timezone
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from RollingProcessTrace import RollingRecorder
@@ -82,6 +83,39 @@ class RollingTests(unittest.TestCase):
             self.assertEqual(recorder.status()['state'],'error')
             self.assertEqual(artifact.read_bytes(),b'important')
             self.assertEqual(FakeSession.instances,[])
+
+    def prior(self,d):
+        path=Path(d)/'session.json'
+        previous=dict(session='TaskmgrCorrelation-'+'a'*32,status='running',owner_role='flatline watcher',
+                      created_utc='2026-10-13T12:00:00+00:00')
+        path.write_text(json.dumps(previous),encoding='utf-8')
+        return path,previous,datetime(2026,10,14,tzinfo=timezone.utc)
+
+    def test_only_verified_absent_previous_boot_session_is_reconciled(self):
+        with tempfile.TemporaryDirectory() as d:
+            recorder=RollingRecorder(d,FakeSession);p,prior,boot=self.prior(d);original=p.read_bytes()
+            with patch('RollingProcessTrace.session_exists',return_value=False) as query:
+                self.assertTrue(recorder._resolve_previous_boot(p,prior,boot))
+            query.assert_called_once_with(prior['session'])
+            self.assertEqual(p.read_bytes(),original)
+            self.assertEqual(json.loads((p.parent/'ownership-resolution.json').read_text())['status'],'absent_after_reboot')
+
+    def test_active_or_unknown_session_is_never_claimed_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            recorder=RollingRecorder(d,FakeSession);p,prior,boot=self.prior(d)
+            with patch('RollingProcessTrace.session_exists',return_value=True):
+                self.assertFalse(recorder._resolve_previous_boot(p,prior,boot))
+            with patch('RollingProcessTrace.session_exists',side_effect=OSError('access denied')):
+                with self.assertRaises(OSError):recorder._resolve_previous_boot(p,prior,boot)
+            self.assertFalse((p.parent/'ownership-resolution.json').exists())
+
+    def test_same_boot_owner_is_not_bypassed_even_when_session_absent(self):
+        with tempfile.TemporaryDirectory() as d:
+            recorder=RollingRecorder(d,FakeSession);p,prior,boot=self.prior(d)
+            prior['created_utc']='2026-10-14T01:00:00+00:00'
+            with patch('RollingProcessTrace.session_exists') as query:
+                self.assertFalse(recorder._resolve_previous_boot(p,prior,boot))
+                query.assert_not_called()
 
 
 if __name__=='__main__':unittest.main()

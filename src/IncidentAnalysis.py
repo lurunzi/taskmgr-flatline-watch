@@ -139,7 +139,16 @@ def analyze(folder, output=None):
     baseline = json.loads((trace/'baseline.json').read_text(encoding='utf-8-sig'))
     if isinstance(baseline,dict):
         baseline = [baseline]
-    events, header, decode_errors = _decoder.decode(trace/'events.xml')
+    sample_clocks = [s.get('qpc') for s in observation.get('samples',[]) if type(s.get('qpc')) is int]
+    marker_clocks = [m.get('qpc') for k,m in observation.get('markers',{}).items()
+                     if k in ('last_normal','first_candidate','confirmed') and isinstance(m,dict)
+                     and type(m.get('qpc')) is int]
+    clocks_to_keep = sample_clocks+marker_clocks
+    window = (min(clocks_to_keep),max(clocks_to_keep)) if clocks_to_keep else None
+    decoded_file = session.get('decode_file') or 'events.xml'
+    if decoded_file not in ('events.xml','events.xml.gz'):
+        raise ValueError('unsupported decoded trace path')
+    events, header, decode_errors = _decoder.decode(trace/decoded_file,thread_window=window)
     overwritten = 'circular trace may have overwritten earlier buffers' in decode_errors
     errors = [e for e in decode_errors if e!='circular trace may have overwritten earlier buffers']
     freq = header['PerfFreq']
@@ -148,7 +157,7 @@ def analyze(folder, output=None):
     if session.get('status')!='stopped' or session.get('decode_exit')!=0:
         errors.append('ETW stop/decode not verified')
     coverage_begin = max(session.get('baseline_end_qpc',session.get('started_qpc',0)),
-                         min((e['qpc'] for e in events), default=0) if overwritten else header['raw_start'])
+                         (header.get('retained_first_qpc') or min((e['qpc'] for e in events), default=0)) if overwritten else header['raw_start'])
     coverage_end = session.get('stopped_qpc',0)
     end_baseline_path = trace/'end-baseline.json'
     end_baseline = []
@@ -189,6 +198,8 @@ def analyze(folder, output=None):
                'control_available':control is not None,
                'identity_limit':'Baseline has microsecond precision; only exact identity matches merge. Ambiguous lifetimes stay unresolved.'}
     result = {'schema_version':1, 'attribution':'unproven', 'quality':quality, 'qpc_frequency':freq,
+              'continuity':observation.get('continuity',{'status':'not recorded by this watcher version'}),
+              'trace_event_counts':{k:header.get(k) for k in ('scanned_events','selected_events')},
               'observation_markers':markers, 'window_qpc':bounds, 'normal_window_qpc':control,
               'ranking':'direct child process starts, then own thread starts, then own process starts',
               'top':[], 'event_counts':{}, 'unresolved_counts':{}, 'normal_event_counts':{},
@@ -228,16 +239,20 @@ def render(result):
     def cell(value):
         return str(value or 'unknown').replace('|','\\|').replace('\n',' ').replace('\r',' ')
     table = '\n'.join('| '+cell(' <- '.join(f"{p['image'] or 'unknown'} (PID {p['pid']})" for p in r['parent_chain']))+
-                     f" | {r['child_process_starts']} | {r['thread_starts']} | {r['monitor_related']} |" for r in result['top'])
+                     f" | {r['child_process_starts']} | {r['normal_same_instance']['child_process_starts'] if r.get('normal_same_instance') is not None else 'unknown'} | {r['thread_starts']} | {r['monitor_related']} |" for r in result['top'])
     q = result['quality']
     errors = '; '.join(q['errors']) or 'none'
+    continuity = result.get('continuity',{})
+    last_break = (continuity.get('recent_breaks') or [None])[-1]
+    reason = last_break.get('reason') if last_break else 'not recorded'
     return ("The English version governs.\n\n# Incident candidates\n\n"
             "**CANDIDATES ONLY — causality unproven.** Parent chains are process relationships, not call stacks.\n\n"
             f"Ranking usable: {q['ranking_usable']}. Errors: {errors}. Circular overwrite: {q['circular_overwrite']}. "
             f"Lost events/buffers: {q['events_lost']}/{q['buffers_lost']}.\n\n"
             f"Observation exposure: {result.get('exposure_seconds')} s; normal control: {result.get('normal_exposure_seconds')} s. "
             f"Unresolved events/parents: {result['unresolved_counts']}.\n\n"
-            "| Process <- parent chain | Child process starts | Own thread starts | Monitor related |\n|---|---:|---:|---|\n"+
+            f"Latest continuity reset: {reason}. Disconnected normal samples are never used as controls.\n\n"
+            "| Process <- parent chain | Child process starts | Normal child starts | Own thread starts | Monitor related |\n|---|---:|---:|---:|---|\n"+
             table+"\n\nRaw times, instance identities, rates and control counts are in incident-analysis.json. "
             "Missing identities and controls remain unknown. Compare repeated incidents and matched normal exposures; "
             "controlled application stop/start tests are separate work. This report does not measure Taskmgr query failures.\n\n"
@@ -246,7 +261,8 @@ def render(result):
             f"事件／缓冲区丢失：{q['events_lost']}/{q['buffers_lost']}。\n\n"
             f"异常观察时长：{result.get('exposure_seconds')} 秒；正常对照时长：{result.get('normal_exposure_seconds')} 秒。"
             f"身份或父关系未解析计数：{result['unresolved_counts']}。\n\n"
-            "| 进程 ← 父进程链 | 子进程启动数 | 自身线程启动数 | 监测器关联 |\n|---|---:|---:|---|\n"+
+            f"最近一次连续性重置：{reason}。断开前的正常样本只作背景，不作为正常对照。\n\n"
+            "| 进程 ← 父进程链 | 子进程启动数 | 正常对照子进程数 | 自身线程启动数 | 监测器关联 |\n|---|---:|---:|---:|---|\n"+
             table+"\n\n原始时刻、进程实例身份、速率和对照计数保存在 incident-analysis.json。缺失的身份和对照保持未知。"
             "应比较多次异常与相近负载的正常观察时长，应用停启对照需另行实施。这里记录的是视觉观察时段，"
             "不代表底层故障时刻，也未测量 Taskmgr 查询的返回值或缓冲区字节贡献。\n")

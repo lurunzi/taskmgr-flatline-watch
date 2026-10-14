@@ -6,8 +6,11 @@ on the validation workstation. Query markers are host receipt times, not exact
 target execution times; correlation alone is never attribution.
 """
 import ctypes
+import gzip
 import json
 import os
+import re
+import shutil
 import subprocess
 import time
 import uuid
@@ -16,6 +19,50 @@ from pathlib import Path
 PROVIDER = 'Microsoft-Windows-Kernel-Process'
 GUID = '{22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}'
 LIMIT_MB = 64
+XML_LIMIT = 256*1024**2
+COMPACT_XML_LIMIT = 1024*1024**2
+
+
+def session_exists(name):
+    """Read-only query of our exact UUID session; errors are never absence.
+
+    EVENT_TRACE_PROPERTIES/ControlTraceW layouts follow the Windows SDK.
+    Control code 0 is QUERY; this function cannot stop or modify a session.
+    """
+    if not re.fullmatch(r'TaskmgrCorrelation-[0-9a-f]{32}',name or ''):
+        raise ValueError('unrecognised ETW session identity')
+    ulong = ctypes.c_uint32
+    class Wnode(ctypes.Structure):
+        _fields_ = [('BufferSize',ulong),('ProviderId',ulong),
+                    ('HistoricalContext',ctypes.c_uint64),('TimeStamp',ctypes.c_uint64),
+                    ('Guid',ctypes.c_byte*16),('ClientContext',ulong),('Flags',ulong)]
+    class Properties(ctypes.Structure):
+        _fields_ = [('Wnode',Wnode)]+[(n,ulong) for n in
+                    ('BufferSize','MinimumBuffers','MaximumBuffers','MaximumFileSize',
+                     'LogFileMode','FlushTimer','EnableFlags','AgeLimit','NumberOfBuffers',
+                     'FreeBuffers','EventsLost','BuffersWritten','LogBuffersLost','RealTimeBuffersLost')]+[
+                    ('LoggerThreadId',ctypes.c_void_p),('LogFileNameOffset',ulong),('LoggerNameOffset',ulong)]
+    buffer = ctypes.create_string_buffer(ctypes.sizeof(Properties)+4096)
+    props = Properties.from_buffer(buffer)
+    props.Wnode.BufferSize = len(buffer)
+    props.LoggerNameOffset = ctypes.sizeof(Properties)
+    props.LogFileNameOffset = ctypes.sizeof(Properties)+2048
+    query = ctypes.WinDLL('advapi32',use_last_error=True).ControlTraceW
+    query.argtypes = [ctypes.c_uint64,ctypes.c_wchar_p,ctypes.c_void_p,ulong]
+    query.restype = ulong
+    status = query(0,name,buffer,0)
+    if status==4201:  # ERROR_WMI_INSTANCE_NOT_FOUND
+        return False
+    if status:
+        raise OSError(status,'ETW session query failed; ownership unresolved')
+    return True
+
+
+def boot_time():
+    command = "(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')"
+    result = subprocess.run(['powershell.exe','-NoProfile','-Command',command],capture_output=True,
+                            timeout=10,creationflags=subprocess.CREATE_NO_WINDOW,check=True)
+    return result.stdout.decode('ascii').strip()
 
 
 def qpc():
@@ -112,23 +159,54 @@ class Session:
                         raise
                     time.sleep(.5*(attempt+1))
 
-    def decode(self):
+    def decode(self, compact=False):
         if self.active:
             raise RuntimeError('refusing to decode an active session')
-        output = self.folder/'events.xml'
+        # The light recorder can span hours. XML expands far beyond ETL size;
+        # retain lossless gzip, with a bounded staging file and the same deadline.
+        output = self.folder/('events.decode.xml' if compact else 'events.xml')
+        limit = COMPACT_XML_LIMIT if compact else XML_LIMIT
+        compressed = self.folder/'events.xml.gz'
+        if compact and (output.exists() or compressed.exists()):
+            raise RuntimeError('decode output exists; reanalyse into a new directory')
+        if compact and shutil.disk_usage(self.folder).free < limit+512*1024**2:
+            raise RuntimeError('insufficient free space for bounded offline decoding')
+        deadline = time.monotonic()+90
+        self.save(decode='running', decode_exit=None, decode_file=None,
+                  decode_limit_bytes=limit, decode_limit_seconds=90)
         with (self.folder/'decode.log').open('wb') as log:
             child = subprocess.Popen([str(self.system/'tracerpt.exe'),str(self.folder/'process.etl'),
                                       '-o',str(output),'-of','XML','-rts','-y'],
                                      stdout=log,stderr=subprocess.STDOUT,
                                      creationflags=subprocess.CREATE_NO_WINDOW)
-            deadline = time.monotonic()+90
             while child.poll() is None:
-                if time.monotonic()>deadline or (output.exists() and output.stat().st_size>256*1024**2):
+                if time.monotonic()>deadline or (output.exists() and output.stat().st_size>limit):
                     child.terminate()  # Only our offline decoder, never a debugger.
                     child.wait()
                     self.save(decode='incomplete: decoder time/output bound')
                     raise RuntimeError('ETW decoder bound exceeded; ETL retained')
                 time.sleep(.2)
-        self.save(decode_exit=child.returncode)
         if child.returncode:
+            self.save(decode='failed', decode_exit=child.returncode)
             raise RuntimeError('ETW decode failed; ETL retained')
+        if time.monotonic()>deadline or output.stat().st_size>limit:
+            self.save(decode='incomplete: decoder time/output bound')
+            raise RuntimeError('ETW decoder bound exceeded; ETL retained')
+        if compact:
+            partial = self.folder/'events.xml.gz.part'
+            self.save(decode_uncompressed_bytes=output.stat().st_size)
+            try:
+                with output.open('rb') as source, gzip.open(partial,'xb',compresslevel=1) as target:
+                    while block := source.read(1024*1024):
+                        if time.monotonic()>deadline:
+                            raise RuntimeError('ETW compression deadline exceeded')
+                        target.write(block)
+                partial.replace(compressed)
+                # Only our newly created staging output; original ETL is retained.
+                output.unlink()
+                output = compressed
+            except Exception as exc:
+                self.save(decode='incomplete: compression', decode_error=repr(exc))
+                raise
+        self.save(decode='complete', decode_exit=0, decode_file=output.name,
+                  decode_bytes=output.stat().st_size)

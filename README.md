@@ -44,6 +44,16 @@ For a retained incident, run the following locally; the first command decodes ET
 
 Decoding retains the existing 90-second / 256 MiB XML bounds; the automatic job has a 120-second limit and defers a new report while another decoder is busy. New ETW sessions pause at a 2 GiB accumulated ETL/XML budget or less than 1 GiB free disk space; an already active circular trace or decoder can exceed that soft budget. Existing evidence is never automatically deleted. Failures preserve automatic recovery and are visible in the status files. CPU measurements must state which processes were measured; neither zero overhead nor a universal churn threshold is promised. Repeated incident/control comparisons and separately authorised application stop/start tests can strengthen a candidate; these events do not expose Taskmgr's NtQSI return values, buffer sizes, HRESULTs or a same-incident buffer-to-freeze chain.
 
+### Long-session recovery update (14 October 2026)
+
+Historical address-chain tests select only the pinned DLL hash, using the local Windows component store if the live DLL has changed. An unavailable fixture is reported as skipped, not as new-build validation; production hash/byte guards are unchanged. A changed DLL requires separate investigation before any old RVA or defect claim can be applied to it.
+
+The earlier 256 MiB XML limit still applies to the historical debugger workflow. Lightweight incident decoding now uses a bounded **1 GiB temporary XML file**, checks at least 1.5 GiB free space before starting, and retains the complete decoded stream as lossless `events.xml.gz`. The 90-second decode/compression deadline and 120-second automatic-job deadline remain. The parser scans the complete stream, keeps all process lifetimes for identity resolution, and retains thread events in memory only for the observed/control interval. It records scanned/selected counts and refuses malformed, truncated or over-limit input. Raw ETL is unchanged; an existing failed attempt is preserved. Use `tools/process-incident.py <incident> --output <new-separate-directory>` to recover into a fresh directory with SHA-256-verified source copies and `provenance.json`. The report now shows normal child-start counts beside incident counts.
+
+Visual continuity resets now retain their reason, recent history and the last disconnected normal observation. Reasons include a changed window/geometry, a missing CPU page, invalid chart data, capture timeout, sampling gap and recovery. A disconnected observation is background context only; it is never silently promoted to a continuous normal control. Older incidents lack this audit and cannot be repaired retrospectively.
+
+At startup, an old running journal can be bypassed only when its creation predates the current Windows boot and a read-only query of its exact UUID session reports that it is absent. The old journal and ETL remain unchanged, and `ownership-resolution.json` records the verification. A same-boot, active, malformed or access-denied session remains unresolved; the watcher never stops it by guessing its owner. The cumulative soft storage budget includes compressed and partial outputs. These checks use the existing [Microsoft tracerpt](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tracerpt) and [ControlTraceW query API](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-controltracew).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.en.dark.png">
   <img alt="Lightweight incident workflow: circular process/thread events run beside chart detection; save observations and ETL with a bounded wait, recover Taskmgr, then analyse temporal candidates offline. No debugger attachment or dumps in restart-only mode." src="docs/diagrams/overview.en.light.png">
@@ -158,6 +168,16 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 离线命令见英文区：第一个命令从 ETL 解码并分析，第二个仅利用已有 XML，向新目录生成报告，不依赖旧的 `query-trace.jsonl`。
 
 解码沿用 90 秒／256 MiB XML 限额；自动任务上限 120 秒，另一解码器忙碌时推迟新报告。累计 ETL／XML 达到 2 GiB 或磁盘可用空间不足 1 GiB 时，暂停新建 ETW 会话；正在运行的循环会话或解码任务可能超过此软限额。旧证据不自动删除。失败仍保留自动恢复并在状态文件显示。CPU 实测必须说明覆盖哪些进程，不承诺零开销或通用扰动阈值。多次异常与正常对照，以及另行授权的应用停启实验可以加强候选证据；这些事件仍看不到 Taskmgr 的 NtQSI 返回值、缓冲长度、HRESULT 或同一现场完整的缓冲区到冻结链。
+
+### 长时记录恢复更新（2026 年 10 月 14 日）
+
+历史地址链测试只选用哈希完全匹配的旧版 DLL；系统文件已更新时，可从本机 Windows 组件库读取。没有匹配文件则明确记为跳过，不算新版本验证；产品的哈希和指令检查保持不变。不能未经另行核验，就把旧 RVA 或缺陷结论套用到更新后的 DLL。
+
+前述 256 MiB XML 限额仍适用于历史调试器流程。轻量事件解码现在使用上限为 **1 GiB 的临时 XML**，开始前核对至少 1.5 GiB 可用空间，完整解码流以无损压缩的 `events.xml.gz` 保存。解码及压缩仍受 90 秒限制，自动任务仍受 120 秒限制。解析器扫描完整事件流，为身份解析保留所有进程生命周期，仅将观察／对照时段的线程事件保留在内存；记录扫描与选取数量，拒绝损坏、截断或超限输入。原始 ETL 不变，旧失败尝试保留。用英文区说明的 `--output` 参数向新的独立目录恢复，源文件副本经 SHA-256 核对，来源写入 `provenance.json`。报告新增正常对照的子进程启动数，便于与异常时段比较。
+
+视觉连续性重置现在保存原因、最近历史及断开前最后正常观察。原因包括窗口／尺寸改变、CPU 页面不可用、图像无效、采样超时、采样间隔过长和恢复。断开前的样本仅作背景，不自动变成连续正常对照；旧事件没有这些审计记录，无法事后补造。
+
+启动时，只有旧记录早于本次 Windows 启动，且对其准确 UUID 会话的只读查询明确报告不存在，才可解除旧“运行中”状态的阻塞。旧日志与 ETL 不改，核验写入 `ownership-resolution.json`。同次启动、仍活跃、记录损坏或无查询权限的会话继续保留为待处理，不猜测归属后停止。累计存储软限额也计入压缩和未完成输出。复用的微软工具及查询接口文档见英文区。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/overview.zh.dark.png">

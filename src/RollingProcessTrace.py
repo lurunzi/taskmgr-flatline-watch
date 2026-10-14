@@ -1,5 +1,6 @@
 """Background circular ETW, independent of any debugger or recovery thread."""
 import json
+import hashlib
 import os
 import queue
 import shutil
@@ -9,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ProcessTrace import Session, qpc
+from ProcessTrace import Session, qpc, session_exists, boot_time
 
 TRACE_BUDGET = 2 * 1024**3
 MIN_FREE = 1024**3
@@ -88,7 +89,7 @@ class RollingRecorder:
         # Only this feature's known directories; old dumps are never scanned.
         for root in [self.output/'light-etw', *self.output.glob('restart-*')]:
             if root.exists():
-                for pattern in ('*.etl', '*.xml'):
+                for pattern in ('*.etl', '*.xml', '*.xml.gz', '*.part'):
                     used += sum(p.stat().st_size for p in root.rglob(pattern) if p.is_file())
         if shutil.disk_usage(self.output).free < MIN_FREE or used >= TRACE_BUDGET:
             raise RuntimeError('ETW storage budget reached; existing evidence retained')
@@ -110,10 +111,14 @@ class RollingRecorder:
         try:
             # An interrupted watcher can leave an ETW session behind. Refuse a
             # duplicate rather than guessing that an old controller is dead.
+            boot = None
             for path in (self.output/'light-etw').glob('run-*/process-trace/session.json'):
                 previous = json.loads(path.read_text(encoding='utf-8'))
                 if previous.get('status') in ('running','stop_pending','preflight'):
-                    raise RuntimeError(f'unresolved prior ETW session {previous.get("session")}; inspect {path}')
+                    if boot is None:
+                        boot = datetime.fromisoformat(boot_time())
+                    if not self._resolve_previous_boot(path,previous,boot):
+                        raise RuntimeError(f'unresolved prior ETW session {previous.get("session")}; inspect {path}')
             self._arm()
             while not self.cancel.is_set():
                 try:
@@ -174,3 +179,19 @@ class RollingRecorder:
                     self.jobs.task_done()
             if self.status()['state'] not in ('error', 'stop_pending'):
                 self.update(state='stopped')
+
+    def _resolve_previous_boot(self,path,previous,boot):
+        """Preserve old journals; only prior-boot AND absent sessions are safe."""
+        created = datetime.fromisoformat(previous.get('created_utc',''))
+        if (previous.get('owner_role')!='flatline watcher' or created.tzinfo is None or
+                boot.tzinfo is None or (boot-created).total_seconds()<=5):
+            return False
+        if session_exists(previous.get('session')):
+            return False
+        receipt = {'status':'absent_after_reboot','session':previous['session'],
+                   'verified_utc':datetime.now(timezone.utc).isoformat(),'current_boot_utc':boot.isoformat(),
+                   'query':'ControlTraceW QUERY returned ERROR_WMI_INSTANCE_NOT_FOUND',
+                   'original_session_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+                   'original_status':previous.get('status'),'raw_trace':'retained; final stop not verified'}
+        save(path.with_name('ownership-resolution.json'),receipt)
+        return True
