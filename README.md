@@ -73,6 +73,8 @@ At startup, an old running journal can be bypassed only when its creation predat
 
 ## Automatic detection
 
+Update 2026-10-16: a zero/empty aggregate chart previously returned `invalid` because it contained no blue curve, so confirmation never started. The additional empty-chart path requires a visibly painted frame on all four sides, a uniform neutral interior, moving logical graphs, and independent CPU-time activity of at least 2% throughout the 30-second confirmation. A borderless blank capture, unavailable CPU sample, low activity or a capture gap resets this path. Each existing capture-helper sample reads [GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes); no additional process, debugger, stress load or performance-counter configuration is needed. The first sample establishes a baseline. Above 64 logical processors this corroboration is disabled because that API covers only the caller's processor group. Status and incident measurements include the detector kind and independent CPU percentage. This is a suspected display inconsistency, not proof that this incident shares the historical DLL defect or that a particular application caused it.
+
 Update 2026-10-01: the ten-minute cooldown now applies only to repeated captures of the same PID and window. A replacement Task Manager that freezes again receives a new dump pair and recovery after the 30-second visual confirmation, without waiting for the previous process's cooldown. A blocked capture shows the cooldown and remaining seconds. Fourteen tests pass, including replacement-process recovery eligibility and cooldown persistence across watcher restarts.
 
 Every two seconds a separate helper enumerates Task Manager's native `CvChartWindow` controls. It identifies the leftmost top CPU thumbnail and a complete logical-processor graph grid matching the machine's logical processor count. `PrintWindow` reads those controls directly; no manual region selection, OCR, screenshot of other applications, or upload is involved. Read operations time out after eight seconds by terminating only our own helper.
@@ -197,6 +199,8 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 - 全新检出时先安装 Python 3.12，再运行 `Setup.cmd`。依赖版本固定在 `requirements-flatline.txt`。安装会从微软 Sysinternals 官网下载 ProcDump 并校验微软数字签名；Git 不分发 ProcDump 二进制文件。
 
 ## 自动检测
+
+2026-10-16 更新：零值／空白总图以前因没有蓝色曲线而一直返回 `invalid`，无法开始确认。新增空图分支要求四边有实际绘制的边框、内部为均匀中性色、分线程图持续变化，而且独立 CPU 时间采样在 30 秒确认期间持续不低于 2%。无边框的空白截图、CPU 采样不可用、低负载或采集间断都会重置此分支。现有截图辅助进程每次采样读取英文区链接的 `GetSystemTimes`，无需增加进程、调试器、压测或性能计数器配置；首次读取仅建立基线。超过 64 个逻辑处理器时停用这项交叉校验，因为该 API 只覆盖调用线程所属的处理器组。状态与事件记录保留检测分支和独立 CPU 百分比。这仍是疑似显示不一致，不证明本次与历史 DLL 缺陷同源，也不证明某个应用导致故障。
 
 2026-10-01 更新（取代下方保留的旧行为和验证记录）：十分钟冷却仅限制同一 PID、同一窗口的重复取证。重启后的新任务管理器再次冻结，视觉确认 30 秒后立即重新转储；两份完整转储校验成功后自动关闭并重启该任务管理器，恢复 CPU 逻辑处理器页面，不重启 Windows。受冷却限制时显示冷却状态和剩余秒数。十四项测试通过，包括新实例不受旧实例冷却阻挡，以及监测器重启后同一实例仍受冷却约束。管理员安装、完整转储与自动恢复已于 2026-09-29 至 30 日实测，尚未做系统重启或重新登录实测。本轮实时更新验收另记于项目本地调查笔记。
 

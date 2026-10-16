@@ -1,6 +1,7 @@
 """Capture Task Manager's native chart controls, without desktop screenshots."""
 import ctypes as c
 import os
+import time
 from ctypes import wintypes as w
 from collections import Counter
 
@@ -8,6 +9,7 @@ import numpy as np
 
 u = c.WinDLL('user32', use_last_error=True)
 g = c.WinDLL('gdi32', use_last_error=True)
+k = c.WinDLL('kernel32', use_last_error=True)
 CALLBACK = c.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
 
 def signature(lib, name, args, result):
@@ -16,6 +18,7 @@ def signature(lib, name, args, result):
     return fn
 
 signature(u, 'EnumWindows', [CALLBACK, w.LPARAM], w.BOOL)
+signature(k, 'GetSystemTimes', [c.POINTER(w.FILETIME)]*3, w.BOOL)
 signature(u, 'EnumChildWindows', [w.HWND, CALLBACK, w.LPARAM], w.BOOL)
 signature(u, 'GetClassNameW', [w.HWND, w.LPWSTR, c.c_int], c.c_int)
 signature(u, 'GetWindowRect', [w.HWND, c.POINTER(w.RECT)], w.BOOL)
@@ -94,6 +97,34 @@ def taskmgr_pids():
             pids.add(pid.value)
     return pids
 
+def system_times():
+    # GetSystemTimes only covers the caller's processor group above 64 CPUs.
+    if (os.cpu_count() or 0) > 64:
+        return None
+    idle, kernel, user = w.FILETIME(), w.FILETIME(), w.FILETIME()
+    if not k.GetSystemTimes(c.byref(idle), c.byref(kernel), c.byref(user)):
+        return None
+    return tuple((v.dwHighDateTime << 32) | v.dwLowDateTime for v in (idle, kernel, user))
+
+
+class SystemCpuSampler:
+    """Non-blocking CPU-time deltas; failures/gaps require a fresh baseline."""
+    def __init__(self):
+        self.previous = None
+
+    def sample(self):
+        now, values = time.monotonic(), system_times()
+        previous = self.previous
+        self.previous = (now, values) if values is not None else None
+        if previous is None or values is None or not 0 < now-previous[0] <= 6:
+            return None
+        idle, kernel, user = (a-b for a, b in zip(values, previous[1]))
+        total = kernel+user  # Kernel time includes idle time.
+        if min(idle, kernel, user) < 0 or total <= 0 or idle > total:
+            return None
+        return round(100*(total-idle)/total, 3)
+
+
 def capture(hwnd):
     _, _, width, height = rectangle(hwnd)
     if width <= 0 or height <= 0 or width*height > 10_000_000:
@@ -145,9 +176,12 @@ def sample():
 def worker(pipe):
     try:
         u.SetProcessDpiAwarenessContext(c.c_void_p(-4))
+        cpu = SystemCpuSampler()
         while pipe.recv() == 'sample':
             try:
-                pipe.send(sample())
+                result = sample()
+                result['system_cpu_percent'] = cpu.sample()
+                pipe.send(result)
             except Exception as exc:
                 pipe.send({'state':'capture_error','error':str(exc)})
     except (EOFError, BrokenPipeError):

@@ -12,7 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 import AutomaticWatch as watch
 import NativeCapture
-from test_detection import graph
+from test_detection import graph, empty_graph
 
 class CaptureFlowTests(unittest.TestCase):
     def setUp(self):
@@ -93,6 +93,21 @@ class CaptureFlowTests(unittest.TestCase):
             monitor=watch.Monitor()
             monitor.recover(Path(directory),{'classification':'installation_verification','status':'complete'})
             restart.assert_not_called()
+
+    def test_empty_aggregate_reaches_automatic_recovery_after_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \
+             patch.object(watch.time,'monotonic',return_value=1000) as clock:
+            monitor=watch.Monitor(restart_only=True)
+            with patch.object(monitor,'trigger') as trigger:
+                for t in range(0,32,2):
+                    clock.return_value=1000+t
+                    monitor.accept({'state':'captured','pid':4321,'hwnd':123,'geometry':[[0,0,75,50]]*33,
+                                    'total':empty_graph(),'cores':graph(15+t%8,wave=True),
+                                    'system_cpu_percent':8.0})
+                    self.assertEqual(trigger.call_count,1 if t==30 else 0)
+                self.assertEqual(monitor.frames[-1]['result']['detector_kind'],'empty_aggregate')
+                self.assertEqual(monitor.frames[-1]['result']['system_cpu_percent'],8.0)
+            monitor.stop()
 
     def test_missing_dump_prevents_restart(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(watch,'OUTPUT',Path(directory)), \

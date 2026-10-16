@@ -282,7 +282,8 @@ class Monitor:
         now = time.monotonic()
         if self.observations.last_time is not None and not 0 < now-self.observations.last_time <= 6:
             self.reset_observations('sample_clock_gap', {'seconds':now-self.observations.last_time})
-        result = self.detector.observe(now, sample['total'], sample['cores'])
+        result = self.detector.observe(now, sample['total'], sample['cores'],
+                                       system_cpu_percent=sample.get('system_cpu_percent'))
         frame = {'timestamp':timestamp(), 'qpc':qpc(), 'monotonic':now, 'result':result, 'images':{}}
         for key in ('total','cores'):
             ok, encoded = cv2.imencode('.png',sample[key])
@@ -300,7 +301,10 @@ class Monitor:
             self.trigger(sample)
             return
         self.publish(result['state'], taskmgr_pid=sample['pid'], seconds=result['seconds'],
-                     logical_graphs=len(sample['geometry'])-1)
+                     logical_graphs=len(sample['geometry'])-1,
+                     detector_kind=result.get('detector_kind'),
+                     detector_reason=result.get('reason'),
+                     system_cpu_percent=sample.get('system_cpu_percent'))
 
     def trigger(self, sample, verification=False, recovery_test=False):
         if self.dump_thread and self.dump_thread.is_alive():
