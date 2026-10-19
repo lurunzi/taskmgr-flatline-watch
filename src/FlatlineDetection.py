@@ -88,8 +88,10 @@ class FlatlineDetector:
         while self.changes and self.changes[0] < now-self.seconds:
             self.changes.popleft()
         height, spread = tail
-        flat = spread <= 1.0
-        same_level = self.anchor is None or abs(height-self.anchor) <= 1.0
+        # A one-pixel change is real activity on the small CPU thumbnail.
+        # Admitting it turns normal low-load waves into a freeze candidate.
+        flat = spread == 0.0
+        same_level = self.anchor is None or height == self.anchor
         if not flat or not same_level:
             self.since = None
             self.anchor = None

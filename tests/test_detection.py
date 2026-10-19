@@ -43,6 +43,28 @@ class DetectionTests(unittest.TestCase):
     def test_flat_but_changing_level_does_not_trigger(self):
         self.assertFalse(any(r['alert'] for r in self.sequence(FlatlineDetector(),lambda t:graph(10+t%12))))
 
+    def test_one_pixel_low_load_wave_does_not_trigger(self):
+        def low_load(t):
+            image = graph(46)
+            for x in range(75):
+                if (x+t//2) % 4 < 2:
+                    image[45:,x] = image[46:,x][0]
+            return image
+        results = self.sequence(FlatlineDetector(),low_load,end=90)
+        self.assertTrue(all(r['state']=='normal' and not r['alert'] for r in results))
+
+    def test_flat_line_moving_one_pixel_does_not_trigger(self):
+        results = self.sequence(FlatlineDetector(),lambda t:graph(44+(t//2)%2),end=90)
+        self.assertFalse(any(r['alert'] for r in results))
+
+    def test_one_pixel_activity_restarts_full_confirmation(self):
+        detector = FlatlineDetector()
+        self.sequence(detector,lambda t:graph(44),end=30)
+        result = detector.observe(30,graph(45),graph(wave=True))
+        self.assertEqual(result['state'],'normal')
+        results = self.sequence(detector,lambda t:graph(45),start=32,end=66)
+        self.assertEqual([32+i*2 for i,r in enumerate(results) if r['alert']],[62])
+
     def test_capture_gap_resets_confirmation(self):
         detector=FlatlineDetector()
         self.sequence(detector,lambda t:graph(),end=28)

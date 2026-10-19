@@ -97,7 +97,7 @@
       "col": 2,
       "type": "backend",
       "label": "Confirm stale total",
-      "sublabel": "flat or empty for 30 s",
+      "sublabel": "exact flat / empty: 30 s",
       "width": 150
     },
     {
@@ -239,6 +239,7 @@
       "title": "Candidates, not causal proof",
       "items": [
         "Visual observations are not native fault times",
+        "Non-empty total: zero tail variation and unchanged height for 30 s",
         "Empty total needs a painted frame, CPU >= 2% and moving cores",
         "Missing required coverage or event loss suppresses named ranks",
         "No debugger or dumps; retain raw evidence"

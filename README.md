@@ -73,6 +73,8 @@ At startup, an old running journal can be bypassed only when its creation predat
 
 ## Automatic detection
 
+Update 2026-10-19: the one-pixel tolerance described below is retired. A non-empty aggregate now requires zero vertical spread in its newest 20% and exactly the same pixel height throughout the 30-second confirmation. Any one-pixel wave or level change restarts confirmation, preventing the observed low-load false positive. Empty-chart corroboration is unchanged. Truly constant load can still satisfy a visual-only predicate; slight rendering noise may delay recovery.
+
 Update 2026-10-16: a zero/empty aggregate chart previously returned `invalid` because it contained no blue curve, so confirmation never started. The additional empty-chart path requires a visibly painted frame on all four sides, a uniform neutral interior, moving logical graphs, and independent CPU-time activity of at least 2% throughout the 30-second confirmation. A borderless blank capture, unavailable CPU sample, low activity or a capture gap resets this path. Each existing capture-helper sample reads [GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes); no additional process, debugger, stress load or performance-counter configuration is needed. The first sample establishes a baseline. Above 64 logical processors this corroboration is disabled because that API covers only the caller's processor group. Status and incident measurements include the detector kind and independent CPU percentage. This is a suspected display inconsistency, not proof that this incident shares the historical DLL defect or that a particular application caused it.
 
 Update 2026-10-01: the ten-minute cooldown now applies only to repeated captures of the same PID and window. A replacement Task Manager that freezes again receives a new dump pair and recovery after the 30-second visual confirmation, without waiting for the previous process's cooldown. A blocked capture shows the cooldown and remaining seconds. Fourteen tests pass, including replacement-process recovery eligibility and cooldown persistence across watcher restarts.
@@ -199,6 +201,8 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 - 全新检出时先安装 Python 3.12，再运行 `Setup.cmd`。依赖版本固定在 `requirements-flatline.txt`。安装会从微软 Sysinternals 官网下载 ProcDump 并校验微软数字签名；Git 不分发 ProcDump 二进制文件。
 
 ## 自动检测
+
+更新 2026-10-19：下文的一像素容差已停用。非空总图最新的右侧 20% 必须完全水平，且在 30 秒确认期内保持完全相同的像素高度；任何一像素波动或高度变化都会重新计时，避免本次低负载误报。空图交叉验证不变。真实恒定负载仍可能满足视觉条件，轻微绘制噪声可能延迟恢复。
 
 2026-10-16 更新：零值／空白总图以前因没有蓝色曲线而一直返回 `invalid`，无法开始确认。新增空图分支要求四边有实际绘制的边框、内部为均匀中性色、分线程图持续变化，而且独立 CPU 时间采样在 30 秒确认期间持续不低于 2%。无边框的空白截图、CPU 采样不可用、低负载或采集间断都会重置此分支。现有截图辅助进程每次采样读取英文区链接的 `GetSystemTimes`，无需增加进程、调试器、压测或性能计数器配置；首次读取仅建立基线。超过 64 个逻辑处理器时停用这项交叉校验，因为该 API 只覆盖调用线程所属的处理器组。状态与事件记录保留检测分支和独立 CPU 百分比。这仍是疑似显示不一致，不证明本次与历史 DLL 缺陷同源，也不证明某个应用导致故障。
 
