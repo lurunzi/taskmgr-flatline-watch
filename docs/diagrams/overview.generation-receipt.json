@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-19",
-  "purpose": "Reject one-pixel low-load waves and level changes during flat-curve confirmation.",
+  "date": "2026-10-20",
+  "purpose": "Independent activity rankings before and after the first flat observation, with normal controls.",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -9,23 +9,20 @@
   },
   "diagram_type": "workflow",
   "quality_profile": "showcase",
-  "correction_rounds": 2,
-  "corrections": [
-    "Document strict flatness in both language specifications.",
-    "Update visible detector labels; context cards alone are not included in canonical PNG exports."
-  ],
+  "correction_rounds": 0,
+  "corrections": [],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "08e1477dfc73967072257b0e4e7784db7844d28e73e6d6af0689a7b1514ac6bb",
-        "bytes": 5419
+        "sha256": "e894bde44bae0e5de9ca273b116a069920a1a3a5a3f3f5936060fbf60c19c582",
+        "bytes": 5469
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "4721c2e62807dbf9f6c94c85deacaeb2be9d58a1d2b1e74dee1cd7034b392780",
-        "bytes": 716614,
+        "sha256": "aa6b4baec7133fad089426c0be448e140dbc5850a69ca7c9ed1de1ac0cbdea05",
+        "bytes": 716660,
         "committed": false
       },
       "validation": {
@@ -38,20 +35,20 @@
         "1920x1080",
         "2048x1320"
       ],
-      "visual_review": "English light and Chinese dark canonical exports inspected by Codex; updated detector labels readable without clipping.",
+      "visual_review": "English light and Chinese dark canonical exports inspected by Codex; labels and routes readable without clipping.",
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "693fdb3e97d4e25c82f63092b5745db5b2291e019b70c93fc659e953a67ede04",
-          "bytes": 569074,
+          "sha256": "24e7ca4a782ca3541d1be965054119dfbd8f4290f882945ae6e69a04ad98b86b",
+          "bytes": 566308,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "f390a945eb39334e06f94a2e8fb63dab72eb4c8f6f0f83e3d2af312e3bf3cdde",
-          "bytes": 582769,
+          "sha256": "1cac768b41840b87767157f98108da4d8bb90cddeac3b8a300e107237fe5cc69",
+          "bytes": 580270,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -62,13 +59,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "ab293ba17c8755fac5f81e41a6a876c2e91c07182f70ce54e25b4e1ace2c30a6",
-        "bytes": 5431
+        "sha256": "3f7b5ba2deba4bfe2c6d713dd711959acd0e7a1f1f3d0cbd5e997dde3d8d32c4",
+        "bytes": 5486
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "676b3947b17fccfb0661dae4dba64334074bdbeb45ecacb8b8a83d73a9299d0d",
-        "bytes": 716342,
+        "sha256": "e9f91efaa8cb1dfabcc1524e75b38d46300878b14bcac18d124c1b2b54db26b6",
+        "bytes": 716402,
         "committed": false
       },
       "validation": {
@@ -81,20 +78,20 @@
         "1920x1080",
         "2048x1320"
       ],
-      "visual_review": "English light and Chinese dark canonical exports inspected by Codex; updated detector labels readable without clipping.",
+      "visual_review": "English light and Chinese dark canonical exports inspected by Codex; labels and routes readable without clipping.",
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "540335153ee027bc995f9f5cb44c6318a48ac21b7f9cf8cb358e7dfa61f47c40",
-          "bytes": 600366,
+          "sha256": "350f7bc05cee0679352f853d60574ffa540e7880fda2795fe4ad9c6f70b48c48",
+          "bytes": 600756,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "0a337f3d7e6861997f161d0e72d1050415d5bb0e8abb92e3551260119ebd3b89",
-          "bytes": 611903,
+          "sha256": "0862a8db6f1cee12db1cdfadacd1ee0405f69a6f8cdc670b061cae2698c243e6",
+          "bytes": 612260,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true
@@ -107,5 +104,5 @@
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "local_artifacts": ".local/work-inbox/20261019-low-load-false-positive/overview.<lang>.html and delivery/visual/export receipts"
+  "local_artifacts": ".local/work-inbox/20261020-phase-analysis/overview.<lang>.html and delivery/visual/export receipts"
 }

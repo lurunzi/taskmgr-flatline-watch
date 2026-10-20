@@ -159,8 +159,8 @@
       "lane": "evidence",
       "col": 5,
       "type": "backend",
-      "label": "Offline candidates",
-      "sublabel": "gzip, controls, coverage",
+      "label": "Before / after",
+      "sublabel": "first flat observation",
       "width": 150
     }
   ],
@@ -242,7 +242,8 @@
         "Non-empty total: zero tail variation and unchanged height for 30 s",
         "Empty total needs a painted frame, CPU >= 2% and moving cores",
         "Missing required coverage or event loss suppresses named ranks",
-        "No debugger or dumps; retain raw evidence"
+        "No debugger or dumps; retain raw evidence",
+        "Independent phase ranks and normal controls"
       ]
     }
   ]

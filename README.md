@@ -15,6 +15,14 @@ The English version governs.
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
 The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
 
+## Activity before and after first flat observation (20 October 2026)
+
+New offline reports rank two phases independently: **before-first** is the short transition window `(last_normal, first_candidate)`; **after-first** is companion activity during `[first_candidate, confirmed]`. Events exactly at the first-flat boundary belong only to after-first. The boundary is a visual observation affected by sampling and display latency, not the native fault time. A later process must not become a before-first candidate just because it dominates the confirmation window.
+
+Each phase includes its duration, event and unresolved counts, an independent Top 3, and a contiguous normal control ending at `last_normal`. Controls aim for that phase's duration; shorter controls retain their actual exposure and rates. Without a connected last-normal sample, before-first and the controls are unavailable; after-first uses `(first_candidate, confirmed]`. Missing required coverage or event loss still suppresses named ranks. No missing identities or controls are filled with invented zeroes.
+
+JSON schema 2 adds `phases.before_first` and `phases.after_first`; the top-level `top` now contains **before-first only**, labelled by `top_scope`. Top-level `event_counts` still cover the whole observation window, as stated by `event_counts_scope`. Existing reports remain historical; use the existing offline analysis command with a new `--output` directory to reanalyse retained XML without replacing the originals. Future automatic offline subprocesses load this update without restarting the watcher. This changes analysis only; detection, recovery and the configured recording budget are unchanged.
+
 ## Evidence review and recording budget (20 October 2026)
 
 The [consolidated evidence review](docs/investigation-status.md) separates the confirmed historical retry defect, the newer DLL's matching local control flow, and the still-missing same-incident buffer-to-freeze lineage. It corrects the fixed-4-KiB-reserve, inevitable-ghost, thread-death and process-crash claims. New-file static comparison does not authorise old debugger offsets or establish the cause of later visual recoveries. Earlier dated operation and validation entries below remain historical records.
@@ -160,6 +168,14 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
 上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
+
+## 首次平线前后活动（2026-10-20）
+
+新版离线报告分两段独立排行：**平线前**是最后正常观察到首次平线之间的短暂转变窗口 `(last_normal, first_candidate)`；**平线后**是等待确认期间的伴随活动 `[first_candidate, confirmed]`。恰在首次平线边界的事件只计入后段。边界是受采样与界面延迟影响的视觉观察，不是底层故障时刻。晚出现的进程不会因为确认期间活动较多而成为平线前候选。
+
+每段分别给出时长、事件数、未解析计数、独立前三名，以及以最后正常观察为终点的连续正常对照。对照尽量等长；时长不足时保留实际时长和每秒速率。没有连续的最后正常样本时，平线前和正常对照不可用，后段使用 `(first_candidate, confirmed]`。所需覆盖缺失或丢事件仍禁止具名排行；缺失身份或对照不会补成虚构的零。
+
+JSON schema 2 新增 `phases.before_first` 和 `phases.after_first`；顶层 `top` 现在**仅含平线前**，由 `top_scope` 标明。顶层 `event_counts` 仍覆盖整个观察窗口，由 `event_counts_scope` 说明。旧报告作为历史保留；用已有离线分析命令的 `--output` 指定新目录即可重算已有 XML，不覆盖原件。后续自动离线子进程会加载更新，无需重启监测器。本次只改变分析，检测、恢复和已配置记录预算不变。
 
 ## 证据复核与记录预算（2026-10-20）
 
