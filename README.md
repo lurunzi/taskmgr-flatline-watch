@@ -15,6 +15,18 @@ The English version governs.
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
 The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
 
+## Evidence review and recording budget (20 October 2026)
+
+The [consolidated evidence review](docs/investigation-status.md) separates the confirmed historical retry defect, the newer DLL's matching local control flow, and the still-missing same-incident buffer-to-freeze lineage. It corrects the fixed-4-KiB-reserve, inevitable-ghost, thread-death and process-crash claims. New-file static comparison does not authorise old debugger offsets or establish the cause of later visual recoveries. Earlier dated operation and validation entries below remain historical records.
+
+Lightweight recording now reports `light_etw.storage` with retained bytes by file type, budget, free disk bytes, check time and `blocked_by` reasons. The existing status label distinguishes budget exhaustion from low disk space. The default budget remains 2 GiB; an explicit whole-number `--etw-budget-gib` from 2 to 64 is saved as `etw_budget_gib` in local preferences. After checking `dump_running: false`, stop gracefully and wait for `state: stopped` before using the following example. Subsequent launches retain the setting. No evidence is removed, and automatic recovery continues when recording is blocked.
+
+```powershell
+.\Start.cmd --light-etw --etw-budget-gib 4
+```
+
+Usage includes the existing `light-etw` and `restart-*` ETL/XML/compressed/partial files. It is a pre-arm snapshot, not a live disk meter or hard reservation; an active trace or decoder can exceed the soft budget. The 1 GiB minimum free-space guard and 64 MiB circular trace size are unchanged. Expanding the budget resumes future collection only; missing past events remain unavailable.
+
 ## Current operation and investigation closure (2026-10-13)
 
 The confirmed retry-count defect in the investigated DLL build is ready for engineering escalation. The three evidence layers are binary control flow, execution of the original native function, and historical aggregation/frozen-state dumps. This closes the local defect investigation; the same-incident buffer-to-freeze address lineage remains unobserved. It is not a Microsoft confirmation or a Windows fix. Live address-chain collection is retired for this investigation; the diagnostic tools and older instructions below are retained for reproducibility, not as a request to resume collection.
@@ -148,6 +160,14 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
 上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
+
+## 证据复核与记录预算（2026-10-20）
+
+[统一证据摘要](docs/investigation-status.md#zh)区分历史已证实的重试缺陷、新 DLL 相同的局部控制流，以及尚未捕获的同次缓冲区到冻结完整来源链。它纠正固定 4 KiB 余量、必然假记录、线程死亡和进程崩溃等说法。新版静态比对不允许沿用旧调试地址，也不能证明后续视觉恢复的原因。下方较早日期的运行和验证内容作为历史记录保留。
+
+轻量记录新增结构化存储状态，包含按文件类型统计的保留字节、预算、磁盘可用空间、检查时间及阻断原因；现有状态标签区分预算耗尽与磁盘空间不足。默认预算仍为 2 GiB，可通过英文区命令中的参数显式指定 2～64 GiB 整数值，保存到本地偏好。确认无取证任务后正常停止，等到状态为已停止，再启动；后续启动沿用该设置。不会删除证据，记录阻断时自动恢复继续工作。
+
+统计继续包含现有轻量记录目录和重启事件目录中的 ETL、XML、压缩及部分文件。数值是布防前快照，并非实时磁盘仪表或硬性空间预留；已运行的记录或解码可以超过软预算。至少 1 GiB 可用空间检查与 64 MiB 循环文件大小不变。扩容仅恢复之后的采集，无法补回过去漏采的事件。
 
 ## 当前运行与调查结案（2026-10-13）
 

@@ -1,5 +1,6 @@
 """Tray interface for the automatic ScreenWatcher extension."""
 import ctypes
+import argparse
 import multiprocessing as mp
 import sys
 import traceback
@@ -9,6 +10,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel, QMenu, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget
 from AutomaticWatch import Monitor, ROOT, OUTPUT
 import Autostart
+from RollingProcessTrace import budget_bytes
 
 TEXT = {
  'zh': {'title':'任务管理器自动取证', 'folder':'打开 D 盘记录', 'quit':'退出', 'show':'查看状态',
@@ -24,6 +26,8 @@ TEXT = {
  'restart_only':'只重启，不取证', 'hint_restart':'持续异常 30 秒后直接重启任务管理器，不保存转储和图表，然后继续检测。',
  'restart_cooldown':'重启冷却中', 'restarted':'任务管理器已重启', 'restart_failed':'重启未完成，稍后重试',
  'light_etw':'轻量事件记录', 'etw_error':'事件记录不可用，请查看状态记录',
+ 'etw_budget':'事件记录暂停：{used:.2f} / {budget:g} GiB',
+ 'etw_disk':'事件记录暂停：磁盘可用 {free:.2f} GiB',
  'restart_etw':'自动恢复，不抓转储',
  'report':'打开最近候选报告',
  'hint_etw':'持续异常 30 秒后保存图表和循环事件记录，重启任务管理器，再生成候选分析。候选不代表已证明的原因。'},
@@ -40,6 +44,8 @@ TEXT = {
  'restart_only':'Restart only, no evidence', 'hint_restart':'After 30 seconds of suspected freezing, restarts Task Manager directly without saving dumps or graphs, then resumes detection.',
  'restart_cooldown':'Restart cooldown', 'restarted':'Task Manager restarted', 'restart_failed':'Restart incomplete; retrying',
  'light_etw':'Light event recording', 'etw_error':'Event recording unavailable; see status record',
+ 'etw_budget':'Recording paused: {used:.2f} / {budget:g} GiB',
+ 'etw_disk':'Recording paused: {free:.2f} GiB disk free',
  'restart_etw':'Auto recover, no dumps',
  'report':'Open latest candidate report',
  'hint_etw':'After 30 seconds of suspected freezing, saves charts and circular events, restarts Task Manager, then reports candidates. Candidates are not proven causes.'}
@@ -50,13 +56,21 @@ class Watch(QWidget):
         super().__init__()
         self.settings=QSettings(str(ROOT/'.local/preferences.ini'),QSettings.IniFormat)
         self.lang=self.settings.value('language','zh')
+        options=argparse.ArgumentParser(add_help=False,allow_abbrev=False)
+        options.add_argument('--etw-budget-gib',type=budget_bytes)
+        args,_=options.parse_known_args(sys.argv[1:])
+        etw_budget=(args.etw_budget_gib if args.etw_budget_gib is not None else
+                    budget_bytes(self.settings.value('etw_budget_gib','2')))
+        if args.etw_budget_gib is not None:
+            self.settings.setValue('etw_budget_gib',str(etw_budget//1024**3))
         if '--light-etw' in sys.argv:
             self.settings.setValue('light_etw','true')
         if '--no-light-etw' in sys.argv:
             self.settings.setValue('light_etw','false')
         self.monitor=Monitor(query_trace='--query-trace' in sys.argv,
                              restart_only=self.settings.value('restart_only','false')=='true',
-                             light_etw=self.settings.value('light_etw','false')=='true')
+                             light_etw=self.settings.value('light_etw','false')=='true',
+                             etw_budget=etw_budget)
         if self.monitor.light_etw:
             self.settings.setValue('restart_only','true')
         self.setWindowIcon(QIcon(str(ROOT/'assets/icon.png')))
@@ -136,6 +150,13 @@ class Watch(QWidget):
         trace=state.get('light_etw',{})
         if self.monitor.light_etw and trace.get('state') in ('error','stop_pending'):
             self.details.setText(self.text('etw_error'))
+            storage=trace.get('storage',{})
+            blocked=storage.get('blocked_by',[])
+            if 'disk_free' in blocked:
+                self.details.setText(self.text('etw_disk').format(free=storage['free_bytes']/1024**3))
+            elif 'trace_budget' in blocked:
+                self.details.setText(self.text('etw_budget').format(
+                    used=storage['used_bytes']/1024**3,budget=storage['budget_bytes']/1024**3))
             self.details.setToolTip(trace.get('error',''))
         else:
             self.details.setToolTip('')

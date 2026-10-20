@@ -18,7 +18,7 @@ from NativeCapture import worker, taskmgr_pids
 from OriginCapture import OriginWatch
 from TaskmgrRecovery import restart_taskmgr, restore_cpu_page
 from ProcessTrace import qpc
-from RollingProcessTrace import RollingRecorder
+from RollingProcessTrace import RollingRecorder, TRACE_BUDGET
 from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS, mark_recovery
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,7 +116,8 @@ def write_dump(pid, destination):
     return result
 
 class Monitor:
-    def __init__(self, query_trace=False, restart_only=False, light_etw=False):
+    def __init__(self, query_trace=False, restart_only=False, light_etw=False,
+                 etw_budget=TRACE_BUDGET):
         # Lightweight ETW is separate from the origin debugger/dump monitor.
         self.restart_only = bool(restart_only or light_etw)
         self.light_etw = light_etw
@@ -124,7 +125,7 @@ class Monitor:
         self.detector = FlatlineDetector(30)
         self.frames = deque(maxlen=61 if light_etw else 31)
         self.observations = Observations()
-        self.recorder = RollingRecorder(OUTPUT) if light_etw else None
+        self.recorder = RollingRecorder(OUTPUT, trace_budget=etw_budget) if light_etw else None
         self.offline = OfflineProcessor() if light_etw else None
         self.process = self.pipe = None
         self.pending = None

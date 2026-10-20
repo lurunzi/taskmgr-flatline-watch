@@ -9,7 +9,7 @@ from unittest.mock import patch
 from datetime import datetime,timezone
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
-from RollingProcessTrace import RollingRecorder
+from RollingProcessTrace import RollingRecorder, budget_bytes, MIN_FREE
 from ProcessTrace import frequency
 
 
@@ -82,6 +82,49 @@ class RollingTests(unittest.TestCase):
                 recorder.start();recorder.thread.join(3)
             self.assertEqual(recorder.status()['state'],'error')
             self.assertEqual(artifact.read_bytes(),b'important')
+            self.assertEqual(FakeSession.instances,[])
+
+    def test_budget_setting_rejects_unbounded_and_ambiguous_values(self):
+        self.assertEqual(budget_bytes('4'),4*1024**3)
+        for value in ('0','1','65','-1','4.5','nan','inf','',True,'４'):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                budget_bytes(value)
+        with self.assertRaises(ValueError):
+            RollingRecorder('.',trace_budget=0)
+
+    def test_storage_reports_budget_and_free_space_without_changing_evidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)/'restart-test';root.mkdir()
+            original={}
+            for name in ('process.etl','events.xml','events.xml.gz','decode.part'):
+                path=root/name;path.write_bytes(b'evidence');original[path]=path.read_bytes()
+            # Only stat sizes are substituted; all retained files are real fixtures.
+            real_stat=Path.stat
+            def stat(path,*args,**kwargs):
+                result=real_stat(path,*args,**kwargs)
+                if path in original:
+                    from types import SimpleNamespace
+                    return SimpleNamespace(st_size=600*1024**2,st_mode=result.st_mode)
+                return result
+            from types import SimpleNamespace
+            recorder=RollingRecorder(d)
+            with patch.object(Path,'stat',stat),patch('RollingProcessTrace.shutil.disk_usage',
+                    return_value=SimpleNamespace(free=10*1024**3)):
+                with self.assertRaisesRegex(RuntimeError,'trace_budget'):
+                    recorder._storage()
+                storage=recorder.status()['storage']
+                self.assertEqual(storage['blocked_by'],['trace_budget'])
+                self.assertEqual(storage['used_bytes'],2400*1024**2)
+                self.assertEqual(len(storage['by_type_bytes']),4)
+                expanded=RollingRecorder(d,trace_budget=budget_bytes('4'))
+                expanded._storage()
+                self.assertEqual(expanded.status()['storage']['blocked_by'],[])
+            with patch('RollingProcessTrace.shutil.disk_usage',
+                    return_value=SimpleNamespace(free=MIN_FREE-1)):
+                with self.assertRaisesRegex(RuntimeError,'disk_free'):
+                    expanded._storage()
+                self.assertEqual(expanded.status()['storage']['blocked_by'],['disk_free'])
+            self.assertEqual({p:p.read_bytes() for p in original},original)
             self.assertEqual(FakeSession.instances,[])
 
     def prior(self,d):

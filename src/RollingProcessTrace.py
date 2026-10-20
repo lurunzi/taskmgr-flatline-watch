@@ -16,6 +16,14 @@ TRACE_BUDGET = 2 * 1024**3
 MIN_FREE = 1024**3
 
 
+def budget_bytes(gib):
+    """An explicit, bounded setting; never silently disable the storage guard."""
+    text = str(gib)
+    if not text.isascii() or not text.isdecimal() or not 2 <= int(text) <= 64:
+        raise ValueError('ETW budget must be a whole number from 2 to 64 GiB')
+    return int(text) * 1024**3
+
+
 def save(path, value):
     text = json.dumps(value, ensure_ascii=False, indent=2) + '\n'
     temp = path.with_suffix('.tmp')
@@ -29,9 +37,13 @@ class RollingRecorder:
     snapshot() queues preservation and returns an Event, never a success promise.
     Callers may wait briefly then recover while this worker finishes saving.
     """
-    def __init__(self, output, session_factory=Session):
+    def __init__(self, output, session_factory=Session, trace_budget=TRACE_BUDGET):
         self.output = Path(output)
         self.factory = session_factory
+        if (not isinstance(trace_budget, int) or isinstance(trace_budget, bool) or
+                trace_budget % 1024**3 or not TRACE_BUDGET <= trace_budget <= 64 * 1024**3):
+            raise ValueError('ETW budget must be a whole number from 2 to 64 GiB')
+        self.trace_budget = trace_budget
         self.jobs = queue.Queue(maxsize=1)
         self.cancel = threading.Event()
         self.lock = threading.Lock()
@@ -86,13 +98,31 @@ class RollingRecorder:
 
     def _storage(self):
         used = 0
+        by_type = {}
         # Only this feature's known directories; old dumps are never scanned.
         for root in [self.output/'light-etw', *self.output.glob('restart-*')]:
             if root.exists():
                 for pattern in ('*.etl', '*.xml', '*.xml.gz', '*.part'):
-                    used += sum(p.stat().st_size for p in root.rglob(pattern) if p.is_file())
-        if shutil.disk_usage(self.output).free < MIN_FREE or used >= TRACE_BUDGET:
-            raise RuntimeError('ETW storage budget reached; existing evidence retained')
+                    size = sum(p.stat().st_size for p in root.rglob(pattern) if p.is_file())
+                    used += size
+                    by_type[pattern] = by_type.get(pattern, 0) + size
+        free = shutil.disk_usage(self.output).free
+        reasons = []
+        if free < MIN_FREE:
+            reasons.append('disk_free')
+        if used >= self.trace_budget:
+            reasons.append('trace_budget')
+        # Report the actual limiting resource, including when recording can start.
+        # This is a pre-arm snapshot, not a reservation or continuous disk meter.
+        self.update(storage={'used_bytes': used, 'budget_bytes': self.trace_budget,
+                             'free_bytes': free, 'min_free_bytes': MIN_FREE,
+                             'by_type_bytes': by_type, 'blocked_by': reasons,
+                             'checked_utc': datetime.now(timezone.utc).isoformat()})
+        if reasons:
+            raise RuntimeError(
+                f'ETW storage blocked ({", ".join(reasons)}): '
+                f'{used} / {self.trace_budget} bytes retained; '
+                f'{free} bytes free, minimum {MIN_FREE}; existing evidence retained')
 
     def _arm(self):
         if self.cancel.is_set():
