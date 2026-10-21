@@ -121,6 +121,61 @@ class AddressChainTests(unittest.TestCase):
         for rva,expected in A.SITES.items():
             self.assertEqual(A.pe_bytes(image,rva,len(bytes.fromhex(expected))).hex(),expected,hex(rva))
 
+    def test_installed_dll_matches_a_pinned_build(self):
+        image = Q.DLL.read_bytes()
+        sha = hashlib.sha256(image).hexdigest()
+        self.assertIn(sha, A.BUILDS, sha)
+        for rva, expected in A.BUILDS[sha]['sites'].items():
+            self.assertEqual(A.pe_bytes(image, rva, len(bytes.fromhex(expected))).hex(), expected, hex(rva))
+
+    def test_nonghost_exhaust_is_saved_without_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            mem = Memory()
+            data = bytearray(512)
+            struct.pack_into('<Q', data, 0x20, 99)
+            struct.pack_into('<Q', data, 0x50, 42)
+            mem.blocks[0x1000] = bytes(data)
+            session = pinned_session('unused', 1, folder, lambda *a: None, lambda s: None, memory=mem)
+            session.send = Mock(return_value=True)
+            session.query_event('E', [1])
+            for i in range(3):
+                session.query_event('N', [1, 0xc0000004, i*256, (i+1)*256])
+            session.query_event('X', [1, 4, 0x1000, 0x1200])
+            session.dispatch('SEED', [1, 0x1000, 0x1200, 0x1200, 0x9000])
+            self.assertEqual(session.record['dll_sha256'], hashlib.sha256(session.image).hexdigest())
+            self.assertTrue((folder/'query-1-buffer.bin').is_file())
+            self.assertFalse(session.raw)
+            self.assertIsNone(session.active_since)
+            session.send.assert_called_with('g\n')
+
+    def test_induce_grows_only_selected_mismatches_then_resumes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = pinned_session('unused', 1, Path(directory), lambda *a: None, lambda s: None,
+                                     memory=Memory(), induce_queries=1, growth_threads=2, warmup_queries=1)
+            session.send = Mock(return_value=True)
+            plain = pinned_session('unused', 1, Path(directory), lambda *a: None, lambda s: None, memory=Memory())
+            try:
+                self.assertNotIn('gc', A.NTQSI_HOLD)
+                self.assertIn('gc', plain.ntqsi_text())
+                self.assertEqual(session.ntqsi_text(), A.NTQSI_HOLD)
+                session.query_event('E', [3])
+                session.query_event('N', [3, 0xc0000004, 0, 10])
+                self.assertEqual(session.held, [])
+                session.query_event('R', [3, 0])
+                self.assertFalse(session.induce_finished.is_set())
+                session.query_event('E', [3])
+                session.query_event('N', [3, 0xc0000004, 0, 10])
+                session.query_event('N', [3, 0xc0000004, 10, 20])
+                session.query_event('N', [3, 0, 20, 20])
+                self.assertEqual(len(session.held), 2)
+                session.query_event('X', [3, 4, 0, 0])
+                session.query_event('R', [3, 0])
+                self.assertTrue(session.induce_finished.is_set())
+                session.send.assert_called_with('g\n')
+            finally:
+                session.release_growth()
+
     def test_printf_newline_is_kept_out_of_nested_breakpoint_quotes(self):
         with tempfile.TemporaryDirectory() as directory:
             s = pinned_session('unused',1,Path(directory),lambda *a:None,lambda s:None,memory=Memory())

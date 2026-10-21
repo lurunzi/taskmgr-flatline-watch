@@ -23,6 +23,9 @@ MAX_EVENTS = 4096
 ACTIVE_SECONDS = 120
 # First complete instruction at each verified RVA. Symbol/disassembly evidence is
 # recorded separately; these bytes prevent silently using offsets on another build.
+# 9549's 600-byte query body matches 9278 except external displacements.
+# Held threads are created in this capture process, between real NtQSI returns.
+NTQSI_HOLD = '.printf "QT N %x %x %x %x\\n", @$tid, @eax, @ebx, dwo(@rsp+0x20);\n'
 SITES = {
     0x46158: '48895c2408', 0x461ec: '8bc8', 0x46325: '4183fe03',
     0x4638c: '488b4c2440', 0xb4a0: '48895c2410',
@@ -30,6 +33,32 @@ SITES = {
     0x8090: '48895c2410', 0xdd80: 'c70105000000',
     0x1966c: '4053', 0x34c00: '4c8b4108',
     0x42a9d: '33c0', 0x3e484: '48895c2408', 0x3e5cf: '488d4de0',
+}
+
+SITES_9549 = {
+    0x4BCA8: '48895c2408', 0x4BD3C: '8bc8', 0x4BE75: '4183fe03',
+    0x4BEDC: '488b4c2440', 0xB450:  '48895c2410',
+    0xA590:  '48895c2418', 0x74A0:  '8b02', 0xABF0:  '48895c2408',
+    0x8130:  '48895c2410', 0xDD30:  'c70105000000',
+    0x1A3FC: '4053', 0x39460: '4c8b4108',
+    0x48921: '33c0', 0x43384: '48895c2408', 0x434D3: '488d4de0',
+}
+
+BUILDS = {
+    '829263f58610a9ff013b41f32ecad6a21e9de1631074039de6c20548d3515dce': {
+        'sites': SITES,
+        'enter': 0x46158, 'ntqsi': 0x461ec, 'exit': 0x46325, 'return': 0x4638c,
+        'convert': 0xb4a0, 'copy': 0xa600, 'move': 0x7450, 'assign': 0xac50,
+        'destroy': 0x8090, 'default': 0xdd80, 'free_buffer': 0x1966c,
+        'swap': 0x34c00, 'vector': 0x42a9d, 'aggregate': 0x3e484, 'conflict': 0x3e5cf,
+    },
+    '0cc75ace69fef8f512c6efa2e6ac9b4257f8c450302e45b76de441a608fb3867': {
+        'sites': SITES_9549,
+        'enter': 0x4BCA8, 'ntqsi': 0x4BD3C, 'exit': 0x4BE75, 'return': 0x4BEDC,
+        'convert': 0xB450, 'copy': 0xA590, 'move': 0x74A0, 'assign': 0xABF0,
+        'destroy': 0x8130, 'default': 0xDD30, 'free_buffer': 0x1A3FC,
+        'swap': 0x39460, 'vector': 0x48921, 'aggregate': 0x43384, 'conflict': 0x434D3,
+    }
 }
 
 
@@ -124,8 +153,19 @@ class Provenance:
 
 
 class Session(QT.Session):
-    def __init__(self, cdb, pid, folder, write_json, finished, memory=None):
+    def __init__(self, cdb, pid, folder, write_json, finished, memory=None, *,
+                 induce_queries=0, growth_threads=80, warmup_queries=1):
         super().__init__(cdb, pid, folder, write_json, finished)
+        self.induce_queries = induce_queries
+        self.growth_threads = growth_threads if induce_queries else 0
+        self.warmup_left = warmup_queries if induce_queries else 0
+        self.induce_left = induce_queries
+        self.inducing_tids = set()
+        self.queries_induced = 0
+        self.induce_finished = threading.Event()
+        self.held = []
+        self.growth_threads_live = []
+        self.saved_buffers = 0
         self.memory = memory or Memory(pid)
         if self.memory.debugger():
             raise RuntimeError('target already has a debugger')
@@ -134,9 +174,12 @@ class Session(QT.Session):
                            creation_filetime=self.memory.created, acceptance='incomplete',
                            qpc_frequency=frequency(),query_clock='host receipt QPC; debugger latency unbounded')
         self.image = QT.DLL.read_bytes()
-        if hashlib.sha256(self.image).hexdigest() != QT.DLL_SHA256:
-            raise RuntimeError('DLL hash mismatch')
-        for rva, expected in SITES.items():
+        sha = hashlib.sha256(self.image).hexdigest()
+        if sha not in BUILDS:
+            raise RuntimeError(f'Unsupported DLL hash: {sha}')
+        self.build = BUILDS[sha]
+        self.record['dll_sha256'] = sha
+        for rva, expected in self.build['sites'].items():
             if pe_bytes(self.image, rva, len(bytes.fromhex(expected))).hex() != expected:
                 raise RuntimeError(f'file instruction mismatch at {rva:x}')
         self.base = None
@@ -187,7 +230,7 @@ class Session(QT.Session):
     def ready(self, base):
         self.base = base
         checked = []
-        for rva, expected in SITES.items():
+        for rva, expected in self.build['sites'].items():
             actual = self.memory.read(base+rva, len(bytes.fromhex(expected))).hex()
             checked.append({'rva': hex(rva), 'expected': expected, 'actual': actual})
             if actual != expected:
@@ -196,19 +239,57 @@ class Session(QT.Session):
         self.event('verified', base=hex(base), sites=checked)
         d = (self.folder/'cdb').resolve().as_posix()
         scripts = dict(QT.SCRIPTS)
+        scripts['ntqsi.cdb'] = self.ntqsi_text()
         scripts['exit.cdb'] = '.printf "QT X %x %x %p %p\\n", @$tid, @r14d, @rcx, @rbx; ' \
             '.if (@r14d==4) { .printf "AC SEED %I64x %I64x %I64x %I64x %I64x\\n", @$tid, @rcx, @rbx, qwo(@rsp+0x38), @rdi } .else { gc }\n'
         for name, content in scripts.items():
             (self.folder/'cdb'/name).write_text(content, encoding='ascii')
+        b = self.build
         commands = ''.join(f'bp{i} {base+rva:x} "$$><{d}/{name}.cdb"\n' for i,rva,name in
-                           [(0,0x46158,'enter'),(1,0x461ec,'ntqsi'),(2,0x46325,'exit'),(3,0x4638c,'return')])
-        commands += self.bp(20, 0x3e5cf, 'CONFLICT', ['@rbx','@rbp','@rdi','@r14'])
+                           [(0,b['enter'],'enter'),(1,b['ntqsi'],'ntqsi'),
+                            (2,b['exit'],'exit'),(3,b['return'],'return')])
+        commands += self.bp(20, b['conflict'], 'CONFLICT', ['@rbx','@rbp','@rdi','@r14'])
         self.record['status'] = 'tracing'
         self.send(commands+'g\n')
         self.save()
 
+    def ntqsi_text(self):
+        # Holding the breakpoint lets the host add threads before the retry.
+        # The ordinary script resumes inside cdb and cannot time that growth.
+        return NTQSI_HOLD if self.induce_queries else QT.SCRIPTS['ntqsi.cdb']
+
+    def release_growth(self):
+        held, self.held = self.held, []
+        for event in held:
+            event.set()
+        live, self.growth_threads_live = self.growth_threads_live, []
+        for thread in live:
+            thread.join(timeout=1)
+
+    def _grow(self, tid, call_index):
+        if len(self.held) >= max(1, self.induce_queries)*2:
+            return
+        event = threading.Event()
+        def park():
+            event.wait()
+        threads = [threading.Thread(target=park, name='flatline-induce', daemon=True)
+                   for _ in range(self.growth_threads)]
+        for thread in threads:
+            thread.start()
+        self.held.append(event)
+        self.growth_threads_live.extend(threads)
+        self.event('induce_growth', tid=tid, call=call_index, added=len(threads), groups=len(self.held))
+
+    def detach(self, timeout=20):
+        self.release_growth()
+        super().detach(timeout)
+
     def query_event(self, kind, values):
         tid = values[0]
+        if self.induce_queries and kind == 'R':
+            self.inducing_tids.discard(tid)
+            if self.queries_induced and self.induce_left == 0 and not self.inducing_tids:
+                self.induce_finished.set()
         received = qpc()
         if kind == 'R' and tid in self.open:
             self.open[tid]['return_received_qpc'] = received
@@ -217,8 +298,30 @@ class Session(QT.Session):
             self.query_number += 1
             self.open[tid]['query'] = f'{self.instance}:Q{self.query_number}'
             self.open[tid]['entry_received_qpc'] = received
+            if self.induce_queries:
+                if self.warmup_left:
+                    self.warmup_left -= 1
+                    self.open[tid]['induce'] = False
+                elif self.induce_left:
+                    self.induce_left -= 1
+                    self.open[tid]['induce'] = True
+                    self.inducing_tids.add(tid)
+                    self.queries_induced += 1
+                else:
+                    self.open[tid]['induce'] = False
         elif kind == 'N':
             self.open[tid]['calls'][-1]['received_qpc'] = received
+            if self.induce_queries:
+                try:
+                    invocation = self.open.get(tid)
+                    if invocation and invocation.get('induce') and values[1] == 0xC0000004:
+                        if len(invocation['calls'])-1 < 2:
+                            self._grow(tid, len(invocation['calls'])-1)
+                finally:
+                    if not self.send('g\n'):
+                        raise RuntimeError('failed to resume after NtQuerySystemInformation breakpoint')
+        if self.induce_queries and kind == 'X' and values[1] == 4 and tid in self.inducing_tids:
+            self.induce_left = 0
 
     def finish_invocation(self, invocation):
         super().finish_invocation(invocation)
@@ -270,17 +373,18 @@ class Session(QT.Session):
         if len(live)>MAX_OBJECTS or self.sequence>MAX_EVENTS:
             raise RuntimeError('address/event budget exhausted')
         condition = lambda reg, addresses: ' | '.join(f'({reg}=={a:x})' for a in addresses) or '0'
-        commands = self.bp(10,0xb4a0,'CONVERT',['@rcx','@r9','@rsp','qwo(@rsp)'],condition('@rcx',raw))
-        for number,rva,kind in [(11,0xa600,'COPY'),(12,0x7450,'MOVE'),(13,0xac50,'ASSIGN')]:
+        b = self.build
+        commands = self.bp(10,b['convert'],'CONVERT',['@rcx','@r9','@rsp','qwo(@rsp)'],condition('@rcx',raw))
+        for number,rva,kind in [(11,b['copy'],'COPY'),(12,b['move'],'MOVE'),(13,b['assign'],'ASSIGN')]:
             cond = f'({condition("@rdx",live)}) | ({condition("@rcx",live)})'
             commands += self.bp(number,rva,kind,['@rdx','@rcx','@rsp','qwo(@rsp)'],cond)
-        for number,rva,kind in [(14,0x8090,'DESTROY'),(15,0xdd80,'DEFAULT')]:
+        for number,rva,kind in [(14,b['destroy'],'DESTROY'),(15,b['default'],'DEFAULT')]:
             commands += self.bp(number,rva,kind,['@rcx','qwo(@rsp)'],condition('@rcx',live))
         begins = [x['begin'] for x in self.raw.values()]
-        commands += self.bp(16,0x1966c,'FREE_BUFFER',['@rcx','qwo(@rcx)','qwo(@rsp)'],condition('qwo(@rcx)',begins))
-        commands += self.bp(17,0x34c00,'SWAP',['@rcx','@rdx','@rsp','qwo(@rsp)'])
-        commands += self.bp(18,0x42a9d,'VECTOR',['@rsi'])
-        commands += self.bp(19,0x3e484,'AGGREGATE',['@rcx','@rdx','@rsp'])
+        commands += self.bp(16,b['free_buffer'],'FREE_BUFFER',['@rcx','qwo(@rcx)','qwo(@rsp)'],condition('qwo(@rcx)',begins))
+        commands += self.bp(17,b['swap'],'SWAP',['@rcx','@rdx','@rsp','qwo(@rsp)'])
+        commands += self.bp(18,b['vector'],'VECTOR',['@rsi'])
+        commands += self.bp(19,b['aggregate'],'AGGREGATE',['@rcx','@rdx','@rsp'])
         return commands
 
     def arm_return(self, operation):
@@ -322,6 +426,22 @@ class Session(QT.Session):
         found = [self.provenance.live[a] for a in range(begin,end,0x220) if a in self.provenance.live]
         return {'address':hex(address),'begin':hex(begin),'end':hex(end),'capacity':hex(capacity),'tracked':found}
 
+    def _store_exhausted(self, invocation, tid, begin, end, capacity, out, data, tail, reason):
+        """Save a failed query buffer without treating a non-zero tail as provenance."""
+        if self.saved_buffers >= 4 and not (tail and tail['pid']==0 and tail['create_time']==0):
+            self.event('exhausted_buffer', query=invocation['query'], tid=tid, begin=begin, end=end,
+                       tail=tail, reason=reason or 'buffer save limit')
+            return None
+        self.saved_buffers += 1
+        file = f'query-{self.query_number}-buffer.bin'
+        (self.folder/file).write_bytes(data)
+        stored = {'file': file, 'sha256': hashlib.sha256(data).hexdigest()}
+        if not (tail and tail['pid']==0 and tail['create_time']==0):
+            self.event('exhausted_buffer', query=invocation['query'], tid=tid, begin=begin, end=end,
+                       capacity=capacity, output_vector=out, tail=tail, buffer_file=file,
+                       sha256=stored['sha256'], reason=reason, calls=invocation['calls'])
+        return stored
+
     def dispatch(self, kind, values):
         tid,*v = values
         commands = ''
@@ -330,25 +450,39 @@ class Session(QT.Session):
             invocation = self.open.get(tid)
             if not invocation or len(invocation['calls'])!=3 or any(c['status']!=0xc0000004 for c in invocation['calls']):
                 raise ValueError('exhausted query without three captured mismatches')
-            data = self.memory.read(begin,end-begin)
-            records = walk_records(data)
-            tail = records[-1]
-            invocation['tail'] = dict(tail, records=len(records))
-            invocation['output_vector'] = out
-            if tail['pid']==0 and tail['create_time']==0:
-                if self.active_since is not None:
-                    raise RuntimeError('second anomalous query; retain first attempt as incomplete')
-                self.active_since = time.monotonic()
-                query = invocation['query']
-                file = f'query-{self.query_number}-buffer.bin'
-                (self.folder/file).write_bytes(data)
-                address = begin+tail['offset']
-                seed = self.event('raw_record',query=query,tid=tid,begin=begin,end=end,capacity=capacity,
-                                  output_vector=out,address=address,tail=tail,records=len(records),
-                                  buffer_file=file,sha256=hashlib.sha256(data).hexdigest(),
-                                  header=data[tail['offset']:tail['offset']+0x100].hex(),calls=invocation['calls'])
-                self.raw[address] = {'begin':begin,'query':query,'edge':seed['event']}
-                commands = self.refresh()
+            size = end-begin
+            query = invocation['query']
+            if size <= 0 or size > MAX_BUFFER:
+                self.event('exhausted_buffer', query=query, tid=tid, begin=begin, end=end,
+                           reason='buffer bounds')
+            else:
+                data = self.memory.read(begin, size)
+                try:
+                    records = walk_records(data)
+                except ValueError as exc:
+                    self._store_exhausted(invocation, tid, begin, end, capacity, out, data, None, str(exc))
+                else:
+                    tail = records[-1]
+                    invocation['tail'] = dict(tail, records=len(records))
+                    invocation['output_vector'] = out
+                    ghost = tail['pid']==0 and tail['create_time']==0
+                    stored = self._store_exhausted(invocation, tid, begin, end, capacity, out, data,
+                                                   invocation['tail'], None)
+                    if ghost:
+                        if self.active_since is not None:
+                            raise RuntimeError('second anomalous query; retain first attempt as incomplete')
+                        self.active_since = time.monotonic()
+                        self.induce_left = 0
+                        if stored:
+                            address = begin+tail['offset']
+                            seed = self.event('raw_record', query=query, tid=tid, begin=begin, end=end,
+                                              capacity=capacity, output_vector=out, address=address, tail=tail,
+                                              records=len(records), buffer_file=stored['file'],
+                                              sha256=stored['sha256'],
+                                              header=data[tail['offset']:tail['offset']+0x100].hex(),
+                                              calls=invocation['calls'])
+                            self.raw[address] = {'begin': begin, 'query': query, 'edge': seed['event']}
+                            commands = self.refresh()
         elif kind in ('CONVERT','COPY','MOVE','ASSIGN'):
             source,dest,sp,ret = v
             origin = self.raw.get(source) if kind=='CONVERT' else self.provenance.live.get(source)
@@ -402,10 +536,14 @@ class Session(QT.Session):
                                  'maps':[left,right],'before':before,'event':row['event']})
         elif kind in ('VECTOR','AGGREGATE'):
             vector = v[0] if kind=='VECTOR' else v[1]
-            snapshot = self.vector_snapshot(vector)
-            self.event(kind.lower(),tid=tid,vector=snapshot,context=v)
-            if kind=='AGGREGATE':
-                self.vectors[tid] = snapshot
+            try:
+                snapshot = self.vector_snapshot(vector)
+            except ValueError as exc:
+                self.event('vector_unreadable', kind=kind, tid=tid, context=v, reason=str(exc))
+            else:
+                self.event(kind.lower(),tid=tid,vector=snapshot,context=v)
+                if kind=='AGGREGATE':
+                    self.vectors[tid] = snapshot
         elif kind == 'CONFLICT':
             current,rbp,end,manager = v
             idle = self.memory.u64(rbp-0x50)
@@ -415,7 +553,7 @@ class Session(QT.Session):
             row = self.event('conflict',tid=tid,current=current,current_identity=current_id,
                              existing=idle,existing_identity=idle_id,manager=manager,vector_end=end,
                              vector=vector,origin=origin,query=origin['query'] if origin else None,
-                             rva='0x3e5cf',expected_hresult='0x8007139f')
+                             rva=hex(self.build['conflict']),expected_hresult='0x8007139f')
             self.record.update(conflict_event=row['event'],conflict_query=row['query'],
                                acceptance='incomplete; conflict captured, independent audit and freeze pending')
             self.conflict.set()

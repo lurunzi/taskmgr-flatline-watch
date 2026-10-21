@@ -3,6 +3,10 @@
 Stops the existing watcher through Stop.ps1, reuses its native chart helper and
 detector, and restarts the watcher only after cdb has exited and is detached.
 Does not change saved preferences, autostart, Windows DLLs, or system settings.
+
+--induce first confirms the charts are moving, then adds threads inside this
+capture process between real NtQuerySystemInformation returns. The flatline
+check starts only after those threads are released and cdb has detached.
 """
 import argparse
 import ctypes
@@ -11,7 +15,6 @@ import json
 import multiprocessing as mp
 import subprocess
 import sys
-import threading
 import time
 import traceback
 from collections import deque
@@ -28,20 +31,37 @@ from OriginCapture import find_cdb
 from QueryTrace import timestamp
 
 
+def image_sha(image):
+    payload = image.tobytes() if hasattr(image, 'tobytes') else bytes(image)
+    return hashlib.sha256(payload).hexdigest()
+
+
+def chart_sample(pipe, timeout=8):
+    pipe.send('sample')
+    if not pipe.poll(timeout):
+        raise TimeoutError('native chart helper timed out')
+    return pipe.recv()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pid', type=int, required=True)
     parser.add_argument('--minutes', type=float, default=20)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--process-events', action='store_true',help='Record bounded ETW process/thread events for candidate correlation')
+    parser.add_argument('--induce', type=int, default=0,
+                        help='After one untouched query, grow this many later queries between real NtQSI returns')
     args = parser.parse_args()
     if not 0 < args.minutes <= 60:
         parser.error('minutes must be in (0,60]')
+    if not 0 <= args.induce <= 8:
+        parser.error('induce must be in 0..8')
     if not ctypes.windll.shell32.IsUserAnAdmin():
         raise RuntimeError('Administrator token required to trace elevated Taskmgr')
     args.output.mkdir(parents=True, exist_ok=False)
     state = {'started':timestamp(),'pid':args.pid,'minutes':args.minutes,'status':'preflight',
-             'no_generated_load':True,'callback_changes_timing':True}
+             'no_generated_load':args.induce==0,'induce_queries':args.induce,
+             'callback_changes_timing':True}
     def save(**values):
         state.update(values)
         write_json(args.output/'capture.json',state)
@@ -69,6 +89,31 @@ def main():
             raise RuntimeError('watcher is capturing; no stop requested')
         if previous.get('origin_mode')=='query_trace':
             restart_args = ['--query-trace']
+        if args.induce:
+            pipe, remote = mp.Pipe()
+            child = mp.Process(target=worker, args=(remote,), daemon=True)
+            child.start()
+            remote.close()
+            baseline = []
+            for index in range(3):
+                if index:
+                    time.sleep(2)
+                sample = chart_sample(pipe)
+                row = {'state': sample.get('state'), 'pid': sample.get('pid')}
+                if sample.get('state')=='captured' and sample.get('pid')==args.pid:
+                    row['total_sha256'] = image_sha(sample['total'])
+                    row['cores_sha256'] = image_sha(sample['cores'])
+                    row['system_cpu_percent'] = sample.get('system_cpu_percent')
+                elif sample.get('error'):
+                    row['error'] = sample['error']
+                baseline.append(row)
+            captured = [row for row in baseline if 'cores_sha256' in row]
+            refreshing = len(captured)==3 and (
+                len({row['cores_sha256'] for row in captured})>1
+                or len({row['total_sha256'] for row in captured})>1)
+            save(baseline_samples=baseline, baseline_refreshing=refreshing)
+            if not refreshing:
+                raise RuntimeError('Task Manager chart was not refreshing before the stimulus')
         watcher = AddressChain.Memory(previous['watcher_pid'])
         try:
             if previous.get('state')!='stopped':
@@ -94,14 +139,17 @@ def main():
             process_trace = ProcessTrace.Session(args.output)
             process_trace.start()
             save(process_events=process_trace.name)
-        ended = threading.Event()
-        session = AddressChain.Session(find_cdb(),args.pid,args.output,write_json,lambda s:ended.set())
+        session = AddressChain.Session(find_cdb(),args.pid,args.output,write_json,lambda s: None,
+                                       induce_queries=args.induce)
         session.start()
-        save(status='tracing',instance=session.instance,watcher_stopped=stopped_watcher)
-        pipe,remote = mp.Pipe()
-        child = mp.Process(target=worker,args=(remote,),daemon=True)
-        child.start()
-        remote.close()
+        save(status='tracing',instance=session.instance,watcher_stopped=stopped_watcher,
+             no_generated_load=args.induce==0,induced_queries=args.induce,
+             growth_threads=session.growth_threads)
+        if child is None:
+            pipe,remote = mp.Pipe()
+            child = mp.Process(target=worker,args=(remote,),daemon=True)
+            child.start()
+            remote.close()
         detector = FlatlineDetector()
         frames = deque(maxlen=31)
         deadline = time.monotonic()+args.minutes*60
@@ -110,16 +158,23 @@ def main():
             if (args.output/'stop.request').exists():
                 save(stop_requested=True)
                 break
+            if (args.induce and session.induce_finished.is_set() and session.active_since is None
+                    and not session.conflict.is_set() and session.process.poll() is None
+                    and not session.stopping):
+                save(status='induce_complete_detaching')
+                session.release_growth()
+                session.detach()
             if session.process.poll() is not None:
-                if not session.conflict.is_set():
+                if not session.conflict.is_set() and not args.induce:
                     save(status='trace_ended_without_conflict')
                     break
                 if after_detach is None:
+                    session.release_growth()
                     after_detach = time.monotonic()
                     detector.reset()
                     frames.clear()
-                    deadline = min(deadline,after_detach+100)
-                    save(status='observing_after_detach')
+                    deadline = min(deadline, after_detach+(100 if session.conflict.is_set() else 50))
+                    save(status='observing_after_detach', after_detach_conflict=session.conflict.is_set())
                 if session.memory.debugger():
                     raise RuntimeError('debugger still attached after cdb exit')
             pipe.send('sample')
@@ -129,7 +184,8 @@ def main():
             sample = pipe.recv()
             result = {'state':sample.get('state')}
             if sample.get('state')=='captured' and sample['pid']==args.pid:
-                result = detector.observe(time.monotonic(),sample['total'],sample['cores'])
+                result = detector.observe(time.monotonic(),sample['total'],sample['cores'],
+                                          sample.get('system_cpu_percent'))
                 frames.append((timestamp(),result,sample))
             else:
                 detector.reset()
@@ -188,6 +244,8 @@ def main():
         except Exception as exc:
             save(status='incomplete',cleanup_error=repr(exc))
         finally:
+            if session:
+                session.release_growth()
             # ETW ownership survives a chart/debugger/recovery cleanup error.
             if process_trace:
                 try:
@@ -195,7 +253,9 @@ def main():
                     process_trace.decode()
                 except Exception as exc:
                     save(process_trace_error=repr(exc),process_trace_active=process_trace.active)
-        if state['status'] in ('preflight','tracing','observing_after_detach'):
+        if state['status']=='observing_after_detach' and not state.get('freeze'):
+            save(status='no_freeze_after_detach', reason='bounded observation ended')
+        elif state['status'] in ('preflight','tracing','induce_complete_detaching'):
             save(status='incomplete',reason='stop requested' if state.get('stop_requested') else 'bounded observation ended')
         save(finished=timestamp())
 
