@@ -27,6 +27,8 @@ JSON schema 2 adds `phases.before_first` and `phases.after_first`; the top-level
 
 The [consolidated evidence review](docs/investigation-status.md) separates the confirmed historical retry defect, the newer DLL's matching local control flow, and the still-missing same-incident buffer-to-freeze lineage. It corrects the fixed-4-KiB-reserve, inevitable-ghost, thread-death and process-crash claims. New-file static comparison does not authorise old debugger offsets or establish the cause of later visual recoveries. Earlier dated operation and validation entries below remain historical records.
 
+The [21 October 2026 incident review](docs/flatline-incident-20261021.md) records a visual flatline with successful recovery, real-kernel and controlled 9549 query results, and a re-read of the fifteen 9549 address signatures. That incident does not by itself establish the native cause.
+
 Lightweight recording now reports `light_etw.storage` with retained bytes by file type, budget, free disk bytes, check time and `blocked_by` reasons. The existing status label distinguishes budget exhaustion from low disk space. The default budget remains 2 GiB; an explicit whole-number `--etw-budget-gib` from 2 to 64 is saved as `etw_budget_gib` in local preferences. After checking `dump_running: false`, stop gracefully and wait for `state: stopped` before using the following example. Subsequent launches retain the setting. No evidence is removed, and automatic recovery continues when recording is blocked.
 
 ```powershell
@@ -180,6 +182,8 @@ JSON schema 2 新增 `phases.before_first` 和 `phases.after_first`；顶层 `to
 ## 证据复核与记录预算（2026-10-20）
 
 [统一证据摘要](docs/investigation-status.md#zh)区分历史已证实的重试缺陷、新 DLL 相同的局部控制流，以及尚未捕获的同次缓冲区到冻结完整来源链。它纠正固定 4 KiB 余量、必然假记录、线程死亡和进程崩溃等说法。新版静态比对不允许沿用旧调试地址，也不能证明后续视觉恢复的原因。下方较早日期的运行和验证内容作为历史记录保留。
+
+[2026 年 10 月 21 日事件复核](docs/flatline-incident-20261021.md#zh)记录了一次视觉平线及成功恢复、9549 真实内核与受控查询结果，以及 15 处 9549 地址特征的重读核对。该事件本身不能证明原生成因。
 
 轻量记录新增结构化存储状态，包含按文件类型统计的保留字节、预算、磁盘可用空间、检查时间及阻断原因；现有状态标签区分预算耗尽与磁盘空间不足。默认预算仍为 2 GiB，可通过英文区命令中的参数显式指定 2～64 GiB 整数值，保存到本地偏好。确认无取证任务后正常停止，等到状态为已停止，再启动；后续启动沿用该设置。不会删除证据，记录阻断时自动恢复继续工作。
 
