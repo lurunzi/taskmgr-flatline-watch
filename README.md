@@ -95,6 +95,10 @@ At startup, an old running journal can be bypassed only when its creation predat
 
 ## Automatic detection
 
+Update 2026-10-23: CPU-page recognition now accepts logical-chart widths differing by one pixel without rounding them into fixed buckets. A 32-chart layout with 24 widths of 101 pixels and eight of 102 pixels previously stayed in `waiting`, preventing confirmation and recovery. The complete logical-processor count and 80% width-agreement guard remain; agreement now means one adjacent pair of integer widths. The 30-second freeze predicate is unchanged.
+
+Validation on 23 October: 127 tests and `compileall` passed. The unchanged live window was recognised after the fix; the restarted watcher confirmed the flat aggregate in 30.4 seconds and automatically recovered Task Manager without forced termination. CPU-page navigation succeeded on its second attempt, normal sampling resumed with 32 charts, and lightweight recording continued. The receipt is `restart-20261023-180302-722186/event.json` in the existing evidence directory. This verifies recovery of the visual incident, not its underlying Windows cause.
+
 Update 2026-10-19: the one-pixel tolerance described below is retired. A non-empty aggregate now requires zero vertical spread in its newest 20% and exactly the same pixel height throughout the 30-second confirmation. Any one-pixel wave or level change restarts confirmation, preventing the observed low-load false positive. Empty-chart corroboration is unchanged. Truly constant load can still satisfy a visual-only predicate; slight rendering noise may delay recovery.
 
 Update 2026-10-16: a zero/empty aggregate chart previously returned `invalid` because it contained no blue curve, so confirmation never started. The additional empty-chart path requires a visibly painted frame on all four sides, a uniform neutral interior, moving logical graphs, and independent CPU-time activity of at least 2% throughout the 30-second confirmation. A borderless blank capture, unavailable CPU sample, low activity or a capture gap resets this path. Each existing capture-helper sample reads [GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes); no additional process, debugger, stress load or performance-counter configuration is needed. The first sample establishes a baseline. Above 64 logical processors this corroboration is disabled because that API covers only the caller's processor group. Status and incident measurements include the detector kind and independent CPU percentage. This is a suspected display inconsistency, not proof that this incident shares the historical DLL defect or that a particular application caused it.
@@ -241,6 +245,10 @@ JSON schema 2 新增 `phases.before_first` 和 `phases.after_first`；顶层 `to
 - 全新检出时先安装 Python 3.12，再运行 `Setup.cmd`。依赖版本固定在 `requirements-flatline.txt`。安装会从微软 Sysinternals 官网下载 ProcDump 并校验微软数字签名；Git 不分发 ProcDump 二进制文件。
 
 ## 自动检测
+
+更新 2026-10-23：CPU 页面识别现在允许逻辑图宽度相差一像素，不再按固定区间取整分组。此前 32 张图中 24 张宽 101 像素、8 张宽 102 像素的布局会一直停在 `waiting`，无法进入确认和恢复。完整逻辑处理器数量与 80% 宽度一致性门槛保留；一致性现在指宽度属于相邻两种整数像素值。30 秒冻结判断不变。
+
+10 月 23 日验证：127 项测试及 `compileall` 通过。修复后识别到了未改动的现场窗口；监测器重启后用 30.4 秒确认总图平直，随后自动恢复任务管理器，没有强制终止。CPU 页导航在第二次尝试成功，恢复 32 张图的正常采样，轻量记录继续运行。回执为现有证据目录中的 `restart-20261023-180302-722186/event.json`。这验证了本次视觉异常的恢复，不证明底层 Windows 原因。
 
 更新 2026-10-19：下文的一像素容差已停用。非空总图最新的右侧 20% 必须完全水平，且在 30 秒确认期内保持完全相同的像素高度；任何一像素波动或高度变化都会重新计时，避免本次低负载误报。空图交叉验证不变。真实恒定负载仍可能满足视觉条件，轻微绘制噪声可能延迟恢复。
 

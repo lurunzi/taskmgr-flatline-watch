@@ -78,8 +78,8 @@
       "lane": "taskmgr",
       "col": 0,
       "type": "frontend",
-      "label": "CPU page",
-      "sublabel": "all logical cores",
+      "label": "CPU logical grid",
+      "sublabel": "80% widths within 1 px",
       "width": 150
     },
     {
@@ -238,6 +238,7 @@
       "dot": "cyan",
       "title": "Candidates, not causal proof",
       "items": [
+        "Full logical grid: 80% of widths within one adjacent pixel pair",
         "Visual observations are not native fault times",
         "Non-empty total: zero tail variation and unchanged height for 30 s",
         "Empty total needs a painted frame, CPU >= 2% and moving cores",

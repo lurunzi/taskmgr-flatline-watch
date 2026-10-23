@@ -79,8 +79,11 @@ def locate():
         # Require the complete logical-processor grid, not a memory/GPU page.
         if len(right) != os.cpu_count() or len(right) < 2:
             continue
-        widths = Counter(round(r[2]/4) for _,r in right)
-        if widths.most_common(1)[0][1] < len(right)*.8:
+        # Integer layout can give neighbouring columns a one-pixel difference.
+        # Fixed rounding buckets split valid grids at arbitrary boundaries.
+        widths = Counter(r[2] for _,r in right)
+        matching = max(count+widths[width+1] for width,count in widths.items())
+        if matching < len(right)*.8:
             continue
         right.sort(key=lambda v:(v[1][1],v[1][0]))
         pid = w.DWORD()

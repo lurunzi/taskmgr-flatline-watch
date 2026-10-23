@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-20",
-  "purpose": "Independent activity rankings before and after the first flat observation, with normal controls.",
+  "date": "2026-10-23",
+  "purpose": "Recognise complete logical CPU grids whose integer chart widths differ by one pixel.",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -9,20 +9,22 @@
   },
   "diagram_type": "workflow",
   "quality_profile": "showcase",
-  "correction_rounds": 0,
-  "corrections": [],
+  "correction_rounds": 1,
+  "corrections": [
+    "Added the width guard to the CPU node because canonical PNG export excludes explanatory cards."
+  ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "e894bde44bae0e5de9ca273b116a069920a1a3a5a3f3f5936060fbf60c19c582",
-        "bytes": 5469
+        "sha256": "b5c4dc17f32e7c3739215011e0384df23e4647c8996b84fc6b1f2823407dc7c1",
+        "bytes": 5558
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "aa6b4baec7133fad089426c0be448e140dbc5850a69ca7c9ed1de1ac0cbdea05",
-        "bytes": 716660,
+        "sha256": "d1a63a05c92c953d1c060ecd35d974bd7be8841f9f2573d77b41962f32ca38d5",
+        "bytes": 716802,
         "committed": false
       },
       "validation": {
@@ -39,16 +41,16 @@
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "24e7ca4a782ca3541d1be965054119dfbd8f4290f882945ae6e69a04ad98b86b",
-          "bytes": 566308,
+          "sha256": "eeb164efbe749947b4c321d8a1007974136f87a3616275bacd76f9dc83988263",
+          "bytes": 571247,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "1cac768b41840b87767157f98108da4d8bb90cddeac3b8a300e107237fe5cc69",
-          "bytes": 580270,
+          "sha256": "7e7056e05745e96f4afcdba0e2a7cafb325254f22c5871b8ecdd28bccbac2d9e",
+          "bytes": 585428,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -59,13 +61,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "3f7b5ba2deba4bfe2c6d713dd711959acd0e7a1f1f3d0cbd5e997dde3d8d32c4",
-        "bytes": 5486
+        "sha256": "2667d64f380790e58a8da6d0e39f12606af85de28ed21eb1027b1c92c867d95a",
+        "bytes": 5566
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "e9f91efaa8cb1dfabcc1524e75b38d46300878b14bcac18d124c1b2b54db26b6",
-        "bytes": 716402,
+        "sha256": "4685fb87a0bf3f7417659b22f890421d6e4866341272dd6458305c68c8f5e6ce",
+        "bytes": 716514,
         "committed": false
       },
       "validation": {
@@ -82,16 +84,16 @@
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "350f7bc05cee0679352f853d60574ffa540e7880fda2795fe4ad9c6f70b48c48",
-          "bytes": 600756,
+          "sha256": "119f06bb8a3b5d2f24ee099c546264afa671fc63438b7cebbb172f71308048fd",
+          "bytes": 603634,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "0862a8db6f1cee12db1cdfadacd1ee0405f69a6f8cdc670b061cae2698c243e6",
-          "bytes": 612260,
+          "sha256": "431f19326157bc8334729db488b9fd34589f10defca99c4ab5460603b1f08617",
+          "bytes": 614262,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true
@@ -104,5 +106,5 @@
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "local_artifacts": ".local/work-inbox/20261020-phase-analysis/overview.<lang>.html and delivery/visual/export receipts"
+  "local_artifacts": ".local/work-inbox/20261023-chart-width/overview.<lang>.html and delivery/visual/export receipts"
 }
