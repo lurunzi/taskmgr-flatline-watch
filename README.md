@@ -15,6 +15,10 @@ The English version governs.
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
 The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
 
+## Roadmap (25 October 2026)
+
+The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it.
+
 ## Offline analysis retry (25 October 2026)
 
 A failed automatic analysis is now retried instead of left for manual work. A timeout, a snapshot still pending after 30 seconds, or an exit code other than 0 or 2 schedules up to two more attempts: the second after 60 seconds with a 300-second limit, the third after another 300 seconds with a 300-second limit (the first attempt keeps 120 seconds). Exit code 2 means the retained data cannot support a ranking and is final. Each retry reanalyses a verified copy in a new sibling directory `analysis-retry<n>-<incident>`, logs to `analysis-attempt<n>.log` in the incident folder and never replaces the original evidence or an earlier attempt. `analysis-status.json` shows `retry_pending` while waiting and finally lists every attempt; its `report` points to the successful directory. New incidents are queued (at most eight) and run before delayed retries, instead of being deferred while the decoder is busy. Retry copies count towards the ETW storage budget. Pending retries are not resumed after the watcher exits; a running attempt finishes within its limit. Trigger: on 24 October an analysis timed out after 120 seconds while all 32 logical processors were saturated; a manual rerun completed in 34 seconds once load fell. Detection and recovery are unchanged; the overview diagram is unchanged because the analysis step it shows is the same.
@@ -178,6 +182,10 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
 上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
+
+## 路线图（2026-10-25）
+
+[路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。
 
 ## 离线分析自动重试（2026-10-25）
 
