@@ -216,6 +216,7 @@ def main():
     try:return app.exec()
     finally:
         widget.monitor.stop()
+        if widget.monitor.offline:widget.monitor.offline.close()
         kernel.CloseHandle.argtypes=[ctypes.c_void_p];kernel.CloseHandle(mutex)
 
 if __name__=='__main__':

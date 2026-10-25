@@ -127,6 +127,17 @@ class RollingTests(unittest.TestCase):
             self.assertEqual({p:p.read_bytes() for p in original},original)
             self.assertEqual(FakeSession.instances,[])
 
+    def test_storage_counts_reanalysis_copies(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as d:
+            for name in ('restart-a','analysis-retry2-restart-a'):
+                (Path(d)/name).mkdir();(Path(d)/name/'process.etl').write_bytes(b'12345')
+            (Path(d)/'other').mkdir();(Path(d)/'other'/'process.etl').write_bytes(b'12345')
+            recorder=RollingRecorder(d)
+            with patch('RollingProcessTrace.shutil.disk_usage',return_value=SimpleNamespace(free=10*1024**3)):
+                recorder._storage()
+            self.assertEqual(recorder.status()['storage']['used_bytes'],10)
+
     def prior(self,d):
         path=Path(d)/'session.json'
         previous=dict(session='TaskmgrCorrelation-'+'a'*32,status='running',owner_role='flatline watcher',

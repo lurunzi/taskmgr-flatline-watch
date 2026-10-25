@@ -12,6 +12,11 @@ from ProcessTrace import frequency, qpc
 from RollingProcessTrace import save
 
 SNAPSHOT_WAIT_SECONDS = 2
+# Per attempt; later attempts allow more time in case load persists.
+ANALYSIS_TIMEOUTS = (120, 300, 300)
+# Before attempts 2 and 3, so a load burst can subside.
+RETRY_DELAYS = (60, 300)
+MAX_QUEUED = 8
 
 
 class Observations:
@@ -69,11 +74,23 @@ def mark_recovery(folder, name, utc):
         save(path, data)
 
 
+class Retryable(RuntimeError):
+    """A failure that may not recur, such as a timeout under heavy load."""
+
+
 class OfflineProcessor:
-    """At most one decoder; busy incidents remain available for manual analysis."""
-    def __init__(self):
-        self.lock = threading.Lock()
+    """One decoder at a time; new incidents run before delayed retries.
+
+    A timed-out or failed run is retried into a new sibling directory, so the
+    original evidence and every earlier attempt remain untouched. Exit code 2
+    (data cannot support a ranking) is final: rerunning cannot change it.
+    """
+    def __init__(self, timeouts=ANALYSIS_TIMEOUTS, delays=RETRY_DELAYS):
+        self.timeouts, self.delays = timeouts, delays
+        self.lock = threading.Condition()
+        self.queue = []
         self.thread = None
+        self.closing = False
         self.state = {'status': 'idle'}
 
     def status(self):
@@ -81,21 +98,50 @@ class OfflineProcessor:
             return dict(self.state)
 
     def submit(self, folder, ready):
+        folder = Path(folder)
         with self.lock:
-            if self.thread and self.thread.is_alive():
-                save(Path(folder)/'analysis-status.json', {'status': 'deferred', 'reason': 'decoder busy'})
+            if self.closing or len(self.queue) >= MAX_QUEUED:
+                save(folder/'analysis-status.json', {'status': 'deferred',
+                     'reason': 'watcher closing' if self.closing else 'analysis queue full'})
                 return False
-            self.state = {'status': 'queued', 'folder': str(folder)}
-            self.thread = threading.Thread(target=self._run, args=(Path(folder), ready), daemon=False)
-            self.thread.start()
+            self.queue.append({'folder': folder, 'ready': ready, 'attempt': 1, 'due': 0, 'history': []})
+            if self.thread and self.thread.is_alive():
+                self.lock.notify()
+            else:
+                self.state = {'status': 'queued', 'folder': str(folder)}
+                self.thread = threading.Thread(target=self._loop, daemon=False)
+                self.thread.start()
             return True
 
-    def _run(self, folder, ready):
-        result = {'status': 'failed'}
+    def close(self):
+        """Stop waiting for retries; a running attempt finishes within its timeout."""
+        with self.lock:
+            self.closing = True
+            self.lock.notify_all()
+
+    def _loop(self):
+        while True:
+            with self.lock:
+                while True:
+                    if self.closing or not self.queue:
+                        self.thread = None
+                        return
+                    item = min(self.queue, key=lambda i: (i['attempt'] > 1, i['due']))
+                    wait = item['due']-time.monotonic()
+                    if wait <= 0:
+                        break
+                    self.lock.wait(wait)
+                self.queue.remove(item)
+            self._run(item)
+
+    def _run(self, item):
+        folder, attempt = item['folder'], item['attempt']
+        result = {'status': 'failed', 'attempt': attempt}
         started = time.monotonic()
+        retryable = False
         try:
-            if not ready.wait(30):
-                raise RuntimeError('snapshot still pending; offline analysis can be retried later')
+            if attempt == 1 and not item['ready'].wait(30):
+                raise Retryable('snapshot still pending; offline analysis can be retried later')
             capture = json.loads((folder/'trace-capture.json').read_text(encoding='utf-8'))
             if capture.get('status') != 'preserved':
                 raise RuntimeError(capture.get('error', 'no preserved ETW snapshot'))
@@ -103,15 +149,49 @@ class OfflineProcessor:
             executable = Path(sys.executable)
             if executable.name.lower() == 'pythonw.exe':
                 executable = executable.with_name('python.exe')
-            with (folder/'analysis.log').open('wb') as stream:
-                child = subprocess.run([str(executable), str(root/'tools/process-incident.py'), str(folder)],
-                                       stdout=stream, stderr=subprocess.STDOUT, timeout=120,
+            command = [str(executable), str(root/'tools/process-incident.py'), str(folder)]
+            output, log = folder, folder/'analysis.log'
+            if attempt > 1:
+                # The first attempt may leave a decode in place; reanalyse a copy.
+                output = retry_output(folder, attempt)
+                command += ['--output', str(output)]
+                log = folder/f'analysis-attempt{attempt}.log'
+                result['output'] = str(output)
+            with log.open('wb') as stream:
+                child = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT,
+                                       timeout=self.timeouts[attempt-1],
                                        creationflags=subprocess.CREATE_NO_WINDOW)
-            result = {'status': 'complete' if child.returncode == 0 else 'incomplete',
-                      'exit_code': child.returncode, 'report': str(folder/'incident-analysis.md')}
+            retryable = child.returncode not in (0, 2)
+            result.update(status='complete' if child.returncode == 0 else 'incomplete',
+                          exit_code=child.returncode, report=str(output/'incident-analysis.md'))
+        except (Retryable, subprocess.TimeoutExpired) as exc:
+            retryable = True
+            result['error'] = repr(exc)
         except Exception as exc:
             result['error'] = repr(exc)
         result['elapsed_seconds'] = round(time.monotonic()-started, 3)
-        save(folder/'analysis-status.json', result)
+        item['history'].append(result)
+        if retryable and attempt < len(self.timeouts):
+            delay = self.delays[attempt-1]
+            status = {'status': 'retry_pending', 'next_attempt': attempt+1,
+                      'retry_in_seconds': delay, 'attempts': item['history']}
+            with self.lock:
+                if not self.closing:
+                    self.queue.append({**item, 'attempt': attempt+1, 'due': time.monotonic()+delay})
+                else:
+                    status['status'] = 'retry_cancelled'
+        else:
+            status = {**result, 'attempts': item['history']}
+        save(folder/'analysis-status.json', status)
         with self.lock:
-            self.state = {**result, 'folder': str(folder)}
+            self.state = {**status, 'folder': str(folder)}
+
+
+def retry_output(folder, attempt):
+    """A new sibling directory; reanalysis must never write inside the evidence."""
+    base = folder.parent/f'analysis-retry{attempt}-{folder.name}'
+    candidate, n = base, 1
+    while candidate.exists():
+        n += 1
+        candidate = base.with_name(f'{base.name}-{n}')
+    return candidate

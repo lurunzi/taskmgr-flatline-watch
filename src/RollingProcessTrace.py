@@ -100,7 +100,8 @@ class RollingRecorder:
         used = 0
         by_type = {}
         # Only this feature's known directories; old dumps are never scanned.
-        for root in [self.output/'light-etw', *self.output.glob('restart-*')]:
+        # Reanalysis copies the ETL into analysis-*, so those count as well.
+        for root in [self.output/'light-etw', *self.output.glob('restart-*'), *self.output.glob('analysis-*')]:
             if root.exists():
                 for pattern in ('*.etl', '*.xml', '*.xml.gz', '*.part'):
                     size = sum(p.stat().st_size for p in root.rglob(pattern) if p.is_file())

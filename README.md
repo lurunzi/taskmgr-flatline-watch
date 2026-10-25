@@ -15,6 +15,10 @@ The English version governs.
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
 The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
 
+## Offline analysis retry (25 October 2026)
+
+A failed automatic analysis is now retried instead of left for manual work. A timeout, a snapshot still pending after 30 seconds, or an exit code other than 0 or 2 schedules up to two more attempts: the second after 60 seconds with a 300-second limit, the third after another 300 seconds with a 300-second limit (the first attempt keeps 120 seconds). Exit code 2 means the retained data cannot support a ranking and is final. Each retry reanalyses a verified copy in a new sibling directory `analysis-retry<n>-<incident>`, logs to `analysis-attempt<n>.log` in the incident folder and never replaces the original evidence or an earlier attempt. `analysis-status.json` shows `retry_pending` while waiting and finally lists every attempt; its `report` points to the successful directory. New incidents are queued (at most eight) and run before delayed retries, instead of being deferred while the decoder is busy. Retry copies count towards the ETW storage budget. Pending retries are not resumed after the watcher exits; a running attempt finishes within its limit. Trigger: on 24 October an analysis timed out after 120 seconds while all 32 logical processors were saturated; a manual rerun completed in 34 seconds once load fell. Detection and recovery are unchanged; the overview diagram is unchanged because the analysis step it shows is the same.
+
 ## Activity before and after first flat observation (20 October 2026)
 
 New offline reports rank two phases independently: **before-first** is the short transition window `(last_normal, first_candidate)`; **after-first** is companion activity during `[first_candidate, confirmed]`. Events exactly at the first-flat boundary belong only to after-first. The boundary is a visual observation affected by sampling and display latency, not the native fault time. A later process must not become a before-first candidate just because it dominates the confirmation window.
@@ -55,7 +59,7 @@ A fresh post-stop process snapshot identifies surviving parents after the circul
 
 On a visual trigger, `restart-…` gains `observation.json`, selected chart PNGs, `trace-capture.json` and `process-trace/` containing the stopped raw ETL, baseline process identities and session metadata. The in-memory chart history is bounded to 61 pairs. Markers cover the last normal sample, first flat candidate, confirmation and recovery; these are watcher observations, **not exact native failure times**. Before recovery the worker waits at most two seconds for ETW preservation; a late or failed save is recorded and recovery continues. The collector serialises stop/save/rearm and records the gap. Its own cleanup can take up to 25 seconds; unresolved previous ownership prevents starting a duplicate session.
 
-After recovery, one bounded offline decoder produces `incident-analysis.json` and a bilingual `incident-analysis.md`, with at most three candidates ranked by direct child process starts, then own thread starts. Each row retains the process instance and parent chain; known monitor-related instances are tagged rather than removed by executable name. Reports include actual exposure, a contiguous visually normal control interval when available, unresolved identities, loss and coverage. Circular overwrite alone is allowed, but a missing required interval or lost events suppresses named rankings; overwritten identity history is not filled with a stale baseline. Parent chains are not call stacks. `analysis-status.json` records incomplete or deferred analysis, and the raw ETL remains available.
+After recovery, one bounded offline decoder produces `incident-analysis.json` and a bilingual `incident-analysis.md`, with at most three candidates ranked by direct child process starts, then own thread starts. Each row retains the process instance and parent chain; known monitor-related instances are tagged rather than removed by executable name. Reports include actual exposure, a contiguous visually normal control interval when available, unresolved identities, loss and coverage. Circular overwrite alone is allowed, but a missing required interval or lost events suppresses named rankings; overwritten identity history is not filled with a stale baseline. Parent chains are not call stacks. `analysis-status.json` records incomplete or deferred analysis, and the raw ETL remains available. Failed attempts are retried automatically; see the 25 October 2026 update.
 
 For a retained incident, run the following locally; the first command decodes ETL and analyses it, the second only reanalyses existing XML into a new report folder:
 
@@ -175,6 +179,10 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
 上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
 
+## 离线分析自动重试（2026-10-25）
+
+自动分析失败后不再只留给手动处理。超时、等待 30 秒后 ETW 快照仍未保存，或退出码不是 0 或 2，都会再安排至多两次：第二次在 60 秒后、限时 300 秒，第三次再过 300 秒、限时 300 秒（第一次仍限时 120 秒）。退出码 2 表示保留的数据无法支持排行，不再重试。每次重试都把校验过的副本放进新的同级目录 `analysis-retry<n>-<事件目录>` 重新分析，日志写入事件目录下的 `analysis-attempt<n>.log`，不覆盖原始证据或之前的尝试。等待期间 `analysis-status.json` 显示 `retry_pending`，结束后列出每次尝试，`report` 指向成功的目录。解码器忙时，新事件改为排队（最多八个）并优先于延迟中的重试，不再标记为推迟。重试副本计入 ETW 存储预算。监测器退出后不再续跑待重试项；正在进行的尝试会在时限内结束。起因：10 月 24 日 32 个逻辑处理器全部满载时，一次分析在 120 秒时超时；负载回落后手动重跑 34 秒完成。检测与恢复不变；总览图展示的分析步骤没有变化，因此未改图。
+
 ## 首次平线前后活动（2026-10-20）
 
 新版离线报告分两段独立排行：**平线前**是最后正常观察到首次平线之间的短暂转变窗口 `(last_normal, first_candidate)`；**平线后**是等待确认期间的伴随活动 `[first_candidate, confirmed]`。恰在首次平线边界的事件只计入后段。边界是受采样与界面延迟影响的视觉观察，不是底层故障时刻。晚出现的进程不会因为确认期间活动较多而成为平线前候选。
@@ -211,7 +219,7 @@ JSON schema 2 新增 `phases.before_first` 和 `phases.after_first`；顶层 `to
 
 触发视觉异常后，`restart-…` 新增 `observation.json`、选定图表 PNG、`trace-capture.json` 和 `process-trace/` 下的已停止原始 ETL、初始进程身份及会话元数据。内存图表最多保留 61 对。记录最后正常样本、首次水平候选、确认和恢复时间；这些是监测器的观察，**不是底层故障的精确时刻**。恢复前最多等待 ETW 保存两秒，保存迟到或失败均会记录，恢复继续。采集器顺序执行停止、保存和重新布防，记录中间缺口；自身退出清理最多等待 25 秒，发现未解决的旧会话归属时拒绝重复启动。
 
-恢复之后，由一个有上限的离线解码任务生成 `incident-analysis.json` 和双语 `incident-analysis.md`，最多列出三个候选，按直接子进程启动数、再按自身线程启动数排序。保留进程实例和父链，已知与监测器有关的实例仅标记，不按程序名一律删除。报告列出实际观察时长、可用时的连续视觉正常对照、未知身份、事件丢失和覆盖范围。循环覆盖本身不使排行失效；但所需时段缺失或丢事件时不输出具名排行，身份历史被覆盖后不用旧快照强行补齐。父链不是调用栈。未完成或推迟分析会写入 `analysis-status.json`，原始 ETL 保留。
+恢复之后，由一个有上限的离线解码任务生成 `incident-analysis.json` 和双语 `incident-analysis.md`，最多列出三个候选，按直接子进程启动数、再按自身线程启动数排序。保留进程实例和父链，已知与监测器有关的实例仅标记，不按程序名一律删除。报告列出实际观察时长、可用时的连续视觉正常对照、未知身份、事件丢失和覆盖范围。循环覆盖本身不使排行失效；但所需时段缺失或丢事件时不输出具名排行，身份历史被覆盖后不用旧快照强行补齐。父链不是调用栈。未完成或推迟分析会写入 `analysis-status.json`，原始 ETL 保留。失败的尝试会自动重试，见 2026-10-25 更新。
 
 离线命令见英文区：第一个命令从 ETL 解码并分析，第二个仅利用已有 XML，向新目录生成报告，不依赖旧的 `query-trace.jsonl`。
 

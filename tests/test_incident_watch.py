@@ -1,12 +1,15 @@
 import json
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 import AutomaticWatch as W
+import IncidentWatch as IW
 from IncidentWatch import Observations, OfflineProcessor
 
 
@@ -74,11 +77,72 @@ class IncidentWatchTests(unittest.TestCase):
             monitor.set_restart_only(False)
             self.assertTrue(monitor.restart_only)
 
-    def test_busy_decoder_defers_without_losing_raw_evidence(self):
+    def test_full_queue_defers_without_losing_raw_evidence(self):
         with tempfile.TemporaryDirectory() as d:
-            p=OfflineProcessor();p.thread=Mock();p.thread.is_alive.return_value=True
+            p=OfflineProcessor();p.queue=[{}]*IW.MAX_QUEUED
             self.assertFalse(p.submit(Path(d),Mock()))
             self.assertEqual(json.loads((Path(d)/'analysis-status.json').read_text())['status'],'deferred')
+
+    def incident(self,d,name='restart-x'):
+        folder=Path(d)/name;folder.mkdir()
+        (folder/'trace-capture.json').write_text(json.dumps({'status':'preserved'}),encoding='utf-8')
+        ready=Mock();ready.wait.return_value=True
+        return folder,ready
+
+    def analyse(self,p,folder,ready,results):
+        with patch.object(IW.subprocess,'run',side_effect=results) as run:
+            p.submit(folder,ready);p.thread.join(10)
+        return run,json.loads((folder/'analysis-status.json').read_text())
+
+    def test_timeout_is_retried_into_a_new_sibling_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder,ready=self.incident(d)
+            p=OfflineProcessor(timeouts=(1,2,3),delays=(0,0))
+            run,status=self.analyse(p,folder,ready,[subprocess.TimeoutExpired('x',1),Mock(returncode=0)])
+            self.assertEqual(run.call_count,2)
+            first,second=(c.args[0] for c in run.call_args_list)
+            self.assertNotIn('--output',first)
+            self.assertEqual(second[-2:],['--output',str(Path(d)/'analysis-retry2-restart-x')])
+            self.assertEqual([c.kwargs['timeout'] for c in run.call_args_list],[1,2])
+            self.assertEqual(status['status'],'complete')
+            self.assertEqual(status['report'],str(Path(d)/'analysis-retry2-restart-x'/'incident-analysis.md'))
+            self.assertEqual([a['status'] for a in status['attempts']],['failed','complete'])
+            self.assertTrue((folder/'analysis.log').exists() and (folder/'analysis-attempt2.log').exists())
+
+    def test_retries_are_bounded(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder,ready=self.incident(d)
+            p=OfflineProcessor(timeouts=(1,1,1),delays=(0,0))
+            run,status=self.analyse(p,folder,ready,[subprocess.TimeoutExpired('x',1)]*3)
+            self.assertEqual(run.call_count,3)
+            self.assertEqual((status['status'],status['attempt'],len(status['attempts'])),('failed',3,3))
+
+    def test_unusable_data_is_not_retried(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder,ready=self.incident(d)
+            p=OfflineProcessor(timeouts=(1,1,1),delays=(0,0))
+            run,status=self.analyse(p,folder,ready,[Mock(returncode=2)])
+            self.assertEqual(run.call_count,1)
+            self.assertEqual(status['status'],'incomplete')
+
+    def test_new_incident_runs_before_a_delayed_retry_and_close_cancels_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            old,ready=self.incident(d,'restart-old');new,_=self.incident(d,'restart-new')
+            p=OfflineProcessor(timeouts=(1,1,1),delays=(3600,3600))
+            with patch.object(IW.subprocess,'run',side_effect=[subprocess.TimeoutExpired('x',1),Mock(returncode=0)]) as run:
+                p.submit(old,ready)
+                for _ in range(200):
+                    if p.status().get('status')=='retry_pending':break
+                    time.sleep(.02)
+                p.submit(new,ready)
+                for _ in range(200):
+                    if p.status().get('folder')==str(new):break
+                    time.sleep(.02)
+                p.close();p.thread and p.thread.join(10)
+            self.assertEqual([c.args[0][2] for c in run.call_args_list],[str(old),str(new)])
+            self.assertEqual(json.loads((old/'analysis-status.json').read_text())['status'],'retry_pending')
+            self.assertEqual(json.loads((new/'analysis-status.json').read_text())['status'],'complete')
+            self.assertFalse(p.submit(Path(d),ready))
 
     def test_reset_keeps_disconnected_normal_and_reason_but_never_control(self):
         o=Observations();o.observe(self.frame(1,'normal'))
