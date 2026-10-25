@@ -14,8 +14,8 @@ Reviewed 25 October 2026. This page states what "done" means, where each workstr
 
 The problem is the Task Manager total CPU chart freezing as a flat line while the logical-processor charts keep moving. It is resolved when all of the following hold:
 
-1. `TaskManagerDataLayer.dll` changes, and static comparison shows that an exhausted `QueryProcessInformation` query is no longer published as success.
-2. With the watcher running in its normal mode, 14 consecutive days of ordinary use produce no confirmed flatline.
+1. `TaskManagerDataLayer.dll` changes, and controlled execution of the new `QueryProcessInformation` shows both defects fixed: an exhausted query is no longer published as success, and a successful third call is no longer rejected as `E_OUTOFMEMORY`. The run covers second-call success, third-call success, three failures and error propagation, and records the exact binary tested. Static comparison alone only selects the file for this test.
+2. With the watcher running in its normal mode, at least 14 days of ordinary use, with a stated number of effective monitoring hours, produce no confirmed flatline. Hours when Task Manager is closed, off the CPU page or the detector is invalid do not count.
 3. The decision to disable the watcher's autostart is taken manually. The tools and evidence are kept.
 
 If flatlines continue on a fixed DLL, the visual failure has another cause and the causal workstream reopens. Baseline: 120 recovery folders from 4 to 25 October 2026, 0–12 per day. The DLL in use is still the 9549 file (SHA-256 `0cc75ace…3867`, written 13 October 2026).
@@ -42,8 +42,10 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 5. **The flat line is not checked against an independent counter.** The detector already records `system_cpu_percent`, but neither confirmation nor the reports compare it with the height of the frozen line. On 24 October at 16:06 the line stood at about 67% while the counter read 100%; that disagreement is the strongest evidence that the incident was a freeze and not a true constant load, and it is not reported.
 6. **Escalation lags the evidence.** The evidence review says corrected submission material should be prepared first. It has not been sent, and a fix from Microsoft is the only route to the definition of done.
 7. **Operational gaps.**
-   - Shutdown can wait for a running analysis attempt for up to 300 s (it was 120 s before the retry change). `Start.cmd` exits silently while the old process still holds the single-instance mutex, so stopping and immediately starting can leave no watcher running.
+   - The single-instance mutex is released before the interpreter waits for a running analysis attempt (up to 300 s since the retry change). A new watcher can therefore start while the old process is still analysing, and the two can decode at the same time.
    - An analysis timeout ends only `process-incident.py`. Its `tracerpt.exe` child can keep writing into the incident folder.
+   - The retry queue state is not reliable, as reproduced on 25 October: a failed attempt re-queued behind eight waiting items makes nine; after shutdown, retries that were waiting still read `retry_pending`; and an incident queued but not started before shutdown has no `analysis-status.json` at all.
+   - The 300 s limit applies to a whole retry attempt. Decoding and compression inside it stay bounded at 90 s, so a retry does not help a slow decode. Any exit code other than 0 or 2 is retried, including failures that will repeat.
    - About 4.4 GiB of the 40 GiB ETW budget is used, and incident folders since 19 October average about 54 MB. At five incidents a day, recording will block in roughly four months unless a retention decision is made; evidence is never deleted automatically.
 
 ## Next actions, in order
@@ -58,13 +60,13 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 | A2 | Fallback, only if N1 fails: reanalyse the retained incidents since 20 October into new `--output` folders and build one cross-incident table: process and thread start rates in the onset window against several normal windows from the same trace | The table exists; the decision rule below was written down before the run | A few CPU-hours; originals untouched |
 | A3 | Report the frozen-line height against `system_cpu_percent` in each observation and report | The discrepancy appears in new reports | Small |
 | A4 | Record the `TaskManagerDataLayer.dll` SHA-256 in `status.json` at watcher start; when it changes, run the static comparison | A hash change is visible without manual checks | Small |
-| A5 | Fix the operational gaps: `Stop.ps1` waits for the process to exit, `Start.cmd` reports an instance that is already running, and an analysis timeout ends the whole process tree | Tests cover each; one real stop and start cycle checked | Small |
-| A6 | Finalise the corrected Feedback Hub material and add the 9549 result and the incident rate | The owner posts it | Owner only; external publication |
+| A5 | Fix the operational gaps: each analysis attempt runs in a Windows Job Object so a timeout ends its whole process tree; the queue writes each incident's state when it is queued, keeps retries within its capacity and records cancelled work on shutdown; failures are classified by stage before retrying; `Stop.ps1` waits for the process to exit and `Start.cmd` confirms the new instance's heartbeat | Controlled tests for a full queue, shutdown while waiting and shutdown while running, plus an injected decoder timeout; one real stop and start cycle checked | Small to medium |
+| A6 | Finalise the corrected Feedback Hub material now, without waiting for N1 or A2; the confirmed function defects justify it on their own. Add the 9549 result and the incident rate | The owner posts it | Owner only; external publication |
 | A7 | Decide whether to resume live query tracing on 9549 for the causal chain | A recorded decision | Parked unless N1 or A2 shows a clear association and the owner authorises it |
 
 Decision rule for N1: the signature passes if, in the first 10 flatlines recorded by the probe, `0x8007139F` from `TaskManagerDataLayer.dll` occurs in at least 9 no later than the first flat candidate, and if outside flatlines it occurs at most once a day. It fails if it is missing from 3 or more of those 10; the analysis then falls back to A1 and A2.
 
-Decision rule for A2: if, across at least 20 incidents, the median ratio of onset-window to normal-window process and thread start rates is no higher than 1.2, process churn is not a visible trigger. Further companion-process rankings would then stop. If the ratio is clearly higher, report the effect size and take it to A6 and A7.
+Decision rule for A2: if, across at least 20 incidents, the median ratio of onset-window to normal-window process and thread start rates is no higher than 1.2, this method found no association between process churn and the visible onset. That does not exclude rare short bursts, misaligned windows or mixed causes. Further companion-process rankings would then stop. Before the batch run, try the method on a few incidents with complete evidence, check the controls for contamination and test whether the result is stable across window sizes. If the ratio is clearly higher, report the effect size and take it to A6 and A7.
 
 ---
 
@@ -80,8 +82,8 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 
 问题是任务管理器的 CPU 总图冻结成一条水平线，而各逻辑处理器图仍在变化。以下三条同时满足才算解决：
 
-1. `TaskManagerDataLayer.dll` 发生变化，且静态比对显示查询重试耗尽时不再按成功发布结果。
-2. 监测器按正常模式运行，日常使用连续 14 天没有确认的平线。
+1. `TaskManagerDataLayer.dll` 发生变化，且对新版 `QueryProcessInformation` 的受控执行显示两个缺陷都已修复：重试耗尽的查询不再按成功发布，第三次调用成功也不再被当作 `E_OUTOFMEMORY` 拒绝。测试覆盖第二次成功、第三次成功、三次失败和错误传播，并记录实际测试的二进制文件。静态比对只用于挑选要测的文件。
+2. 监测器按正常模式运行，日常使用至少 14 天、并达到事先写明的有效监测小时数，没有确认的平线。任务管理器关闭、不在 CPU 页面或检测器无效的时段不计入。
 3. 关闭监测器自启动由人手动决定，工具和证据保留。
 
 如果换了已修复的 DLL 仍出现平线，说明视觉故障另有原因，因果工作线重新打开。基线：2026 年 10 月 4 日至 25 日共 120 个恢复目录，每天 0–12 次。当前使用的仍是 9549 版本文件（SHA-256 `0cc75ace…3867`，写入时间 2026 年 10 月 13 日）。
@@ -108,8 +110,10 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 5. **平线没有与独立计数器核对。** 检测器已经记录 `system_cpu_percent`，但确认和报告都没有拿它与冻结线的高度比较。10 月 24 日 16:06 那次平线停在约 67%，计数器是 100%；这个差异是"冻结而非真实恒定负载"的最强证据，却没有出现在报告里。
 6. **上报落后于证据。** 证据摘要要求先准备修订后的提交材料，至今没有发出，而微软修复是达到完成标准的唯一途径。
 7. **运行缺口。**
-   - 退出时可能要等正在进行的分析尝试最多 300 秒（加入重试前为 120 秒）。旧进程仍占用单实例互斥量时，`Start.cmd` 会静默退出，所以停止后立刻启动可能导致没有监测器在运行。
+   - 单实例互斥量在解释器等待正在进行的分析尝试（加入重试后最多 300 秒）之前就已释放。因此旧进程仍在分析时，新的监测器就能启动，两边可能同时解码。
    - 分析超时只结束 `process-incident.py`，它的 `tracerpt.exe` 子进程可能继续写事件目录。
+   - 重试队列的状态不可靠，10 月 25 日已复现：已有八个等待项时，失败的尝试重新排队后变成九个；退出后，原本在等待的重试仍显示 `retry_pending`；排队但退出前未开始的事件根本没有 `analysis-status.json`。
+   - 300 秒限时针对整次重试尝试，其中的解码和压缩仍限 90 秒，所以重试帮不了慢解码。退出码只要不是 0 或 2 就会重试，包括必然重复的失败。
    - 40 GiB 的 ETW 预算已用约 4.4 GiB，10 月 19 日以来每个事件目录平均约 54 MB。按每天五次估算，约四个月后记录会被阻止，需要事先决定保留策略；证据不会被自动删除。
 
 ## 下一步行动（按顺序）
@@ -124,10 +128,10 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | A2 | 兜底，仅在 N1 不通过时做：把 10 月 20 日以来保留的事件重新分析到新的 `--output` 目录，汇总成一张跨事件表：起点窗口与同一 trace 中若干正常窗口的进程和线程启动速率 | 表格完成；下面的判定规则在运行前已写定 | 数个 CPU 小时；原始证据不动 |
 | A3 | 在每份观察和报告中给出冻结线高度与 `system_cpu_percent` 的差异 | 新报告出现该差异 | 小 |
 | A4 | 监测器启动时把 `TaskManagerDataLayer.dll` 的 SHA-256 写入 `status.json`；变化时做静态比对 | 不用手动检查就能看到哈希变化 | 小 |
-| A5 | 补运行缺口：`Stop.ps1` 等进程退出，`Start.cmd` 提示已有实例在运行，分析超时时结束整个进程树 | 各有测试覆盖；实际停止和启动一次核对 | 小 |
-| A6 | 定稿修订后的反馈中心材料，补充 9549 结果和事件频率 | 负责人发布 | 仅负责人；属对外发布 |
+| A5 | 补运行缺口：每次分析尝试放进 Windows Job Object，超时时结束整个进程树；队列在入队时就写入事件状态，重试不超出容量，退出时记录被取消的项目；重试前按阶段区分失败类型；`Stop.ps1` 等进程退出，`Start.cmd` 确认新实例的心跳 | 受控测试满队列、等待期间退出、运行期间退出，并注入解码超时；实际停止和启动一次核对 | 小到中 |
+| A6 | 现在就定稿修订后的反馈中心材料，不等 N1 或 A2；已确认的函数缺陷本身就值得提交。补充 9549 结果和事件频率 | 负责人发布 | 仅负责人；属对外发布 |
 | A7 | 决定是否为因果链恢复 9549 上的现场查询追踪 | 有记录在案的决定 | 搁置，除非 N1 或 A2 显示明确关联且负责人授权 |
 
 N1 的判定规则：探测记录到的前 10 次平线中，至少 9 次在首次平线候选之前或同时出现来自 `TaskManagerDataLayer.dll` 的 `0x8007139F`，且平线之外每天最多出现一次，则通过。10 次中有 3 次或以上缺失则不通过，分析退回 A1 和 A2。
 
-A2 的判定规则：如果至少 20 次事件中，起点窗口与正常窗口的进程和线程启动速率之比的中位数不高于 1.2，则进程增减不是可见的触发条件，停止继续做伴随进程排行。如果明显更高，报告效应大小，并转入 A6 和 A7。
+A2 的判定规则：如果至少 20 次事件中，起点窗口与正常窗口的进程和线程启动速率之比的中位数不高于 1.2，只能说该方法未发现进程增减与可见起点之间的关联，不能排除偶发的短时突发、窗口错位或混合原因；此后停止继续做伴随进程排行。批量运行前，先在少数证据完整的事件上试算，检查对照是否受污染，并检验结果在不同窗口大小下是否稳定。如果明显更高，报告效应大小，并转入 A6 和 A7。
