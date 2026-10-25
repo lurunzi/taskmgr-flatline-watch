@@ -159,7 +159,7 @@ class Session:
                         raise
                     time.sleep(.5*(attempt+1))
 
-    def decode(self, compact=False):
+    def decode(self, compact=False, timeout=90):
         if self.active:
             raise RuntimeError('refusing to decode an active session')
         # The light recorder can span hours. XML expands far beyond ETL size;
@@ -171,9 +171,10 @@ class Session:
             raise RuntimeError('decode output exists; reanalyse into a new directory')
         if compact and shutil.disk_usage(self.folder).free < limit+512*1024**2:
             raise RuntimeError('insufficient free space for bounded offline decoding')
-        deadline = time.monotonic()+90
+        decode_started = time.monotonic()
+        deadline = decode_started+timeout
         self.save(decode='running', decode_exit=None, decode_file=None,
-                  decode_limit_bytes=limit, decode_limit_seconds=90)
+                  decode_limit_bytes=limit, decode_limit_seconds=timeout)
         with (self.folder/'decode.log').open('wb') as log:
             child = subprocess.Popen([str(self.system/'tracerpt.exe'),str(self.folder/'process.etl'),
                                       '-o',str(output),'-of','XML','-rts','-y'],
@@ -183,9 +184,12 @@ class Session:
                 if time.monotonic()>deadline or (output.exists() and output.stat().st_size>limit):
                     child.terminate()  # Only our offline decoder, never a debugger.
                     child.wait()
-                    self.save(decode='incomplete: decoder time/output bound')
+                    decode_dur = round(time.monotonic()-decode_started, 3)
+                    self.save(decode='incomplete: decoder time/output bound', decode_duration_seconds=decode_dur)
                     raise RuntimeError('ETW decoder bound exceeded; ETL retained')
                 time.sleep(.2)
+        decode_dur = round(time.monotonic()-decode_started, 3)
+        self.save(decode_duration_seconds=decode_dur)
         if child.returncode:
             self.save(decode='failed', decode_exit=child.returncode)
             raise RuntimeError('ETW decode failed; ETL retained')
@@ -193,6 +197,7 @@ class Session:
             self.save(decode='incomplete: decoder time/output bound')
             raise RuntimeError('ETW decoder bound exceeded; ETL retained')
         if compact:
+            compress_started = time.monotonic()
             partial = self.folder/'events.xml.gz.part'
             self.save(decode_uncompressed_bytes=output.stat().st_size)
             try:
@@ -205,6 +210,8 @@ class Session:
                 # Only our newly created staging output; original ETL is retained.
                 output.unlink()
                 output = compressed
+                compress_dur = round(time.monotonic()-compress_started, 3)
+                self.save(compress_duration_seconds=compress_dur)
             except Exception as exc:
                 self.save(decode='incomplete: compression', decode_error=repr(exc))
                 raise

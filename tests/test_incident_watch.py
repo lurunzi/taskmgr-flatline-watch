@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import threading
 import tempfile
 import time
 import unittest
@@ -140,7 +141,9 @@ class IncidentWatchTests(unittest.TestCase):
                     time.sleep(.02)
                 p.close();p.thread and p.thread.join(10)
             self.assertEqual([c.args[0][2] for c in run.call_args_list],[str(old),str(new)])
-            self.assertEqual(json.loads((old/'analysis-status.json').read_text())['status'],'retry_pending')
+            status_old = json.loads((old/'analysis-status.json').read_text())
+            self.assertEqual(status_old['status'],'cancelled')
+            self.assertIn('tools/process-incident.py', status_old.get('manual_command', ''))
             self.assertEqual(json.loads((new/'analysis-status.json').read_text())['status'],'complete')
             self.assertFalse(p.submit(Path(d),ready))
 
@@ -162,5 +165,118 @@ class IncidentWatchTests(unittest.TestCase):
             monitor.accept({'state':'wrong_page'})
             self.assertEqual(monitor.observations.breaks[-1]['detail']['state'],'wrong_page')
 
+
+
+    def test_requeue_at_capacity_defers_and_records_manual_command(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = OfflineProcessor(timeouts=(1, 1, 1), delays=(3600, 3600))
+            gate = threading.Event()
+            def run(*a, **k):
+                gate.wait(5)
+                raise subprocess.TimeoutExpired('x', 1)
+            with patch.object(IW.subprocess, 'run', side_effect=run):
+                running, r = self.incident(d, 'running')
+                p.submit(running, r)
+                time.sleep(0.2)
+                others = [self.incident(d, f'q{i}') for i in range(IW.MAX_QUEUED)]
+                with p.lock:
+                    p.queue.clear()
+                for f2, r2 in others:
+                    p.queue.append({'folder': f2, 'ready': r2, 'attempt': 2, 'due': time.monotonic() + 3600, 'history': []})
+                gate.set()
+                time.sleep(0.5)
+                self.assertEqual(len(p.queue), IW.MAX_QUEUED)
+                p.close()
+                p.thread and p.thread.join(5)
+            status = json.loads((running/'analysis-status.json').read_text(encoding='utf-8'))
+            self.assertEqual(status['status'], 'deferred')
+            self.assertIn('tools/process-incident.py', status.get('manual_command', ''))
+
+    def test_close_cancels_all_waiting_retries_and_fresh_queued_items(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = OfflineProcessor(timeouts=(5, 5, 5), delays=(0, 0))
+            gate = threading.Event()
+            def run(*a, **k):
+                gate.wait(5)
+                return Mock(returncode=0)
+            with patch.object(IW.subprocess, 'run', side_effect=run):
+                a, ra = self.incident(d, 'item-a')
+                b, rb = self.incident(d, 'item-b')
+                p.submit(a, ra)
+                time.sleep(0.2)
+                p.submit(b, rb)
+                p.close()
+                gate.set()
+                p.thread and p.thread.join(5)
+            self.assertTrue((b/'analysis-status.json').exists())
+            status_b = json.loads((b/'analysis-status.json').read_text(encoding='utf-8'))
+            self.assertEqual(status_b['status'], 'cancelled')
+            self.assertIn('tools/process-incident.py', status_b.get('manual_command', ''))
+
+    def test_close_during_running_attempt_terminates_and_cancels(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder, ready = self.incident(d, 'running-cancel')
+            p = OfflineProcessor(timeouts=(10, 10, 10), delays=(0, 0))
+            gate = threading.Event()
+            def slow_run(*a, **k):
+                gate.set()
+                time.sleep(5)
+                return Mock(returncode=0)
+            with patch.object(IW.subprocess, 'run', side_effect=slow_run):
+                p.submit(folder, ready)
+                self.assertTrue(gate.wait(3))
+                p.close()
+                p.thread and p.thread.join(5)
+            status = json.loads((folder/'analysis-status.json').read_text(encoding='utf-8'))
+            self.assertEqual(status['status'], 'cancelled')
+            self.assertIn('tools/process-incident.py', status.get('manual_command', ''))
+
+    def test_injected_decode_timeout_terminates_child_process_tree(self):
+        with tempfile.TemporaryDirectory() as d:
+            out_file = Path(d)/'child_out.txt'
+            child_script = Path(d)/'child.py'
+            child_script.write_text(f"""import time
+with open(r'{out_file}', 'w') as f:
+    f.write('started\\n')
+while True:
+    try:
+        with open(r'{out_file}', 'a') as f:
+            f.write('X' * 512 + '\\n')
+    except Exception:
+        pass
+    time.sleep(0.02)
+""", encoding='utf-8')
+            worker_script = Path(d)/'worker.py'
+            worker_script.write_text(f"""import subprocess, sys
+p = subprocess.Popen([sys.executable, r'{child_script}'])
+p.wait()
+""", encoding='utf-8')
+            p = OfflineProcessor()
+            t0 = time.monotonic()
+            with (Path(d)/'test.log').open('wb') as log_stream:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    p._execute([sys.executable, str(worker_script)], log_stream, timeout_seconds=2.5)
+            t_elapsed = time.monotonic() - t0
+            self.assertLess(t_elapsed, 5.0)
+            self.assertTrue(out_file.exists())
+            size_at_timeout = out_file.stat().st_size
+            time.sleep(0.5)
+            size_after_sleep = out_file.stat().st_size
+            self.assertEqual(size_at_timeout, size_after_sleep)
+
+    def test_target_dll_inspection_and_change_detection(self):
+        with tempfile.TemporaryDirectory() as d:
+            dll = Path(d)/'test.dll'
+            dll.write_bytes(b'original dll content')
+            base = Path(d)/'baseline.json'
+            info1 = W.inspect_target_dll(base, dll)
+            self.assertFalse(info1['dll_changed'])
+            self.assertIsNotNone(info1['sha256'])
+            # Modify DLL
+            dll.write_bytes(b'modified dll content 2')
+            info2 = W.inspect_target_dll(base, dll)
+            self.assertTrue(info2['dll_changed'])
+            self.assertEqual(info2['previous_sha256'], info1['sha256'])
+            self.assertNotEqual(info2['sha256'], info1['sha256'])
 
 if __name__=='__main__':unittest.main()

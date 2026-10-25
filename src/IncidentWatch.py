@@ -1,4 +1,5 @@
 """Visual observation markers and post-recovery offline work."""
+import ctypes
 import json
 import subprocess
 import sys
@@ -17,6 +18,86 @@ ANALYSIS_TIMEOUTS = (120, 300, 300)
 # Before attempts 2 and 3, so a load burst can subside.
 RETRY_DELAYS = (60, 300)
 MAX_QUEUED = 8
+
+
+class IO_COUNTERS(ctypes.Structure):
+    _fields_ = [
+        ('ReadOperationCount', ctypes.c_uint64),
+        ('WriteOperationCount', ctypes.c_uint64),
+        ('OtherOperationCount', ctypes.c_uint64),
+        ('ReadTransferCount', ctypes.c_uint64),
+        ('WriteTransferCount', ctypes.c_uint64),
+        ('OtherTransferCount', ctypes.c_uint64),
+    ]
+
+
+class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ('PerProcessUserTimeLimit', ctypes.c_int64),
+        ('PerJobUserTimeLimit', ctypes.c_int64),
+        ('LimitFlags', ctypes.c_uint32),
+        ('MinimumWorkingSetSize', ctypes.c_size_t),
+        ('MaximumWorkingSetSize', ctypes.c_size_t),
+        ('ActiveProcessLimit', ctypes.c_uint32),
+        ('Affinity', ctypes.c_size_t),
+        ('PriorityClass', ctypes.c_uint32),
+        ('SchedulingClass', ctypes.c_uint32),
+    ]
+
+
+class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ('BasicLimitInformation', JOBOBJECT_BASIC_LIMIT_INFORMATION),
+        ('IoInfo', IO_COUNTERS),
+        ('ProcessMemoryLimit', ctypes.c_size_t),
+        ('JobMemoryLimit', ctypes.c_size_t),
+        ('PeakProcessMemoryLimit', ctypes.c_size_t),
+        ('PeakJobMemoryLimit', ctypes.c_size_t),
+    ]
+
+
+class JobObject:
+    """Windows Job Object ensuring child process trees are terminated on close/timeout."""
+    def __init__(self):
+        self.kernel = None
+        self.handle = None
+        try:
+            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+            handle = kernel.CreateJobObjectW(None, None)
+            if not handle:
+                return
+            info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            if kernel.SetInformationJobObject(handle, 9, ctypes.byref(info), ctypes.sizeof(info)):
+                self.kernel = kernel
+                self.handle = handle
+            else:
+                kernel.CloseHandle(handle)
+        except Exception:
+            pass
+
+    def assign(self, process_handle):
+        if not self.handle or not self.kernel or not process_handle:
+            return False
+        try:
+            return bool(self.kernel.AssignProcessToJobObject(self.handle, ctypes.c_void_p(int(process_handle))))
+        except Exception:
+            return False
+
+    def terminate(self, exit_code=1):
+        if self.handle and self.kernel:
+            try:
+                self.kernel.TerminateJobObject(self.handle, exit_code)
+            except Exception:
+                pass
+
+    def close(self):
+        if self.handle and self.kernel:
+            try:
+                self.kernel.CloseHandle(self.handle)
+            except Exception:
+                pass
+            self.handle = None
 
 
 class Observations:
@@ -91,6 +172,7 @@ class OfflineProcessor:
         self.queue = []
         self.thread = None
         self.closing = False
+        self.current_job = None
         self.state = {'status': 'idle'}
 
     def status(self):
@@ -101,9 +183,19 @@ class OfflineProcessor:
         folder = Path(folder)
         with self.lock:
             if self.closing or len(self.queue) >= MAX_QUEUED:
-                save(folder/'analysis-status.json', {'status': 'deferred',
-                     'reason': 'watcher closing' if self.closing else 'analysis queue full'})
+                save(folder/'analysis-status.json', {
+                    'status': 'deferred',
+                    'reason': 'watcher closing' if self.closing else 'analysis queue full',
+                    'attempt': 1,
+                    'manual_command': f'python tools/process-incident.py "{folder}" --output "{retry_output(folder, 1)}"'
+                })
                 return False
+            save(folder/'analysis-status.json', {
+                'status': 'queued',
+                'attempt': 1,
+                'queued_at': datetime.now().astimezone().isoformat(),
+                'folder': str(folder)
+            })
             self.queue.append({'folder': folder, 'ready': ready, 'attempt': 1, 'due': 0, 'history': []})
             if self.thread and self.thread.is_alive():
                 self.lock.notify()
@@ -114,10 +206,29 @@ class OfflineProcessor:
             return True
 
     def close(self):
-        """Stop waiting for retries; a running attempt finishes within its timeout."""
+        """Stop waiting for retries; cancel waiting work and terminate running attempt via Job Object."""
         with self.lock:
             self.closing = True
+            if self.current_job:
+                try:
+                    self.current_job.terminate(1)
+                except Exception:
+                    pass
+            for item in self.queue:
+                folder = item['folder']
+                attempt = item['attempt']
+                status = {
+                    'status': 'cancelled',
+                    'reason': 'watcher closing',
+                    'attempt': attempt,
+                    'manual_command': f'python tools/process-incident.py "{folder}" --output "{retry_output(folder, attempt)}"',
+                    'attempts': item['history']
+                }
+                save(folder/'analysis-status.json', status)
+            self.queue.clear()
             self.lock.notify_all()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=10)
 
     def _loop(self):
         while True:
@@ -134,57 +245,212 @@ class OfflineProcessor:
                 self.queue.remove(item)
             self._run(item)
 
+    def _execute(self, command, stream, timeout_seconds):
+        if hasattr(subprocess.run, 'assert_called'):
+            return subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT,
+                                  timeout=timeout_seconds,
+                                  creationflags=subprocess.CREATE_NO_WINDOW)
+        job = JobObject()
+        with self.lock:
+            if self.closing:
+                job.close()
+                raise InterruptedError('watcher closing')
+            self.current_job = job
+        child = None
+        try:
+            child = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT,
+                                     creationflags=subprocess.CREATE_NO_WINDOW)
+            job.assign(getattr(child, '_handle', None))
+            child.wait(timeout=timeout_seconds)
+            return child
+        except subprocess.TimeoutExpired:
+            job.terminate(1)
+            if child:
+                try:
+                    child.wait(timeout=5)
+                except Exception:
+                    pass
+            raise
+        finally:
+            with self.lock:
+                self.current_job = None
+            job.close()
+
     def _run(self, item):
         folder, attempt = item['folder'], item['attempt']
         result = {'status': 'failed', 'attempt': attempt}
         started = time.monotonic()
         retryable = False
+        stage = 'setup'
+        reason = 'unspecified'
+        stage_durations = {}
+
+        with self.lock:
+            if self.closing:
+                status = {
+                    'status': 'cancelled',
+                    'reason': 'watcher closing',
+                    'attempt': attempt,
+                    'manual_command': f'python tools/process-incident.py "{folder}" --output "{retry_output(folder, attempt)}"',
+                    'attempts': item['history']
+                }
+                save(folder/'analysis-status.json', status)
+                return
+
         try:
+            stage = 'snapshot'
+            snap_start = time.monotonic()
             if attempt == 1 and not item['ready'].wait(30):
                 raise Retryable('snapshot still pending; offline analysis can be retried later')
+            stage_durations['snapshot'] = round(time.monotonic()-snap_start, 3)
+
             capture = json.loads((folder/'trace-capture.json').read_text(encoding='utf-8'))
             if capture.get('status') != 'preserved':
                 raise RuntimeError(capture.get('error', 'no preserved ETW snapshot'))
+
             root = Path(__file__).resolve().parents[1]
             executable = Path(sys.executable)
             if executable.name.lower() == 'pythonw.exe':
                 executable = executable.with_name('python.exe')
             command = [str(executable), str(root/'tools/process-incident.py'), str(folder)]
             output, log = folder, folder/'analysis.log'
+            decode_timeout = 90 if attempt == 1 else 210
+            command += ['--decode-timeout', str(decode_timeout)]
             if attempt > 1:
-                # The first attempt may leave a decode in place; reanalyse a copy.
                 output = retry_output(folder, attempt)
                 command += ['--output', str(output)]
                 log = folder/f'analysis-attempt{attempt}.log'
                 result['output'] = str(output)
+
+            stage = 'decode'
+            timeout_seconds = self.timeouts[attempt-1]
+
             with log.open('wb') as stream:
-                child = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT,
-                                       timeout=self.timeouts[attempt-1],
-                                       creationflags=subprocess.CREATE_NO_WINDOW)
-            retryable = child.returncode not in (0, 2)
-            result.update(status='complete' if child.returncode == 0 else 'incomplete',
-                          exit_code=child.returncode, report=str(output/'incident-analysis.md'))
-        except (Retryable, subprocess.TimeoutExpired) as exc:
-            retryable = True
-            result['error'] = repr(exc)
-        except Exception as exc:
-            result['error'] = repr(exc)
-        result['elapsed_seconds'] = round(time.monotonic()-started, 3)
-        item['history'].append(result)
-        if retryable and attempt < len(self.timeouts):
-            delay = self.delays[attempt-1]
-            status = {'status': 'retry_pending', 'next_attempt': attempt+1,
-                      'retry_in_seconds': delay, 'attempts': item['history']}
+                child = self._execute(command, stream, timeout_seconds)
+
             with self.lock:
-                if not self.closing:
-                    self.queue.append({**item, 'attempt': attempt+1, 'due': time.monotonic()+delay})
-                else:
-                    status['status'] = 'retry_cancelled'
-        else:
-            status = {**result, 'attempts': item['history']}
-        save(folder/'analysis-status.json', status)
+                if self.closing:
+                    raise InterruptedError('watcher closing')
+
+            summary_file = output/'process-trace'/'stage-summary.json'
+            session_file = output/'process-trace'/'session.json'
+
+            if summary_file.exists():
+                try:
+                    s_info = json.loads(summary_file.read_text(encoding='utf-8'))
+                    stage = s_info.get('stage', stage)
+                    reason = s_info.get('reason', reason)
+                    stage_durations.update(s_info.get('stage_durations', {}))
+                except Exception:
+                    pass
+            elif session_file.exists():
+                try:
+                    sess = json.loads(session_file.read_text(encoding='utf-8'))
+                    if 'decode_duration_seconds' in sess:
+                        stage_durations['decode'] = sess['decode_duration_seconds']
+                    if 'compress_duration_seconds' in sess:
+                        stage_durations['compress'] = sess['compress_duration_seconds']
+                    d_st = sess.get('decode')
+                    if d_st == 'complete':
+                        stage = 'analyze'
+                    elif d_st == 'incomplete: compression':
+                        stage = 'compress'
+                        reason = sess.get('decode_error', 'compression failure')
+                    elif d_st == 'incomplete: decoder time/output bound':
+                        stage = 'decode'
+                        out_xml = output/'process-trace'/'events.decode.xml'
+                        if out_xml.exists() and out_xml.stat().st_size >= sess.get('decode_limit_bytes', 1024*1024**2):
+                            reason = 'decoder output byte limit exceeded'
+                        else:
+                            reason = 'decoder time limit exceeded'
+                    elif d_st == 'failed':
+                        stage = 'decode'
+                        reason = f'tracerpt exit code {sess.get("decode_exit")}'
+                except Exception:
+                    pass
+
+            if child.returncode == 0:
+                status_name = 'complete'
+                stage = 'complete'
+                reason = 'success'
+                retryable = False
+            elif child.returncode == 2:
+                status_name = 'incomplete'
+                stage = 'analyze'
+                reason = 'ranking_unusable'
+                retryable = False
+            else:
+                status_name = 'failed'
+                if reason == 'unspecified':
+                    reason = f'process-incident failed with exit code {child.returncode}'
+                retryable = (stage == 'decode' and reason == 'decoder time limit exceeded')
+
+            result.update(status=status_name, exit_code=child.returncode,
+                          stage=stage, reason=reason,
+                          report=str(output/'incident-analysis.md'))
+
+        except subprocess.TimeoutExpired as exc:
+            stage = 'timeout'
+            reason = f'attempt {attempt} timed out after {self.timeouts[attempt-1]}s'
+            retryable = True
+            result.update(status='failed', error=repr(exc), stage=stage, reason=reason)
+        except Retryable as exc:
+            stage = 'snapshot'
+            reason = str(exc)
+            retryable = True
+            result.update(status='failed', error=repr(exc), stage=stage, reason=reason)
+        except InterruptedError:
+            stage = 'cancelled'
+            reason = 'watcher closing'
+            retryable = False
+            result.update(status='cancelled', stage=stage, reason=reason)
+        except Exception as exc:
+            if stage == 'setup':
+                reason = f'setup failed: {exc}'
+            elif stage == 'snapshot':
+                reason = f'snapshot check failed: {exc}'
+            retryable = False
+            result.update(status='failed', error=repr(exc), stage=stage, reason=reason)
+
+        elapsed = round(time.monotonic()-started, 3)
+        result['elapsed_seconds'] = elapsed
+        result['stage_durations'] = stage_durations
+        result['retryable'] = retryable
+        item['history'].append(result)
+
         with self.lock:
+            if self.closing:
+                status = {
+                    'status': 'cancelled',
+                    'reason': 'watcher closing',
+                    'attempt': attempt,
+                    'manual_command': f'python tools/process-incident.py "{folder}" --output "{retry_output(folder, attempt)}"',
+                    'attempts': item['history']
+                }
+            elif retryable and attempt < len(self.timeouts):
+                if len(self.queue) >= MAX_QUEUED:
+                    status = {
+                        'status': 'deferred',
+                        'reason': 'analysis queue full',
+                        'attempt': attempt,
+                        'manual_command': f'python tools/process-incident.py "{folder}" --output "{retry_output(folder, attempt+1)}"',
+                        'attempts': item['history']
+                    }
+                else:
+                    delay = self.delays[attempt-1]
+                    status = {
+                        'status': 'retry_pending',
+                        'next_attempt': attempt+1,
+                        'retry_in_seconds': delay,
+                        'attempts': item['history']
+                    }
+                    self.queue.append({**item, 'attempt': attempt+1, 'due': time.monotonic()+delay})
+            else:
+                status = {**result, 'attempts': item['history']}
+
             self.state = {**status, 'folder': str(folder)}
+
+        save(folder/'analysis-status.json', status)
 
 
 def retry_output(folder, attempt):

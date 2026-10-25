@@ -1,4 +1,5 @@
 """Automatic chart sampling and local evidence capture for Task Manager."""
+import hashlib
 import json
 import ctypes
 import multiprocessing as mp
@@ -115,6 +116,83 @@ def write_dump(pid, destination):
     result['finished'] = timestamp()
     return result
 
+
+def read_pe_file_version(path):
+    try:
+        kernel = ctypes.WinDLL('version', use_last_error=True)
+        size = kernel.GetFileVersionInfoSizeW(str(path), None)
+        if not size:
+            return None
+        buf = ctypes.create_string_buffer(size)
+        if not kernel.GetFileVersionInfoW(str(path), 0, size, buf):
+            return None
+        p = ctypes.c_void_p()
+        uLen = ctypes.c_uint32()
+        class VS_FIXEDFILEINFO(ctypes.Structure):
+            _fields_ = [
+                ('dwSignature', ctypes.c_uint32),
+                ('dwStrucVersion', ctypes.c_uint32),
+                ('dwFileVersionMS', ctypes.c_uint32),
+                ('dwFileVersionLS', ctypes.c_uint32),
+            ]
+        if not kernel.VerQueryValueW(buf, r'\\', ctypes.byref(p), ctypes.byref(uLen)):
+            return None
+        vs = ctypes.cast(p, ctypes.POINTER(VS_FIXEDFILEINFO)).contents
+        return f'{vs.dwFileVersionMS >> 16}.{vs.dwFileVersionMS & 0xFFFF}.{vs.dwFileVersionLS >> 16}.{vs.dwFileVersionLS & 0xFFFF}'
+    except Exception:
+        return None
+
+def inspect_target_dll(baseline_path=None, dll_path=None):
+    if dll_path is None:
+        dll_path = Path(os.environ.get('SystemRoot', r'C:\Windows'))/'System32/TaskManagerDataLayer.dll'
+    else:
+        dll_path = Path(dll_path)
+    info = {
+        'path': str(dll_path),
+        'sha256': None,
+        'file_version': None,
+        'modified': None,
+        'dll_changed': False,
+    }
+    if not dll_path.is_file():
+        info['error'] = 'file not found'
+        return info
+
+    try:
+        with dll_path.open('rb') as f:
+            info['sha256'] = hashlib.file_digest(f, 'sha256').hexdigest()
+        stat = dll_path.stat()
+        info['modified'] = datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat()
+    except Exception as exc:
+        info['error'] = str(exc)
+        return info
+
+    info['file_version'] = read_pe_file_version(dll_path)
+
+    if baseline_path:
+        base_file = Path(baseline_path)
+        prior_sha = None
+        if base_file.exists():
+            try:
+                prior = json.loads(base_file.read_text(encoding='utf-8'))
+                prior_sha = prior.get('sha256') if isinstance(prior, dict) else None
+            except Exception:
+                pass
+        elif (base_file.parent/'status.json').exists():
+            try:
+                prior_status = json.loads((base_file.parent/'status.json').read_text(encoding='utf-8'))
+                prior_sha = prior_status.get('target_dll', {}).get('sha256')
+            except Exception:
+                pass
+        if prior_sha and prior_sha != info['sha256']:
+            info['dll_changed'] = True
+            info['previous_sha256'] = prior_sha
+        try:
+            write_json(base_file, info)
+        except Exception:
+            pass
+    return info
+
 class Monitor:
     def __init__(self, query_trace=False, restart_only=False, light_etw=False,
                  etw_budget=TRACE_BUDGET):
@@ -122,6 +200,7 @@ class Monitor:
         self.restart_only = bool(restart_only or light_etw)
         self.light_etw = light_etw
         OUTPUT.mkdir(parents=True, exist_ok=True)
+        self.target_dll = inspect_target_dll(OUTPUT/'target-dll-baseline.json')
         self.detector = FlatlineDetector(30)
         self.frames = deque(maxlen=61 if light_etw else 31)
         self.observations = Observations()
@@ -209,6 +288,8 @@ class Monitor:
                       'origin_mode':'query_trace' if self.origin.query_trace else 'procdump',
                       'light_etw':self.recorder.status() if self.recorder else {'state':'disabled'},
                       'incident_analysis':self.offline.status() if self.offline else {'status':'disabled'},
+                      'target_dll':self.target_dll,
+                      'dll_changed':self.target_dll.get('dll_changed', False),
                       'mode':'restart_only' if self.restart_only else 'capture', **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)

@@ -208,16 +208,23 @@ def main():
     kernel.CreateMutexW.argtypes=[ctypes.c_void_p,ctypes.c_bool,ctypes.c_wchar_p]
     kernel.CreateMutexW.restype=ctypes.c_void_p
     mutex=kernel.CreateMutexW(None,False,'Local\\TaskmgrFlatlineWatch-ABSCOND')
-    if not mutex or ctypes.get_last_error()==183:return 0
+    if not mutex or ctypes.get_last_error()==183:
+        msg = 'An instance of Task Manager Flatline Watch is already running.'
+        print(msg, file=sys.stderr)
+        (ROOT/'.local/startup-error.txt').write_text(msg + '\n', encoding='utf-8')
+        return 3
     (ROOT/'.local/stop.request').unlink(missing_ok=True)
+    (ROOT/'.local/startup-error.txt').unlink(missing_ok=True)
     app=QApplication(sys.argv);app.setQuitOnLastWindowClosed(False);app.setStyle('Fusion')
     widget=Watch()
     if '--show' in sys.argv:widget.show()
     try:return app.exec()
     finally:
         widget.monitor.stop()
-        if widget.monitor.offline:widget.monitor.offline.close()
-        kernel.CloseHandle.argtypes=[ctypes.c_void_p];kernel.CloseHandle(mutex)
+        if widget.monitor.offline:
+            widget.monitor.offline.close()
+        kernel.CloseHandle.argtypes=[ctypes.c_void_p]
+        kernel.CloseHandle(mutex)
 
 if __name__=='__main__':
     mp.freeze_support()

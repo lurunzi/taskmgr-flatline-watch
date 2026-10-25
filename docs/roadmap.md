@@ -31,7 +31,7 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 | Escalation | Feedback Hub report [AA13rk15](https://aka.ms/AA13rk15) exists; the corrected submission material is not yet sent | Corrected material posted by the owner |
 | Causal chain within one incident | Open and parked; live address-chain collection retired on 13 October | One incident with continuous lineage from query buffer to frozen summary |
 | Association with process churn | Open; per-incident reports only, no cross-incident result | A pre-stated comparison across at least 20 incidents |
-| Fix watch | Manual; nothing records DLL changes | A hash change is detected and assessed |
+| Fix watch | Running; DLL metadata recorded in status.json on startup (25 October 2026) | A hash change is detected and assessed |
 
 ## Critical review of the work so far
 
@@ -59,8 +59,8 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 | A1 | Fallback, only if N1 fails: add an onset phase to the offline analysis: estimate when the line went flat from the flat-run length in the first-candidate image and the measured chart speed, and analyse a window around that time with a control earlier in the same trace | Unit tests pass; reports state the estimate and its uncertainty | Repository code only; no new collection |
 | A2 | Fallback, only if N1 fails: reanalyse the retained incidents since 20 October into new `--output` folders and build one cross-incident table: process and thread start rates in the onset window against several normal windows from the same trace | The table exists; the decision rule below was written down before the run | A few CPU-hours; originals untouched |
 | A3 | Report the frozen-line height against `system_cpu_percent` in each observation and report | The discrepancy appears in new reports | Small |
-| A4 | Record the `TaskManagerDataLayer.dll` SHA-256 in `status.json` at watcher start; when it changes, run the static comparison | A hash change is visible without manual checks | Small |
-| A5 | Fix the operational gaps: each analysis attempt runs in a Windows Job Object so a timeout ends its whole process tree; the queue writes each incident's state when it is queued, keeps retries within its capacity and records cancelled work on shutdown; failures are classified by stage before retrying; `Stop.ps1` waits for the process to exit and `Start.cmd` confirms the new instance's heartbeat | Controlled tests for a full queue, shutdown while waiting and shutdown while running, plus an injected decoder timeout; one real stop and start cycle checked | Small to medium |
+| A4 | Record the `TaskManagerDataLayer.dll` SHA-256 in `status.json` at watcher start; when it changes, run the static comparison | Done 25 October 2026: hash and metadata recorded in status.json; change flag set | Small |
+| A5 | Fix the operational gaps: each analysis attempt runs in a Windows Job Object so a timeout ends its whole process tree; the queue writes each incident's state when it is queued, keeps retries within its capacity and records cancelled work on shutdown; failures are classified by stage before retrying; `Stop.ps1` waits for the process to exit and `Start.cmd` confirms the new instance's heartbeat | Done 25 October 2026: Job Object process tree termination, queue capacity, shutdown cancellation, stage timings, and verified Stop/Start wait loop | Small to medium |
 | A6 | Finalise the corrected Feedback Hub material now, without waiting for N1 or A2; the confirmed function defects justify it on their own. Add the 9549 result and the incident rate | The owner posts it | Owner only; external publication |
 | A7 | Decide whether to resume live query tracing on 9549 for the causal chain | A recorded decision | Parked unless N1 or A2 shows a clear association and the owner authorises it |
 
@@ -99,7 +99,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | 上报 | 反馈中心报告 [AA13rk15](https://aka.ms/AA13rk15) 已存在；修订后的提交材料尚未发出 | 负责人发布修订材料 |
 | 同一事件内的因果链 | 未闭合，已搁置；10 月 13 日停止现场地址链采集 | 一次事件内从查询缓冲区到冻结摘要的连续来源链 |
 | 与进程增减的关联 | 未闭合；只有单次报告，没有跨事件结论 | 至少 20 次事件、事先写定规则的比较 |
-| 修复监视 | 手动；没有记录 DLL 变化 | 能发现哈希变化并完成评估 |
+| 修复监视 | 运行中；启动时将 DLL 元数据写入 status.json（2026-10-25） | 能发现哈希变化并完成评估 |
 
 ## 对已有工作的批判性审查
 
@@ -127,8 +127,8 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | A1 | 兜底，仅在 N1 不通过时做：在离线分析中加入起点阶段：用首次候选截图里的平线长度和量得的图表速度估计开始变平的时间，分析该时间附近的窗口，并在同一 trace 更早处取对照 | 单元测试通过；报告写明估计值及其不确定度 | 只改仓库代码，不新增采集 |
 | A2 | 兜底，仅在 N1 不通过时做：把 10 月 20 日以来保留的事件重新分析到新的 `--output` 目录，汇总成一张跨事件表：起点窗口与同一 trace 中若干正常窗口的进程和线程启动速率 | 表格完成；下面的判定规则在运行前已写定 | 数个 CPU 小时；原始证据不动 |
 | A3 | 在每份观察和报告中给出冻结线高度与 `system_cpu_percent` 的差异 | 新报告出现该差异 | 小 |
-| A4 | 监测器启动时把 `TaskManagerDataLayer.dll` 的 SHA-256 写入 `status.json`；变化时做静态比对 | 不用手动检查就能看到哈希变化 | 小 |
-| A5 | 补运行缺口：每次分析尝试放进 Windows Job Object，超时时结束整个进程树；队列在入队时就写入事件状态，重试不超出容量，退出时记录被取消的项目；重试前按阶段区分失败类型；`Stop.ps1` 等进程退出，`Start.cmd` 确认新实例的心跳 | 受控测试满队列、等待期间退出、运行期间退出，并注入解码超时；实际停止和启动一次核对 | 小到中 |
+| A4 | 监测器启动时把 `TaskManagerDataLayer.dll` 的 SHA-256 写入 `status.json`；变化时做静态比对 | 2026-10-25 已完成：哈希与元数据写入 status.json，变化时置标志 | 小 |
+| A5 | 补运行缺口：每次分析尝试放进 Windows Job Object，超时时结束整个进程树；队列在入队时就写入事件状态，重试不超出容量，退出时记录被取消的项目；重试前按阶段区分失败类型；`Stop.ps1` 等进程退出，`Start.cmd` 确认新实例的心跳 | 2026-10-25 已完成：Job Object 进程树清理、队列容量与退出状态、分阶段限时与耗时记录、启停等待心跳均已受控验证 | 小到中 |
 | A6 | 现在就定稿修订后的反馈中心材料，不等 N1 或 A2；已确认的函数缺陷本身就值得提交。补充 9549 结果和事件频率 | 负责人发布 | 仅负责人；属对外发布 |
 | A7 | 决定是否为因果链恢复 9549 上的现场查询追踪 | 有记录在案的决定 | 搁置，除非 N1 或 A2 显示明确关联且负责人授权 |
 
