@@ -1,0 +1,10 @@
+{
+  "requested_qpc": 1731656306788,
+  "status": "preserved",
+  "stop_requested_qpc": 1731656307415,
+  "stopped_qpc": 1731656898922,
+  "preserved_qpc": 1731662998124,
+  "trace": "D:\\TaskmgrFreezeCaptures\\restart-20261026-164452-116086\\process-trace",
+  "rearmed_qpc": 1731670039129,
+  "gap_seconds": 1.3140207
+}

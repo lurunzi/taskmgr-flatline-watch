@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-23",
-  "purpose": "Recognise complete logical CPU grids whose integer chart widths differ by one pixel.",
+  "date": "2026-10-26",
+  "purpose": "Record Taskmgr Error ETW provider alongside kernel events and extract 0x8007139F native call chain (N2).",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -11,20 +11,20 @@
   "quality_profile": "showcase",
   "correction_rounds": 1,
   "corrections": [
-    "Added the width guard to the CPU node because canonical PNG export excludes explanatory cards."
+    "Dual circular ETW: Kernel-Process + Taskmgr Error (128 MB circular); native error and WIL call chain extracted alongside process churn."
   ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "b5c4dc17f32e7c3739215011e0384df23e4647c8996b84fc6b1f2823407dc7c1",
-        "bytes": 5558
+        "sha256": "a0ab4678cd6eccaf92413f4775df46613e3ac458ca96944bf3706f58e15d2b7e",
+        "bytes": 5603
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "d1a63a05c92c953d1c060ecd35d974bd7be8841f9f2573d77b41962f32ca38d5",
-        "bytes": 716802,
+        "sha256": "0c98793b77072889169aaeee6ff2c91191bed6da3b122caa7cfb51b2360d98b4",
+        "bytes": 716880,
         "committed": false
       },
       "validation": {
@@ -41,16 +41,16 @@
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "eeb164efbe749947b4c321d8a1007974136f87a3616275bacd76f9dc83988263",
-          "bytes": 571247,
+          "sha256": "71d505909139a3f81647a74816cbbd5d0dd991a3a98214e8c2e41b325a65b9c9",
+          "bytes": 573131,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "7e7056e05745e96f4afcdba0e2a7cafb325254f22c5871b8ecdd28bccbac2d9e",
-          "bytes": 585428,
+          "sha256": "b15ce9b5cc26bbad42f4fc15aa8a8ebf2e9b84cd740321d6c3cc4e26bcd3f584",
+          "bytes": 587100,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -61,13 +61,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "2667d64f380790e58a8da6d0e39f12606af85de28ed21eb1027b1c92c867d95a",
-        "bytes": 5566
+        "sha256": "11ad2dd0ac871b97b334c477a0fc2f41a8a9aa8f3aa610102c76f1b87002a91f",
+        "bytes": 5644
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "4685fb87a0bf3f7417659b22f890421d6e4866341272dd6458305c68c8f5e6ce",
-        "bytes": 716514,
+        "sha256": "5a78a966998d27f925f078e4ed503efa033b7cf7546bc588e3eaf4e4ecc9d157",
+        "bytes": 716630,
         "committed": false
       },
       "validation": {
@@ -84,16 +84,16 @@
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "119f06bb8a3b5d2f24ee099c546264afa671fc63438b7cebbb172f71308048fd",
-          "bytes": 603634,
+          "sha256": "49ee2b60ebacce2a2f3b8187553405bcfcfc04e383416249ddce13ad46a515fb",
+          "bytes": 608439,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "431f19326157bc8334729db488b9fd34589f10defca99c4ab5460603b1f08617",
-          "bytes": 614262,
+          "sha256": "1cfb3ccc725556b6fd4a2e678e850e6fdeeb36d7ce6c22cab4db95b9c3f975dd",
+          "bytes": 618751,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true
@@ -106,5 +106,5 @@
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "local_artifacts": ".local/work-inbox/20261023-chart-width/overview.<lang>.html and delivery/visual/export receipts"
-}
+  "local_artifacts": ".local/work-inbox/20261026-n2-native-record/overview.<lang>.html and delivery/visual/export receipts"
+}

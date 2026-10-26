@@ -1,0 +1,30 @@
+{
+  "qualifying_count": 2,
+  "conforming_count": 1,
+  "non_conforming_count": 1,
+  "indeterminate_count": 0,
+  "rule": "Pass if in first 10 qualifying flatlines >=9 conform (0x8007139F from TaskManagerDataLayer.dll <= first_candidate) and outside flatlines <=1/day; fail if >=3 missing",
+  "status": "evaluating",
+  "history": [
+    {
+      "incident": "restart_164452",
+      "timestamp_utc": "2026-10-26T20:51:27.989773+00:00",
+      "verdict": "conforming",
+      "recorded": true,
+      "reason": null,
+      "hresult": "0x8007139f",
+      "qpc": 1731226186497,
+      "lead_seconds": 13.0
+    },
+    {
+      "incident": "restart-20261026-164452-116086",
+      "timestamp_utc": "2026-10-26T20:52:06.410427+00:00",
+      "verdict": "non_conforming",
+      "recorded": false,
+      "reason": "not_present: provider error did not occur in retained window",
+      "hresult": null,
+      "qpc": null,
+      "lead_seconds": null
+    }
+  ]
+}

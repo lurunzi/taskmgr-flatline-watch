@@ -19,6 +19,16 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Native freeze signature recording (26 October 2026)
+
+Lightweight incident recording now includes Task Manager's own TraceLogging provider `Microsoft.Windows.Taskmgr` (`{2e635d8e-1107-4555-9319-32eeb895aaae}`) at Level 2 (Error) alongside kernel process and thread start/exit events. Both providers are captured in a single unified circular ETW session using `logman -pf providers.guid` with the buffer size increased to 128 MB (providing over 2 hours of history, well above the 20-minute minimum requirement).
+
+Offline incident analysis extracts the native signature and call chain:
+- **Native error extraction**: Searches for the first `FallbackError` event with `module=TaskManagerDataLayer.dll` and `hresult=0x8007139F` within `[coverage_begin, confirmed]`. It records the exact QPC and UTC timestamps, thread ID, lead time relative to the first visually flagged flat candidate, and the full WIL call chain (source file, line number, failure type, and message) within 50 ms on the same thread.
+- **Process and thread activity**: Calculates process and thread start counts in the 2-second window `[-2, 0)` seconds prior to the native error, started processes' parent-child chains, and top thread-creating processes. It compares these against baseline statistics (median and maximum) computed across fifty 2-second control windows in `[-120, -20)` seconds prior to the error.
+- **Missing reason accounting**: If no native error is detected, the report states "No native freeze signature recorded" with explicit categorization: `uncovered` (recording began after the incident), `blind` (incident occurred during an inactive/blind monitoring interval), or `not_present` (events fully covered but no `0x8007139F` found).
+- **Automated N1 tally**: Incidents automatically evaluate the N1 qualification criteria (`conforming`, `non_conforming`, or `indeterminate`) and accumulate the running count in `n1-summary.json` and `status.json`.
+
 ## Post-recovery navigation retry and blind monitoring (26 October 2026)
 
 When Task Manager is restarted following an incident, a failed initial navigation attempt (e.g. `cpu-not-found` while the WinUI 3 XAML island initialises) previously left the watcher in an indefinite `waiting` state once the initial 3 retries were exhausted. Because the CPU page was missing, monitoring was effectively blind (as observed in incident `restart-20261025-170806-531483`, where the watcher remained in `waiting` for 22.5 hours until manual page re-selection revealed a flatline already at 71/71 pixels). This operational gap is resolved:
@@ -206,6 +216,16 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 原生卡死特征记录（2026年10月26日）
+
+轻量异常记录现已将任务管理器自身的 TraceLogging 提供程序 `Microsoft.Windows.Taskmgr`（`{2e635d8e-1107-4555-9319-32eeb895aaae}`，错误级 Level 2）与内核进程／线程启停事件合并到同一个循环 ETW 会话中，通过 `logman -pf providers.guid` 统一调度。缓冲区上限提升至 128 MB，可保留超过 2 小时的历史记录，远超 20 分钟覆盖底线。
+
+离线分析新增原生特征与调用链提取：
+- **原生错误提取**：在 `[覆盖起点, 确认]` 观察窗口内查找第一条来自 `TaskManagerDataLayer.dll` 且 `hresult=0x8007139F` 的 `FallbackError` 事件。记录精确的 QPC 与 UTC 时间戳、线程 ID、相对首次视觉候选的提前量，以及同线程 50 毫秒内的完整 WIL 调用链（源文件名、行号、failureType 与错误消息）。
+- **进程与线程增减分析**：统计原生错误发生前 2 秒区间 `[-2, 0)` 内的进程与线程启动数、新启动进程的父子链与主要线程创建者，并与该错误前 `[-120, -20)` 秒内 50 个 2 秒对照窗口的中位数和最大值进行对比。
+- **缺失原因核算**：若未记录到原生错误，报告明确注明“未记录到原生卡死特征”并区分具体原因：`uncovered`（事件前覆盖时长不足）、`blind`（发生在失明监测期间）或 `not_present`（完整覆盖但确实未出现该错误）。
+- **自动累计 N1 判定**：每次事件自动判定是否符合 N1 准则（符合 `conforming`、不符合 `non_conforming` 或原因不可判定 `indeterminate`），并在 `n1-summary.json` 和 `status.json` 中累计历史计数。
 
 ## 恢复后导航重试与失明监测（2026 年 10 月 26 日）
 

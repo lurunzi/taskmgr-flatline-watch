@@ -13,6 +13,7 @@ from pathlib import Path
 
 NS = {'e':'http://schemas.microsoft.com/win/2004/08/events/event'}
 PROVIDER = '{22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}'
+TASKMGR_PROVIDER = '{2e635d8e-1107-4555-9319-32eeb895aaae}'
 KINDS = {1:'process_start',2:'process_stop',3:'thread_start',4:'thread_stop'}
 EPOCH = 116444736000000000
 
@@ -38,6 +39,7 @@ def decode(path, thread_window=None):
 
 def _decode_stream(source, thread_window):
     events,header,errors = [],None,[]
+    native_events = []
     first_clock = last_clock = None
     total = 0
     iterator = ET.iterparse(source,events=('start','end'))
@@ -53,6 +55,43 @@ def _decode_stream(source, thread_window):
             header = {k:int(data[k],0) for k in ('PerfFreq','StartTime','EndTime','EventsLost','BuffersLost','BuffersWritten','BufferSize','MaxFileSize')}
             header['raw_start'] = int(raw) if raw else None
             header['clock_type'] = int(data.get('ReservedFlags','0'),0)
+        if provider==TASKMGR_PROVIDER:
+            ex = node.find('e:System/e:Execution', NS)
+            pid = int(ex.get('ProcessID', 0)) if ex is not None else 0
+            tid = int(ex.get('ThreadID', 0)) if ex is not None else 0
+            system_time = clock.get('SystemTime') if clock is not None else None
+            task = node.findtext('e:RenderingInfo/e:Task', namespaces=NS) or node.findtext('e:System/e:Task', namespaces=NS) or ''
+            wil_data = {}
+            for cd in node.findall('e:EventData/e:ComplexData', NS):
+                if cd.get('Name') == 'wilResult':
+                    wil_data = {d.get('Name'): (d.text or '').strip() for d in cd.findall('e:Data', NS)}
+                    break
+            if wil_data:
+                try:
+                    hr = int(wil_data.get('hresult', '0'))
+                except ValueError:
+                    hr = 0
+                try:
+                    line = int(wil_data.get('lineNumber', '0') or 0)
+                except ValueError:
+                    line = 0
+                try:
+                    ft = int(wil_data.get('failureType', '0') or 0)
+                except ValueError:
+                    ft = 0
+                native_events.append({
+                    'raw': raw,
+                    'system_time': system_time,
+                    'task': task,
+                    'pid': pid,
+                    'tid': tid,
+                    'hresult': hr,
+                    'module': wil_data.get('module', ''),
+                    'file': wil_data.get('fileName', ''),
+                    'line': line,
+                    'failure_type': ft,
+                    'message': wil_data.get('message', '')
+                })
         if provider==PROVIDER:
             total += 1
             if total>2_000_000:
@@ -87,7 +126,8 @@ def _decode_stream(source, thread_window):
         errors.append('circular trace may have overwritten earlier buffers')
     events.sort(key=lambda e:e['qpc'])
     header.update(retained_first_qpc=first_clock,retained_last_qpc=last_clock,
-                  scanned_events=total,selected_events=len(events))
+                  scanned_events=total,selected_events=len(events),
+                  native_events=native_events)
     return events,header,errors
 
 

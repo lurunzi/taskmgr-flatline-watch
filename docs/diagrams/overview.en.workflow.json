@@ -150,8 +150,8 @@
       "lane": "evidence",
       "col": 0,
       "type": "database",
-      "label": "Circular ETW",
-      "sublabel": "boot ownership checked",
+      "label": "Dual circular ETW",
+      "sublabel": "Kernel + Taskmgr Error",
       "width": 150
     },
     {
@@ -159,8 +159,8 @@
       "lane": "evidence",
       "col": 5,
       "type": "backend",
-      "label": "Before / after",
-      "sublabel": "first flat observation",
+      "label": "Native & churn",
+      "sublabel": "0x8007139F + call chain",
       "width": 150
     }
   ],
@@ -239,13 +239,13 @@
       "title": "Candidates, not causal proof",
       "items": [
         "Full logical grid: 80% of widths within one adjacent pixel pair",
-        "Visual observations are not native fault times",
+        "Dual ETW: Kernel-Process + Taskmgr Error (128 MB circular)",
+        "0x8007139F native onset and WIL call chain extracted",
         "Non-empty total: zero tail variation and unchanged height for 30 s",
         "Empty total needs a painted frame, CPU >= 2% and moving cores",
         "Missing required coverage or event loss suppresses named ranks",
-        "No debugger or dumps; retain raw evidence",
-        "Independent phase ranks and normal controls"
+        "No debugger or dumps; independent phase ranks and controls"
       ]
     }
   ]
-}
+}

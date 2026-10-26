@@ -1,0 +1,1619 @@
+[
+  {
+    "ProcessId": 4,
+    "ParentProcessId": 0,
+    "ExecutablePath": null,
+    "Name": "System",
+    "CreateTime": "2026-10-24T16:38:53.4461660Z"
+  },
+  {
+    "ProcessId": 1792,
+    "ParentProcessId": 1324,
+    "ExecutablePath": null,
+    "Name": "csrss.exe",
+    "CreateTime": "2026-10-24T16:39:04.0201880Z"
+  },
+  {
+    "ProcessId": 2160,
+    "ParentProcessId": 1324,
+    "ExecutablePath": null,
+    "Name": "wininit.exe",
+    "CreateTime": "2026-10-24T16:39:06.0851500Z"
+  },
+  {
+    "ProcessId": 2244,
+    "ParentProcessId": 2160,
+    "ExecutablePath": null,
+    "Name": "services.exe",
+    "CreateTime": "2026-10-24T16:39:06.4034110Z"
+  },
+  {
+    "ProcessId": 2336,
+    "ParentProcessId": 2160,
+    "ExecutablePath": null,
+    "Name": "lsass.exe",
+    "CreateTime": "2026-10-24T16:39:06.4360980Z"
+  },
+  {
+    "ProcessId": 2472,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.7588430Z"
+  },
+  {
+    "ProcessId": 2652,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.8226550Z"
+  },
+  {
+    "ProcessId": 2816,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.8974610Z"
+  },
+  {
+    "ProcessId": 2900,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9091190Z"
+  },
+  {
+    "ProcessId": 2908,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9092220Z"
+  },
+  {
+    "ProcessId": 2924,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9093100Z"
+  },
+  {
+    "ProcessId": 2152,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9239820Z"
+  },
+  {
+    "ProcessId": 1352,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9239880Z"
+  },
+  {
+    "ProcessId": 3104,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9387090Z"
+  },
+  {
+    "ProcessId": 3120,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9425140Z"
+  },
+  {
+    "ProcessId": 3128,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9425500Z"
+  },
+  {
+    "ProcessId": 3216,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9487790Z"
+  },
+  {
+    "ProcessId": 3316,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9553900Z"
+  },
+  {
+    "ProcessId": 3344,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9591160Z"
+  },
+  {
+    "ProcessId": 3496,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:06.9738050Z"
+  },
+  {
+    "ProcessId": 3800,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0206220Z"
+  },
+  {
+    "ProcessId": 3816,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\nvmd.inf_amd64_ffd9a18b05442e28\\Display.NvContainer\\NVDisplay.Container.exe",
+    "Name": "NVDisplay.Container.exe",
+    "CreateTime": "2026-10-24T16:39:07.0246090Z"
+  },
+  {
+    "ProcessId": 3864,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0341980Z"
+  },
+  {
+    "ProcessId": 3880,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0346770Z"
+  },
+  {
+    "ProcessId": 3988,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0481870Z"
+  },
+  {
+    "ProcessId": 3424,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0571470Z"
+  },
+  {
+    "ProcessId": 4196,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0807840Z"
+  },
+  {
+    "ProcessId": 4212,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0810300Z"
+  },
+  {
+    "ProcessId": 4220,
+    "ParentProcessId": 3980,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\u0205305.inf_amd64_0a0a37c758a0b24b\\B026653\\atieclxx.exe",
+    "Name": "atieclxx.exe",
+    "CreateTime": "2026-10-24T16:39:07.0811620Z"
+  },
+  {
+    "ProcessId": 4236,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0836250Z"
+  },
+  {
+    "ProcessId": 4244,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.0836860Z"
+  },
+  {
+    "ProcessId": 4372,
+    "ParentProcessId": 4,
+    "ExecutablePath": null,
+    "Name": "Memory Compression",
+    "CreateTime": "2026-10-24T16:39:07.0991210Z"
+  },
+  {
+    "ProcessId": 4416,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1004780Z"
+  },
+  {
+    "ProcessId": 4436,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1039770Z"
+  },
+  {
+    "ProcessId": 4524,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1143460Z"
+  },
+  {
+    "ProcessId": 4532,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1144140Z"
+  },
+  {
+    "ProcessId": 4600,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1224120Z"
+  },
+  {
+    "ProcessId": 4748,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1466600Z"
+  },
+  {
+    "ProcessId": 4768,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1500860Z"
+  },
+  {
+    "ProcessId": 4920,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1890200Z"
+  },
+  {
+    "ProcessId": 4928,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.1890370Z"
+  },
+  {
+    "ProcessId": 5012,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.2100090Z"
+  },
+  {
+    "ProcessId": 5044,
+    "ParentProcessId": 2244,
+    "ExecutablePath": null,
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.2115360Z"
+  },
+  {
+    "ProcessId": 4976,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.2310480Z"
+  },
+  {
+    "ProcessId": 5208,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.2427150Z"
+  },
+  {
+    "ProcessId": 5256,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.2492760Z"
+  },
+  {
+    "ProcessId": 5580,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\spoolsv.exe",
+    "Name": "spoolsv.exe",
+    "CreateTime": "2026-10-24T16:39:07.2968100Z"
+  },
+  {
+    "ProcessId": 5672,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3124850Z"
+  },
+  {
+    "ProcessId": 5840,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3388940Z"
+  },
+  {
+    "ProcessId": 5892,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3456570Z"
+  },
+  {
+    "ProcessId": 5932,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3550750Z"
+  },
+  {
+    "ProcessId": 5312,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3635930Z"
+  },
+  {
+    "ProcessId": 5252,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files (x86)\\Interhaptics\\HapticService\\HapticService.exe",
+    "Name": "HapticService.exe",
+    "CreateTime": "2026-10-24T16:39:07.3641570Z"
+  },
+  {
+    "ProcessId": 5784,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\Google\\Play Games Services\\26.9.611.0\\Service\\GooglePlayGamesServices.exe",
+    "Name": "GooglePlayGamesServices.exe",
+    "CreateTime": "2026-10-24T16:39:07.3650220Z"
+  },
+  {
+    "ProcessId": 6184,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files (x86)\\Razer\\Razer Services\\GMS3\\GameManagerService3.exe",
+    "Name": "GameManagerService3.exe",
+    "CreateTime": "2026-10-24T16:39:07.3653630Z"
+  },
+  {
+    "ProcessId": 6208,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3656960Z"
+  },
+  {
+    "ProcessId": 6228,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3661940Z"
+  },
+  {
+    "ProcessId": 6236,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3664570Z"
+  },
+  {
+    "ProcessId": 6264,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\WSL\\wslservice.exe",
+    "Name": "wslservice.exe",
+    "CreateTime": "2026-10-24T16:39:07.3674420Z"
+  },
+  {
+    "ProcessId": 6272,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.3676940Z"
+  },
+  {
+    "ProcessId": 6284,
+    "ParentProcessId": 2244,
+    "ExecutablePath": null,
+    "Name": "MpDefenderCoreService.exe",
+    "CreateTime": "2026-10-24T16:39:07.3681440Z"
+  },
+  {
+    "ProcessId": 6292,
+    "ParentProcessId": 2244,
+    "ExecutablePath": null,
+    "Name": "MsMpEng.exe",
+    "CreateTime": "2026-10-24T16:39:07.3681520Z"
+  },
+  {
+    "ProcessId": 6876,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.4378550Z"
+  },
+  {
+    "ProcessId": 9392,
+    "ParentProcessId": 5312,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\AggregatorHost.exe",
+    "Name": "AggregatorHost.exe",
+    "CreateTime": "2026-10-24T16:39:07.8252640Z"
+  },
+  {
+    "ProcessId": 10204,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:07.9811800Z"
+  },
+  {
+    "ProcessId": 10992,
+    "ParentProcessId": 3496,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\sihost.exe",
+    "Name": "sihost.exe",
+    "CreateTime": "2026-10-24T16:39:08.2893650Z"
+  },
+  {
+    "ProcessId": 11036,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:08.3019840Z"
+  },
+  {
+    "ProcessId": 11064,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:08.3056280Z"
+  },
+  {
+    "ProcessId": 11136,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:08.3215870Z"
+  },
+  {
+    "ProcessId": 11232,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:08.3614990Z"
+  },
+  {
+    "ProcessId": 12060,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:09.2301270Z"
+  },
+  {
+    "ProcessId": 12076,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:09.2305440Z"
+  },
+  {
+    "ProcessId": 11316,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\Microsoft.GamingServices_38.118.9001.0_x64__8wekyb3d8bbwe\\GamingServicesNet.exe",
+    "Name": "gamingservicesnet.exe",
+    "CreateTime": "2026-10-24T16:39:09.2681140Z"
+  },
+  {
+    "ProcessId": 11312,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\Microsoft.GamingServices_38.118.9001.0_x64__8wekyb3d8bbwe\\GamingServices.exe",
+    "Name": "gamingservices.exe",
+    "CreateTime": "2026-10-24T16:39:09.2683080Z"
+  },
+  {
+    "ProcessId": 11416,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:09.2766740Z"
+  },
+  {
+    "ProcessId": 12404,
+    "ParentProcessId": 3104,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\taskhostw.exe",
+    "Name": "taskhostw.exe",
+    "CreateTime": "2026-10-24T16:39:09.3641000Z"
+  },
+  {
+    "ProcessId": 12524,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:09.3873270Z"
+  },
+  {
+    "ProcessId": 12756,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:09.5203110Z"
+  },
+  {
+    "ProcessId": 13264,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:10.0372370Z"
+  },
+  {
+    "ProcessId": 12752,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:10.2129410Z"
+  },
+  {
+    "ProcessId": 13112,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:10.2585960Z"
+  },
+  {
+    "ProcessId": 13052,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:10.2653540Z"
+  },
+  {
+    "ProcessId": 13656,
+    "ParentProcessId": 5280,
+    "ExecutablePath": "C:\\Program Files\\NVIDIA Corporation\\NvContainer\\nvcontainer.exe",
+    "Name": "nvcontainer.exe",
+    "CreateTime": "2026-10-24T16:39:10.6491960Z"
+  },
+  {
+    "ProcessId": 13728,
+    "ParentProcessId": 5280,
+    "ExecutablePath": "C:\\Program Files\\NVIDIA Corporation\\NvContainer\\nvcontainer.exe",
+    "Name": "nvcontainer.exe",
+    "CreateTime": "2026-10-24T16:39:10.6633830Z"
+  },
+  {
+    "ProcessId": 13736,
+    "ParentProcessId": 13676,
+    "ExecutablePath": "C:\\WINDOWS\\Explorer.EXE",
+    "Name": "explorer.exe",
+    "CreateTime": "2026-10-24T16:39:10.6639880Z"
+  },
+  {
+    "ProcessId": 14144,
+    "ParentProcessId": 10992,
+    "ExecutablePath": "C:\\WINDOWS\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\CrossDeviceResume.exe",
+    "Name": "CrossDeviceResume.exe",
+    "CreateTime": "2026-10-24T16:39:10.7994100Z"
+  },
+  {
+    "ProcessId": 14440,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:10.9583110Z"
+  },
+  {
+    "ProcessId": 14752,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:11.1251390Z"
+  },
+  {
+    "ProcessId": 14988,
+    "ParentProcessId": 14828,
+    "ExecutablePath": null,
+    "Name": "NgcIso.exe",
+    "CreateTime": "2026-10-24T16:39:11.1945610Z"
+  },
+  {
+    "ProcessId": 15044,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:11.2389390Z"
+  },
+  {
+    "ProcessId": 15640,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\WINDOWS\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\SearchHost.exe",
+    "Name": "SearchHost.exe",
+    "CreateTime": "2026-10-24T16:39:11.6201260Z"
+  },
+  {
+    "ProcessId": 15664,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe",
+    "Name": "StartMenuExperienceHost.exe",
+    "CreateTime": "2026-10-24T16:39:11.6223240Z"
+  },
+  {
+    "ProcessId": 15768,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\MicrosoftWindows.Client.WebExperience_526.21100.40.0_x64__cw5n1h2txyewy\\WidgetBoard.exe",
+    "Name": "WidgetBoard.exe",
+    "CreateTime": "2026-10-24T16:39:11.6779000Z"
+  },
+  {
+    "ProcessId": 16176,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Windows\\System32\\RuntimeBroker.exe",
+    "Name": "RuntimeBroker.exe",
+    "CreateTime": "2026-10-24T16:39:11.8151640Z"
+  },
+  {
+    "ProcessId": 16336,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:11.8281530Z"
+  },
+  {
+    "ProcessId": 15804,
+    "ParentProcessId": 13656,
+    "ExecutablePath": "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\CEF\\NVIDIA Overlay.exe",
+    "Name": "NVIDIA Overlay.exe",
+    "CreateTime": "2026-10-24T16:39:11.9031510Z"
+  },
+  {
+    "ProcessId": 15752,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\Microsoft.WidgetsPlatformRuntime_1.6.19.0_x64__8wekyb3d8bbwe\\WidgetService\\WidgetService.exe",
+    "Name": "WidgetService.exe",
+    "CreateTime": "2026-10-24T16:39:11.9398090Z"
+  },
+  {
+    "ProcessId": 16828,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:12.1588170Z"
+  },
+  {
+    "ProcessId": 17904,
+    "ParentProcessId": 15804,
+    "ExecutablePath": "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\CEF\\NVIDIA Overlay.exe",
+    "Name": "NVIDIA Overlay.exe",
+    "CreateTime": "2026-10-24T16:39:12.4564860Z"
+  },
+  {
+    "ProcessId": 17960,
+    "ParentProcessId": 15804,
+    "ExecutablePath": "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\CEF\\NVIDIA Overlay.exe",
+    "Name": "NVIDIA Overlay.exe",
+    "CreateTime": "2026-10-24T16:39:12.4680200Z"
+  },
+  {
+    "ProcessId": 12464,
+    "ParentProcessId": 15640,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:39:12.6604060Z"
+  },
+  {
+    "ProcessId": 14036,
+    "ParentProcessId": 12464,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:39:12.7077300Z"
+  },
+  {
+    "ProcessId": 18960,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\Microsoft.StartExperiencesApp_1.398.4.0_x64__8wekyb3d8bbwe\\MicrosoftStartFeedProvider\\MicrosoftStartFeedProvider.exe",
+    "Name": "MicrosoftStartFeedProvider.exe",
+    "CreateTime": "2026-10-24T16:39:12.9018160Z"
+  },
+  {
+    "ProcessId": 19096,
+    "ParentProcessId": 12464,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:39:12.9266150Z"
+  },
+  {
+    "ProcessId": 19120,
+    "ParentProcessId": 12464,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:39:12.9270450Z"
+  },
+  {
+    "ProcessId": 20072,
+    "ParentProcessId": 2244,
+    "ExecutablePath": null,
+    "Name": "NisSrv.exe",
+    "CreateTime": "2026-10-24T16:39:13.0950160Z"
+  },
+  {
+    "ProcessId": 20508,
+    "ParentProcessId": 12464,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:39:13.0972760Z"
+  },
+  {
+    "ProcessId": 20560,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:13.1208050Z"
+  },
+  {
+    "ProcessId": 20068,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Windows\\System32\\RuntimeBroker.exe",
+    "Name": "RuntimeBroker.exe",
+    "CreateTime": "2026-10-24T16:39:13.3689540Z"
+  },
+  {
+    "ProcessId": 22264,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:13.5839790Z"
+  },
+  {
+    "ProcessId": 22960,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:16.4927060Z"
+  },
+  {
+    "ProcessId": 24472,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\WINDOWS\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe",
+    "Name": "TextInputHost.exe",
+    "CreateTime": "2026-10-24T16:39:21.5758680Z"
+  },
+  {
+    "ProcessId": 13400,
+    "ParentProcessId": 2244,
+    "ExecutablePath": null,
+    "Name": "SecurityHealthService.exe",
+    "CreateTime": "2026-10-24T16:39:39.2739240Z"
+  },
+  {
+    "ProcessId": 3388,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:40.2825240Z"
+  },
+  {
+    "ProcessId": 7208,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:41.1693100Z"
+  },
+  {
+    "ProcessId": 11032,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe",
+    "Name": "OneDrive.exe",
+    "CreateTime": "2026-10-24T16:39:45.1945790Z"
+  },
+  {
+    "ProcessId": 18192,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:39:45.6556350Z"
+  },
+  {
+    "ProcessId": 18740,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\Microsoft OneDrive\\26.189.0928.0009\\FileSyncHelper.exe",
+    "Name": "FileSyncHelper.exe",
+    "CreateTime": "2026-10-24T16:39:46.5887290Z"
+  },
+  {
+    "ProcessId": 23448,
+    "ParentProcessId": 22564,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Discord\\app-1.0.9265\\Discord.exe",
+    "Name": "Discord.exe",
+    "CreateTime": "2026-10-24T16:39:48.4606440Z"
+  },
+  {
+    "ProcessId": 8856,
+    "ParentProcessId": 23448,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Discord\\app-1.0.9265\\Discord.exe",
+    "Name": "Discord.exe",
+    "CreateTime": "2026-10-24T16:39:48.9034050Z"
+  },
+  {
+    "ProcessId": 25220,
+    "ParentProcessId": 23448,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Discord\\app-1.0.9265\\Discord.exe",
+    "Name": "Discord.exe",
+    "CreateTime": "2026-10-24T16:39:50.2044330Z"
+  },
+  {
+    "ProcessId": 28836,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Program Files (x86)\\Steam\\steam.exe",
+    "Name": "steam.exe",
+    "CreateTime": "2026-10-24T16:39:55.8585480Z"
+  },
+  {
+    "ProcessId": 28928,
+    "ParentProcessId": 28836,
+    "ExecutablePath": "C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win64\\steamwebhelper.exe",
+    "Name": "steamwebhelper.exe",
+    "CreateTime": "2026-10-24T16:39:56.1053680Z"
+  },
+  {
+    "ProcessId": 28960,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\QQNT\\QQ.exe",
+    "Name": "QQ.exe",
+    "CreateTime": "2026-10-24T16:39:56.1104510Z"
+  },
+  {
+    "ProcessId": 29180,
+    "ParentProcessId": 12204,
+    "ExecutablePath": "C:\\Program Files\\AMD\\CNext\\CNext\\Radeonsoftware.exe",
+    "Name": "RadeonSoftware.exe",
+    "CreateTime": "2026-10-24T16:39:56.2909800Z"
+  },
+  {
+    "ProcessId": 29568,
+    "ParentProcessId": 28928,
+    "ExecutablePath": "C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win64\\steamwebhelper.exe",
+    "Name": "steamwebhelper.exe",
+    "CreateTime": "2026-10-24T16:39:56.4491440Z"
+  },
+  {
+    "ProcessId": 28816,
+    "ParentProcessId": 28960,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\QQNT\\QQ.exe",
+    "Name": "QQ.exe",
+    "CreateTime": "2026-10-24T16:39:56.5350440Z"
+  },
+  {
+    "ProcessId": 28956,
+    "ParentProcessId": 28960,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\QQNT\\QQ.exe",
+    "Name": "QQ.exe",
+    "CreateTime": "2026-10-24T16:39:56.5567760Z"
+  },
+  {
+    "ProcessId": 29388,
+    "ParentProcessId": 28928,
+    "ExecutablePath": "C:\\Program Files (x86)\\Steam\\bin\\cef\\cef.win64\\steamwebhelper.exe",
+    "Name": "steamwebhelper.exe",
+    "CreateTime": "2026-10-24T16:39:56.7190100Z"
+  },
+  {
+    "ProcessId": 32628,
+    "ParentProcessId": 28960,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\QQNT\\QQEX.exe",
+    "Name": "QQEX.exe",
+    "CreateTime": "2026-10-24T16:40:08.4689760Z"
+  },
+  {
+    "ProcessId": 32204,
+    "ParentProcessId": 32628,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\QQNT\\QQEX.exe",
+    "Name": "QQEX.exe",
+    "CreateTime": "2026-10-24T16:40:08.8672120Z"
+  },
+  {
+    "ProcessId": 32420,
+    "ParentProcessId": 32628,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\QQNT\\QQEX.exe",
+    "Name": "QQEX.exe",
+    "CreateTime": "2026-10-24T16:40:08.8800770Z"
+  },
+  {
+    "ProcessId": 32092,
+    "ParentProcessId": 2520,
+    "ExecutablePath": "C:\\Program Files\\Razer\\RazerAppEngine\\app-4.0.827\\RazerAppEngine.exe",
+    "Name": "RazerAppEngine.exe",
+    "CreateTime": "2026-10-24T16:40:11.8199630Z"
+  },
+  {
+    "ProcessId": 33660,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\Razer\\razer_elevation_service\\razer_elevation_service.exe",
+    "Name": "razer_elevation_service.exe",
+    "CreateTime": "2026-10-24T16:40:12.6299260Z"
+  },
+  {
+    "ProcessId": 33740,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Program Files\\TencentDocs\\TencentDocs.exe",
+    "Name": "TencentDocs.exe",
+    "CreateTime": "2026-10-24T16:40:12.8470950Z"
+  },
+  {
+    "ProcessId": 33872,
+    "ParentProcessId": 33740,
+    "ExecutablePath": "C:\\Program Files\\TencentDocs\\TencentDocs.exe",
+    "Name": "TencentDocs.exe",
+    "CreateTime": "2026-10-24T16:40:13.3105370Z"
+  },
+  {
+    "ProcessId": 35864,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\desktop\\ClickUp.exe",
+    "Name": "ClickUp.exe",
+    "CreateTime": "2026-10-24T16:40:18.4282470Z"
+  },
+  {
+    "ProcessId": 36252,
+    "ParentProcessId": 35864,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\desktop\\ClickUp.exe",
+    "Name": "ClickUp.exe",
+    "CreateTime": "2026-10-24T16:40:19.0454340Z"
+  },
+  {
+    "ProcessId": 37612,
+    "ParentProcessId": 2520,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Razer\\RazerAppEngine\\User Data\\Apps\\Common\\LampArray\\razerwdl.exe",
+    "Name": "razerwdl.exe",
+    "CreateTime": "2026-10-24T16:40:19.9958370Z"
+  },
+  {
+    "ProcessId": 38164,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Notion\\Notion.exe",
+    "Name": "Notion.exe",
+    "CreateTime": "2026-10-24T16:40:24.8571630Z"
+  },
+  {
+    "ProcessId": 24448,
+    "ParentProcessId": 38164,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Notion\\Notion.exe",
+    "Name": "Notion.exe",
+    "CreateTime": "2026-10-24T16:40:25.3400740Z"
+  },
+  {
+    "ProcessId": 26876,
+    "ParentProcessId": 38164,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Notion\\Notion.exe",
+    "Name": "Notion.exe",
+    "CreateTime": "2026-10-24T16:40:25.3520210Z"
+  },
+  {
+    "ProcessId": 37996,
+    "ParentProcessId": 38164,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Notion\\Notion.exe",
+    "Name": "Notion.exe",
+    "CreateTime": "2026-10-24T16:40:25.4215730Z"
+  },
+  {
+    "ProcessId": 39748,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "Name": "chrome.exe",
+    "CreateTime": "2026-10-24T16:40:27.4776010Z"
+  },
+  {
+    "ProcessId": 39080,
+    "ParentProcessId": 39748,
+    "ExecutablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "Name": "chrome.exe",
+    "CreateTime": "2026-10-24T16:40:27.6767420Z"
+  },
+  {
+    "ProcessId": 41784,
+    "ParentProcessId": 10992,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\Microsoft.6365217CE6EB4_102.2504.16004.0_x64__8wekyb3d8bbwe\\MicrosoftSecurityApp\\MicrosoftSecurityApp.exe",
+    "Name": "MicrosoftSecurityApp.exe",
+    "CreateTime": "2026-10-24T16:40:33.3132690Z"
+  },
+  {
+    "ProcessId": 41860,
+    "ParentProcessId": 10992,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\5319275A.WhatsAppDesktop_2.2640.100.0_x64__cv1g1gvanyjgm\\WhatsApp.Root.exe",
+    "Name": "WhatsApp.Root.exe",
+    "CreateTime": "2026-10-24T16:40:33.9064370Z"
+  },
+  {
+    "ProcessId": 40976,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Windows\\System32\\RuntimeBroker.exe",
+    "Name": "RuntimeBroker.exe",
+    "CreateTime": "2026-10-24T16:40:34.5607150Z"
+  },
+  {
+    "ProcessId": 41208,
+    "ParentProcessId": 41860,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:40:34.8495340Z"
+  },
+  {
+    "ProcessId": 41236,
+    "ParentProcessId": 41208,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:40:34.8707680Z"
+  },
+  {
+    "ProcessId": 42084,
+    "ParentProcessId": 41208,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:40:34.9770260Z"
+  },
+  {
+    "ProcessId": 42092,
+    "ParentProcessId": 41208,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:40:34.9798880Z"
+  },
+  {
+    "ProcessId": 43068,
+    "ParentProcessId": 41208,
+    "ExecutablePath": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\155.0.4283.62\\msedgewebview2.exe",
+    "Name": "msedgewebview2.exe",
+    "CreateTime": "2026-10-24T16:40:35.3735210Z"
+  },
+  {
+    "ProcessId": 43160,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Windows\\System32\\RuntimeBroker.exe",
+    "Name": "RuntimeBroker.exe",
+    "CreateTime": "2026-10-24T16:40:35.5892570Z"
+  },
+  {
+    "ProcessId": 44248,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "D:\\Tools\\CopyQ\\copyq.exe",
+    "Name": "copyq.exe",
+    "CreateTime": "2026-10-24T16:40:37.7639950Z"
+  },
+  {
+    "ProcessId": 44804,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:40:38.7183380Z"
+  },
+  {
+    "ProcessId": 48208,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Windows\\System32\\RuntimeBroker.exe",
+    "Name": "RuntimeBroker.exe",
+    "CreateTime": "2026-10-24T16:40:52.4811930Z"
+  },
+  {
+    "ProcessId": 27224,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:41:04.5854740Z"
+  },
+  {
+    "ProcessId": 49900,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:41:16.5882800Z"
+  },
+  {
+    "ProcessId": 31316,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:41:17.0198610Z"
+  },
+  {
+    "ProcessId": 33188,
+    "ParentProcessId": 2244,
+    "ExecutablePath": null,
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T16:41:17.2998920Z"
+  },
+  {
+    "ProcessId": 40376,
+    "ParentProcessId": 21680,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Ollama\\ollama app.exe",
+    "Name": "ollama app.exe",
+    "CreateTime": "2026-10-24T16:41:53.4543700Z"
+  },
+  {
+    "ProcessId": 9472,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\Microsoft.GamingApp_2610.1001.20.0_x64__8wekyb3d8bbwe\\XboxPcAppFT.exe",
+    "Name": "XboxPcAppFT.exe",
+    "CreateTime": "2026-10-24T16:42:53.7634360Z"
+  },
+  {
+    "ProcessId": 45724,
+    "ParentProcessId": 7536,
+    "ExecutablePath": "C:\\Program Files\\Microsoft OneDrive\\26.189.0928.0009\\OneDrive.Sync.Service.exe",
+    "Name": "OneDrive.Sync.Service.exe",
+    "CreateTime": "2026-10-24T16:45:56.3121640Z"
+  },
+  {
+    "ProcessId": 4900,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\WINDOWS\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\AppActions.exe",
+    "Name": "AppActions.exe",
+    "CreateTime": "2026-10-24T16:49:09.8180700Z"
+  },
+  {
+    "ProcessId": 6508,
+    "ParentProcessId": 44260,
+    "ExecutablePath": "C:\\Program Files\\AMD\\AMDInstallManager\\AMDInstallManager.exe",
+    "Name": "AMDInstallManager.exe",
+    "CreateTime": "2026-10-24T16:52:52.1744480Z"
+  },
+  {
+    "ProcessId": 45884,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T22:12:38.5291390Z"
+  },
+  {
+    "ProcessId": 46288,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Program Files\\UGREEN NAS\\UGREEN NAS.exe",
+    "Name": "UGREEN NAS.exe",
+    "CreateTime": "2026-10-24T22:17:16.9791040Z"
+  },
+  {
+    "ProcessId": 22988,
+    "ParentProcessId": 46288,
+    "ExecutablePath": "C:\\Program Files\\UGREEN NAS\\UGREEN NAS.exe",
+    "Name": "UGREEN NAS.exe",
+    "CreateTime": "2026-10-24T22:17:17.8253660Z"
+  },
+  {
+    "ProcessId": 8188,
+    "ParentProcessId": 46288,
+    "ExecutablePath": "C:\\Program Files\\UGREEN NAS\\UGREEN NAS.exe",
+    "Name": "UGREEN NAS.exe",
+    "CreateTime": "2026-10-24T22:17:17.8419830Z"
+  },
+  {
+    "ProcessId": 25160,
+    "ParentProcessId": 39748,
+    "ExecutablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "Name": "chrome.exe",
+    "CreateTime": "2026-10-24T22:26:11.7392520Z"
+  },
+  {
+    "ProcessId": 41224,
+    "ParentProcessId": 39748,
+    "ExecutablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "Name": "chrome.exe",
+    "CreateTime": "2026-10-24T22:26:37.4771650Z"
+  },
+  {
+    "ProcessId": 52324,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\vmcompute.exe",
+    "Name": "vmcompute.exe",
+    "CreateTime": "2026-10-24T22:28:42.8611640Z"
+  },
+  {
+    "ProcessId": 50964,
+    "ParentProcessId": 30744,
+    "ExecutablePath": "C:\\Program Files (x86)\\Battle.net\\Battle.net.exe",
+    "Name": "Battle.net.exe",
+    "CreateTime": "2026-10-24T23:17:23.4361330Z"
+  },
+  {
+    "ProcessId": 6312,
+    "ParentProcessId": 24324,
+    "ExecutablePath": "C:\\ProgramData\\Battle.net\\Agent\\Agent.9824\\Agent.exe",
+    "Name": "Agent.exe",
+    "CreateTime": "2026-10-24T23:17:24.5956500Z"
+  },
+  {
+    "ProcessId": 60308,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\wbem\\wmiprvse.exe",
+    "Name": "WmiPrvSE.exe",
+    "CreateTime": "2026-10-24T23:17:24.6853310Z"
+  },
+  {
+    "ProcessId": 35360,
+    "ParentProcessId": 50964,
+    "ExecutablePath": "C:\\Program Files (x86)\\Battle.net\\Battle.net.exe",
+    "Name": "Battle.net.exe",
+    "CreateTime": "2026-10-24T23:17:26.7786120Z"
+  },
+  {
+    "ProcessId": 50872,
+    "ParentProcessId": 50964,
+    "ExecutablePath": "C:\\Program Files (x86)\\Battle.net\\Battle.net.exe",
+    "Name": "Battle.net.exe",
+    "CreateTime": "2026-10-24T23:17:26.8116030Z"
+  },
+  {
+    "ProcessId": 52352,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-24T23:18:03.2952530Z"
+  },
+  {
+    "ProcessId": 14640,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\resources\\codex-windows-sandbox-service.exe",
+    "Name": "codex-windows-sandbox-service.exe",
+    "CreateTime": "2026-10-25T01:21:00.0061730Z"
+  },
+  {
+    "ProcessId": 56348,
+    "ParentProcessId": 10992,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+    "Name": "ChatGPT.exe",
+    "CreateTime": "2026-10-25T01:21:00.0143500Z"
+  },
+  {
+    "ProcessId": 22480,
+    "ParentProcessId": 56348,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+    "Name": "ChatGPT.exe",
+    "CreateTime": "2026-10-25T01:21:01.2933110Z"
+  },
+  {
+    "ProcessId": 36160,
+    "ParentProcessId": 56348,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+    "Name": "ChatGPT.exe",
+    "CreateTime": "2026-10-25T01:21:01.3192620Z"
+  },
+  {
+    "ProcessId": 61152,
+    "ParentProcessId": 56348,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+    "Name": "ChatGPT.exe",
+    "CreateTime": "2026-10-25T01:21:07.6977230Z"
+  },
+  {
+    "ProcessId": 35192,
+    "ParentProcessId": 56348,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\OpenAI\\Codex\\bin\\2993767bd1dfb009\\codex.exe",
+    "Name": "codex.exe",
+    "CreateTime": "2026-10-25T01:21:08.1002620Z"
+  },
+  {
+    "ProcessId": 46384,
+    "ParentProcessId": 56348,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+    "Name": "ChatGPT.exe",
+    "CreateTime": "2026-10-25T01:21:23.9585720Z"
+  },
+  {
+    "ProcessId": 49524,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-25T04:39:08.0853330Z"
+  },
+  {
+    "ProcessId": 50592,
+    "ParentProcessId": 2472,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\Microsoft.YourPhone_1.26082.121.0_x64__8wekyb3d8bbwe\\PhoneExperienceHost.exe",
+    "Name": "PhoneExperienceHost.exe",
+    "CreateTime": "2026-10-25T06:39:07.1110650Z"
+  },
+  {
+    "ProcessId": 46400,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-25T08:39:08.0784050Z"
+  },
+  {
+    "ProcessId": 57456,
+    "ParentProcessId": 4860,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\AnthropicClaude\\app-3.6556.2\\claude.exe",
+    "Name": "claude.exe",
+    "CreateTime": "2026-10-25T12:04:36.7646790Z"
+  },
+  {
+    "ProcessId": 59228,
+    "ParentProcessId": 57456,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\AnthropicClaude\\app-3.6556.2\\claude.exe",
+    "Name": "claude.exe",
+    "CreateTime": "2026-10-25T12:04:37.5928770Z"
+  },
+  {
+    "ProcessId": 60096,
+    "ParentProcessId": 57456,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\AnthropicClaude\\app-3.6556.2\\claude.exe",
+    "Name": "claude.exe",
+    "CreateTime": "2026-10-25T12:04:39.2961300Z"
+  },
+  {
+    "ProcessId": 49928,
+    "ParentProcessId": 57456,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\AnthropicClaude\\app-3.6556.2\\claude.exe",
+    "Name": "claude.exe",
+    "CreateTime": "2026-10-25T12:04:39.7670850Z"
+  },
+  {
+    "ProcessId": 42260,
+    "ParentProcessId": 57456,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\OpenSSH\\ssh.exe",
+    "Name": "ssh.exe",
+    "CreateTime": "2026-10-25T12:04:41.0682720Z"
+  },
+  {
+    "ProcessId": 47896,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\Weixin\\Weixin.exe",
+    "Name": "Weixin.exe",
+    "CreateTime": "2026-10-25T12:06:10.2541700Z"
+  },
+  {
+    "ProcessId": 21784,
+    "ParentProcessId": 47896,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Roaming\\Tencent\\xwechat\\xplugin\\plugins\\RadiumWMPF\\WeChatAppEx.exe",
+    "Name": "WeChatAppEx.exe",
+    "CreateTime": "2026-10-25T12:06:12.4573630Z"
+  },
+  {
+    "ProcessId": 46888,
+    "ParentProcessId": 21784,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Roaming\\Tencent\\xwechat\\xplugin\\plugins\\RadiumWMPF\\WeChatAppEx.exe",
+    "Name": "WeChatAppEx.exe",
+    "CreateTime": "2026-10-25T12:06:12.8729840Z"
+  },
+  {
+    "ProcessId": 53324,
+    "ParentProcessId": 21784,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Roaming\\Tencent\\xwechat\\xplugin\\plugins\\RadiumWMPF\\WeChatAppEx.exe",
+    "Name": "WeChatAppEx.exe",
+    "CreateTime": "2026-10-25T12:06:12.8782820Z"
+  },
+  {
+    "ProcessId": 50732,
+    "ParentProcessId": 47896,
+    "ExecutablePath": "C:\\Program Files\\Tencent\\Weixin\\Weixin.exe",
+    "Name": "Weixin.exe",
+    "CreateTime": "2026-10-25T12:06:20.2931600Z"
+  },
+  {
+    "ProcessId": 46500,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-25T13:08:19.7033830Z"
+  },
+  {
+    "ProcessId": 63572,
+    "ParentProcessId": 3104,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\taskhostw.exe",
+    "Name": "taskhostw.exe",
+    "CreateTime": "2026-10-25T14:14:24.8775170Z"
+  },
+  {
+    "ProcessId": 52220,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\orca-local\\1.4.240-local.1792939838754.5db1bf5af2f2\\Orca.exe",
+    "Name": "Orca.exe",
+    "CreateTime": "2026-10-25T15:22:01.1236600Z"
+  },
+  {
+    "ProcessId": 67728,
+    "ParentProcessId": 52220,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\orca-local\\1.4.240-local.1792939838754.5db1bf5af2f2\\Orca.exe",
+    "Name": "Orca.exe",
+    "CreateTime": "2026-10-25T15:22:06.6516900Z"
+  },
+  {
+    "ProcessId": 25608,
+    "ParentProcessId": 52220,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\orca-local\\1.4.240-local.1792939838754.5db1bf5af2f2\\Orca.exe",
+    "Name": "Orca.exe",
+    "CreateTime": "2026-10-25T15:22:06.6577580Z"
+  },
+  {
+    "ProcessId": 34436,
+    "ParentProcessId": 47016,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\agy\\bin\\agy.exe",
+    "Name": "agy.exe",
+    "CreateTime": "2026-10-25T16:03:22.9593880Z"
+  },
+  {
+    "ProcessId": 27076,
+    "ParentProcessId": 16616,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Orca\\daemon-host-profiles\\29cf6bc212aca460\\1.4.240-local.1792939838754.5db1bf5af2f2\\build-14364e9848a6\\resources\\node_modules\\node-pty\\build\\Release\\conpty\\OpenConsole.exe",
+    "Name": "OpenConsole.exe",
+    "CreateTime": "2026-10-25T16:20:59.1763360Z"
+  },
+  {
+    "ProcessId": 5804,
+    "ParentProcessId": 28640,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\agy\\bin\\agy.exe",
+    "Name": "agy.exe",
+    "CreateTime": "2026-10-25T16:21:00.2367770Z"
+  },
+  {
+    "ProcessId": 61604,
+    "ParentProcessId": 56348,
+    "ExecutablePath": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+    "Name": "ChatGPT.exe",
+    "CreateTime": "2026-10-25T17:06:52.4879800Z"
+  },
+  {
+    "ProcessId": 54816,
+    "ParentProcessId": 61000,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\GitHubDesktop\\app-3.6.7\\GitHubDesktop.exe",
+    "Name": "GitHubDesktop.exe",
+    "CreateTime": "2026-10-25T17:12:07.1383830Z"
+  },
+  {
+    "ProcessId": 50332,
+    "ParentProcessId": 54816,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\GitHubDesktop\\app-3.6.7\\GitHubDesktop.exe",
+    "Name": "GitHubDesktop.exe",
+    "CreateTime": "2026-10-25T17:12:07.4442990Z"
+  },
+  {
+    "ProcessId": 55652,
+    "ParentProcessId": 54816,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\GitHubDesktop\\app-3.6.7\\GitHubDesktop.exe",
+    "Name": "GitHubDesktop.exe",
+    "CreateTime": "2026-10-25T17:12:07.4468090Z"
+  },
+  {
+    "ProcessId": 68104,
+    "ParentProcessId": 50964,
+    "ExecutablePath": "C:\\Program Files (x86)\\Battle.net\\Battle.net.exe",
+    "Name": "Battle.net.exe",
+    "CreateTime": "2026-10-25T18:02:06.0219020Z"
+  },
+  {
+    "ProcessId": 50920,
+    "ParentProcessId": 10992,
+    "ExecutablePath": "C:\\Windows\\System32\\ShellHost.exe",
+    "Name": "ShellHost.exe",
+    "CreateTime": "2026-10-25T22:14:00.7727150Z"
+  },
+  {
+    "ProcessId": 51904,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\OfficeClickToRun.exe",
+    "Name": "OfficeClickToRun.exe",
+    "CreateTime": "2026-10-26T05:13:56.4941180Z"
+  },
+  {
+    "ProcessId": 70992,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\system32\\SearchIndexer.exe",
+    "Name": "SearchIndexer.exe",
+    "CreateTime": "2026-10-26T05:14:43.9930850Z"
+  },
+  {
+    "ProcessId": 52608,
+    "ParentProcessId": 70992,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\SearchProtocolHost.exe",
+    "Name": "SearchProtocolHost.exe",
+    "CreateTime": "2026-10-26T13:13:43.5701240Z"
+  },
+  {
+    "ProcessId": 60116,
+    "ParentProcessId": 70992,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\SearchFilterHost.exe",
+    "Name": "SearchFilterHost.exe",
+    "CreateTime": "2026-10-26T13:13:43.5941970Z"
+  },
+  {
+    "ProcessId": 25896,
+    "ParentProcessId": 70992,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\SearchFilterHost.exe",
+    "Name": "SearchFilterHost.exe",
+    "CreateTime": "2026-10-26T13:13:43.6520550Z"
+  },
+  {
+    "ProcessId": 35176,
+    "ParentProcessId": 2244,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\svchost.exe",
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-26T13:34:38.9515910Z"
+  },
+  {
+    "ProcessId": 67956,
+    "ParentProcessId": 13736,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Grok Bot\\Grok Bot.exe",
+    "Name": "Grok Bot.exe",
+    "CreateTime": "2026-10-26T13:52:30.5315220Z"
+  },
+  {
+    "ProcessId": 64520,
+    "ParentProcessId": 67956,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Grok Bot\\Grok Bot.exe",
+    "Name": "Grok Bot.exe",
+    "CreateTime": "2026-10-26T13:52:30.8171390Z"
+  },
+  {
+    "ProcessId": 56696,
+    "ParentProcessId": 67956,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Grok Bot\\Grok Bot.exe",
+    "Name": "Grok Bot.exe",
+    "CreateTime": "2026-10-26T13:52:30.8333850Z"
+  },
+  {
+    "ProcessId": 71368,
+    "ParentProcessId": 67956,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Grok Bot\\Grok Bot.exe",
+    "Name": "Grok Bot.exe",
+    "CreateTime": "2026-10-26T13:52:31.5616470Z"
+  },
+  {
+    "ProcessId": 69528,
+    "ParentProcessId": 67956,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Grok Bot\\Grok Bot.exe",
+    "Name": "Grok Bot.exe",
+    "CreateTime": "2026-10-26T13:52:38.9089020Z"
+  },
+  {
+    "ProcessId": 58604,
+    "ParentProcessId": 67956,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Programs\\Grok Bot\\Grok Bot.exe",
+    "Name": "Grok Bot.exe",
+    "CreateTime": "2026-10-26T13:52:45.6486880Z"
+  },
+  {
+    "ProcessId": 52236,
+    "ParentProcessId": 39748,
+    "ExecutablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "Name": "chrome.exe",
+    "CreateTime": "2026-10-26T14:17:11.8023930Z"
+  },
+  {
+    "ProcessId": 9436,
+    "ParentProcessId": 66056,
+    "ExecutablePath": "C:\\WINDOWS\\System32\\Taskmgr.exe",
+    "Name": "Taskmgr.exe",
+    "CreateTime": "2026-10-26T15:42:30.7030660Z"
+  },
+  {
+    "ProcessId": 62948,
+    "ParentProcessId": 16616,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\Orca\\daemon-host-profiles\\29cf6bc212aca460\\1.4.240-local.1792939838754.5db1bf5af2f2\\build-14364e9848a6\\resources\\node_modules\\node-pty\\build\\Release\\conpty\\OpenConsole.exe",
+    "Name": "OpenConsole.exe",
+    "CreateTime": "2026-10-26T15:49:40.2550360Z"
+  },
+  {
+    "ProcessId": 11628,
+    "ParentProcessId": 64812,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\AppData\\Local\\agy\\bin\\agy.exe",
+    "Name": "agy.exe",
+    "CreateTime": "2026-10-26T15:49:41.3241210Z"
+  },
+  {
+    "ProcessId": 61484,
+    "ParentProcessId": 2244,
+    "ExecutablePath": null,
+    "Name": "svchost.exe",
+    "CreateTime": "2026-10-26T15:50:07.7303840Z"
+  },
+  {
+    "ProcessId": 63372,
+    "ParentProcessId": 52220,
+    "ExecutablePath": "C:\\Users\\ABSCOND\\.local\\bin\\claude.exe",
+    "Name": "claude.exe",
+    "CreateTime": "2026-10-26T16:12:26.4030200Z"
+  }
+]

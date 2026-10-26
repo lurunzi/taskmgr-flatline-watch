@@ -1,7 +1,11 @@
 """Offline temporal candidates; visual observations never prove native causality."""
 import collections
+import gzip
 import importlib.util
 import json
+import statistics
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location('legacy_process_decoder',
@@ -165,6 +169,350 @@ def phase_summary(events, bounds, control, resolve, watcher, freq, *, include_st
     return result
 
 
+TASKMGR_PROVIDER = '{2e635d8e-1107-4555-9319-32eeb895aaae}'
+NS = {'e': 'http://schemas.microsoft.com/win/2004/08/events/event'}
+
+
+def parse_native_events_from_xml(path):
+    source = gzip.open(path, 'rb') if str(path).endswith('.gz') else open(path, 'rb')
+    native = []
+    try:
+        iterator = ET.iterparse(source, events=('start', 'end'))
+        _, root = next(iterator)
+        for action, node in iterator:
+            if action != 'end' or node.tag != '{' + NS['e'] + '}Event':
+                continue
+            prov = node.find('e:System/e:Provider', NS)
+            guid = (prov.get('Guid') or '').lower() if prov is not None else ''
+            if guid == TASKMGR_PROVIDER:
+                ex = node.find('e:System/e:Execution', NS)
+                clock = node.find('e:System/e:TimeCreated', NS)
+                pid = int(ex.get('ProcessID', 0)) if ex is not None else 0
+                tid = int(ex.get('ThreadID', 0)) if ex is not None else 0
+                raw = clock.get('RawTime') if clock is not None else None
+                system_time = clock.get('SystemTime') if clock is not None else None
+                task = node.findtext('e:RenderingInfo/e:Task', namespaces=NS) or node.findtext('e:System/e:Task', namespaces=NS) or ''
+                wil_data = {}
+                for cd in node.findall('e:EventData/e:ComplexData', NS):
+                    if cd.get('Name') == 'wilResult':
+                        wil_data = {d.get('Name'): (d.text or '').strip() for d in cd.findall('e:Data', NS)}
+                        break
+                if wil_data:
+                    try:
+                        hr = int(wil_data.get('hresult', '0'))
+                    except ValueError:
+                        hr = 0
+                    try:
+                        line = int(wil_data.get('lineNumber', '0') or 0)
+                    except ValueError:
+                        line = 0
+                    try:
+                        ft = int(wil_data.get('failureType', '0') or 0)
+                    except ValueError:
+                        ft = 0
+                    native.append({
+                        'raw': raw,
+                        'system_time': system_time,
+                        'task': task,
+                        'pid': pid,
+                        'tid': tid,
+                        'hresult': hr,
+                        'module': wil_data.get('module', ''),
+                        'file': wil_data.get('fileName', ''),
+                        'line': line,
+                        'failure_type': ft,
+                        'message': wil_data.get('message', '')
+                    })
+            node.clear()
+            root.clear()
+    finally:
+        source.close()
+    return native
+
+
+def extract_native_signature(native_events, events, header, observation, resolve, freq,
+                             coverage_begin, coverage_end, quality=None, folder=None):
+    if not native_events and folder is not None:
+        folder_p = Path(folder)
+        candidates_dirs = [folder_p, folder_p/'process-trace']
+        wil_probe_dir = folder_p.parent/'wil-probe-20261025'
+        if wil_probe_dir.exists():
+            candidates_dirs.extend([wil_probe_dir, wil_probe_dir/'decode-1543-to-2030', wil_probe_dir/'decode-upto-20261026-1543'])
+        for c in candidates_dirs:
+            if not c.exists():
+                continue
+            for pattern in ('*wil*.xml*', '*native*.xml*', 'events.xml*'):
+                for p in c.glob(pattern):
+                    if p.name in ('events.xml', 'events.xml.gz') and c in (folder_p, folder_p/'process-trace'):
+                        continue  # already parsed by correlate
+                    try:
+                        parsed = parse_native_events_from_xml(p)
+                        if parsed:
+                            native_events = parsed
+                            break
+                    except Exception:
+                        pass
+                if native_events:
+                    break
+
+    markers = observation.get('markers', {})
+    def marker_qpc(name):
+        v = markers.get(name)
+        return v.get('qpc') if isinstance(v, dict) else None
+
+    first = marker_qpc('first_candidate')
+    confirmed = marker_qpc('confirmed') or coverage_end
+    last = marker_qpc('last_normal')
+
+    anchor_qpc = last or first
+    anchor_utc = None
+    if anchor_qpc:
+        m = markers.get('last_normal' if last else 'first_candidate')
+        if m and m.get('utc'):
+            try:
+                anchor_utc = datetime.fromisoformat(m['utc'])
+            except Exception:
+                pass
+
+    matching = []
+    for ev in native_events:
+        mod = ev.get('module', '')
+        hr = ev.get('hresult', 0)
+        if not (mod.lower().startswith('taskmanagerdatalayer') and hr in (0x8007139F, 2147947423, -2147019873)):
+            continue
+        qpc_val = None
+        if ev.get('raw'):
+            try:
+                qpc_val = int(ev['raw'])
+            except ValueError:
+                pass
+        if qpc_val is None and ev.get('system_time') and anchor_utc and anchor_qpc:
+            try:
+                dt = datetime.fromisoformat(ev['system_time'])
+                diff_sec = (dt - anchor_utc).total_seconds()
+                qpc_val = anchor_qpc + int(diff_sec * freq)
+            except Exception:
+                pass
+        elif qpc_val is None and ev.get('system_time') and header.get('raw_start') and header.get('StartTime'):
+            try:
+                dt = datetime.fromisoformat(ev['system_time'])
+                ticks_val = int(dt.timestamp()) * 10_000_000 + 116444736000000000 + dt.microsecond * 10
+                qpc_val = header['raw_start'] + (ticks_val - header['StartTime']) * freq // 10_000_000
+            except Exception:
+                pass
+        if qpc_val is None:
+            continue
+        ev_copy = dict(ev)
+        ev_copy['qpc'] = qpc_val
+        if ev.get('system_time'):
+            ev_copy['utc'] = ev['system_time']
+        elif anchor_utc and anchor_qpc:
+            ev_copy['utc'] = (anchor_utc + timedelta(seconds=(qpc_val - anchor_qpc)/freq)).isoformat()
+        else:
+            ev_copy['utc'] = None
+        matching.append(ev_copy)
+
+    matching = [m for m in matching if (confirmed is None or m['qpc'] <= confirmed)]
+    matching.sort(key=lambda m: m['qpc'])
+
+    if matching:
+        target = matching[0]
+        target_qpc = target['qpc']
+        target_utc = target['utc']
+        target_tid = target['tid']
+        target_pid = target['pid']
+
+        call_chain = []
+        for ev in native_events:
+            if ev.get('tid') != target_tid:
+                continue
+            ev_qpc = None
+            if ev.get('raw'):
+                try:
+                    ev_qpc = int(ev['raw'])
+                except ValueError:
+                    pass
+            if ev_qpc is None and ev.get('system_time') and anchor_utc and anchor_qpc:
+                try:
+                    dt = datetime.fromisoformat(ev['system_time'])
+                    ev_qpc = anchor_qpc + int((dt - anchor_utc).total_seconds() * freq)
+                except Exception:
+                    pass
+            if ev_qpc is None or abs(ev_qpc - target_qpc) > int(0.050 * freq):
+                continue
+            ft = ev.get('failure_type', 0)
+            ft_name = {0: 'Exception', 1: 'Return', 2: 'Log', 3: 'FailFast'}.get(ft, f'Type{ft}')
+            fn = ev.get('file', '')
+            call_chain.append({
+                'qpc': ev_qpc,
+                'system_time': ev.get('system_time'),
+                'module': ev.get('module', ''),
+                'file': fn,
+                'file_basename': Path(fn).name if fn else '',
+                'line': ev.get('line', 0),
+                'failure_type': ft,
+                'failure_type_name': ft_name,
+                'message': ev.get('message', ''),
+                'hresult': hex(ev.get('hresult', 0))
+            })
+        call_chain.sort(key=lambda c: c['qpc'])
+
+        lead_seconds = round((first - target_qpc) / freq, 3) if first else None
+
+        two_sec_before = target_qpc - 2 * freq
+        p_starts = [e for e in events if e['kind'] == 'process_start' and two_sec_before <= e['qpc'] < target_qpc]
+        t_starts = [e for e in events if e['kind'] == 'thread_start' and two_sec_before <= e['qpc'] < target_qpc]
+
+        processes_started = []
+        for e in p_starts:
+            p = resolve(e['pid'], e['qpc']) if resolve else None
+            parent = resolve(e['parent_pid'], e['qpc']) if resolve and e.get('parent_pid') else None
+            parent_img = parent['image'] if parent else str(e.get('parent_pid', 0))
+            child_img = p['image'] if p else (e.get('image') or str(e.get('pid', 0)))
+            processes_started.append({
+                'parent': parent_img,
+                'parent_pid': e.get('parent_pid', 0),
+                'child': child_img,
+                'child_pid': e.get('pid', 0)
+            })
+
+        t_counter = collections.Counter()
+        for e in t_starts:
+            p = resolve(e['pid'], e['qpc']) if resolve else None
+            img = p['image'] if p else str(e.get('pid', 0))
+            t_counter[img] += 1
+        top_thread_creators = [{'image': img, 'count': cnt} for img, cnt in t_counter.most_common(5)]
+
+        ctrl_start = target_qpc - 120 * freq
+        ctrl_end = target_qpc - 20 * freq
+        window_ticks = 2 * freq
+        ctrl_p, ctrl_t = [], []
+        for w_start in range(ctrl_start, ctrl_end, window_ticks):
+            w_end = w_start + window_ticks
+            ctrl_p.append(sum(1 for e in events if e['kind'] == 'process_start' and w_start <= e['qpc'] < w_end))
+            ctrl_t.append(sum(1 for e in events if e['kind'] == 'thread_start' and w_start <= e['qpc'] < w_end))
+
+        proc_med = float(statistics.median(ctrl_p)) if ctrl_p else 0.0
+        proc_max = max(ctrl_p) if ctrl_p else 0
+        thread_med = float(statistics.median(ctrl_t)) if ctrl_t else 0.0
+        thread_max = max(ctrl_t) if ctrl_t else 0
+
+        is_conforming = (first is not None and target_qpc <= first)
+        verdict = 'conforming' if is_conforming else 'non_conforming'
+
+        return {
+            'recorded': True,
+            'verdict': verdict,
+            'reason': None,
+            'hresult': hex(target['hresult']),
+            'hresult_decimal': target['hresult'],
+            'module': target['module'],
+            'qpc': target_qpc,
+            'utc': target_utc,
+            'taskmgr_pid': target_pid,
+            'thread_id': target_tid,
+            'lead_seconds_before_first_candidate': lead_seconds,
+            'call_chain': call_chain,
+            'call_chain_event_count': len(call_chain),
+            'activity_before': {
+                'window_seconds': 2.0,
+                'process_starts': len(p_starts),
+                'thread_starts': len(t_starts),
+                'control_windows_count': len(ctrl_p),
+                'control_process_starts_median': proc_med,
+                'control_process_starts_max': proc_max,
+                'control_thread_starts_median': thread_med,
+                'control_thread_starts_max': thread_max,
+                'processes_started': processes_started,
+                'top_thread_creators': top_thread_creators
+            },
+            'limits': 'Temporal association only; not proven causation. Call chain is WIL event log, not full stack trace.'
+        }
+
+    preceding_blind = quality.get('preceding_blind_interval') if quality else None
+    circular = quality.get('circular_overwrite') if quality else False
+
+    if preceding_blind:
+        reason = 'blind: monitoring inactive or lost before incident; onset indeterminate'
+        verdict = 'indeterminate'
+    elif last is None:
+        reason = 'missing_normal: no connected last normal observation before first candidate; onset indeterminate'
+        verdict = 'indeterminate'
+    elif first and (first - 120 * freq > 0 and coverage_begin > first - 120 * freq or circular):
+        reason = 'uncovered: trace history does not cover pre-candidate window'
+        verdict = 'indeterminate'
+    else:
+        reason = 'not_present: provider error did not occur in retained window'
+        verdict = 'non_conforming'
+
+    return {
+        'recorded': False,
+        'verdict': verdict,
+        'reason': reason,
+        'hresult': None,
+        'qpc': None,
+        'utc': None,
+        'call_chain': [],
+        'call_chain_event_count': 0,
+        'activity_before': None,
+        'limits': 'Temporal association only; not proven causation.'
+    }
+
+
+def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None):
+    summary_path = Path(summary_dir)/'n1-summary.json'
+    summary = {}
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+
+    summary.setdefault('qualifying_count', 0)
+    summary.setdefault('conforming_count', 0)
+    summary.setdefault('non_conforming_count', 0)
+    summary.setdefault('indeterminate_count', 0)
+    summary.setdefault('rule', 'Pass if in first 10 qualifying flatlines >=9 conform (0x8007139F from TaskManagerDataLayer.dll <= first_candidate) and outside flatlines <=1/day; fail if >=3 missing')
+    summary.setdefault('status', 'evaluating')
+    summary.setdefault('history', [])
+
+    existing = [h for h in summary['history'] if h.get('incident') == incident_name]
+    if not existing:
+        verdict = native_sig.get('verdict', 'indeterminate')
+        entry = {
+            'incident': incident_name,
+            'timestamp_utc': timestamp_utc or datetime.now(timezone.utc).isoformat(),
+            'verdict': verdict,
+            'recorded': native_sig.get('recorded', False),
+            'reason': native_sig.get('reason'),
+            'hresult': native_sig.get('hresult'),
+            'qpc': native_sig.get('qpc'),
+            'lead_seconds': native_sig.get('lead_seconds_before_first_candidate')
+        }
+        if verdict == 'conforming':
+            summary['qualifying_count'] += 1
+            summary['conforming_count'] += 1
+        elif verdict == 'non_conforming':
+            summary['qualifying_count'] += 1
+            summary['non_conforming_count'] += 1
+        else:
+            summary['indeterminate_count'] += 1
+        summary['history'].append(entry)
+
+        if summary['conforming_count'] >= 9:
+            summary['status'] = 'passed'
+        elif summary['non_conforming_count'] >= 3:
+            summary['status'] = 'failed'
+        else:
+            summary['status'] = 'evaluating'
+
+        try:
+            summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        except Exception:
+            pass
+    return summary
+
+
 def analyze(folder, output=None):
     folder = Path(folder)
     output = Path(output) if output is not None else folder
@@ -179,7 +527,8 @@ def analyze(folder, output=None):
                      if k in ('last_normal','first_candidate','confirmed') and isinstance(m,dict)
                      and type(m.get('qpc')) is int]
     clocks_to_keep = sample_clocks+marker_clocks
-    window = (min(clocks_to_keep),max(clocks_to_keep)) if clocks_to_keep else None
+    min_clock = (min(clocks_to_keep) - 130 * session.get('qpc_frequency', 10_000_000)) if clocks_to_keep else None
+    window = (min_clock, max(clocks_to_keep)) if clocks_to_keep else None
     decoded_file = session.get('decode_file') or 'events.xml'
     if decoded_file not in ('events.xml','events.xml.gz'):
         raise ValueError('unsupported decoded trace path')
@@ -288,10 +637,86 @@ def analyze(folder, output=None):
     result['top'] = result['phases']['before_first']['top']
     result['quality']['before_first_usable'] = result['phases']['before_first']['ranking_usable']
     result['quality']['after_first_usable'] = result['phases']['after_first']['ranking_usable']
+
+    native_sig = extract_native_signature(
+        header.get('native_events', []),
+        events, header, observation, resolve, freq,
+        coverage_begin, coverage_end, quality=quality, folder=folder
+    )
+    result['native_signature'] = native_sig
+
     output.mkdir(parents=True,exist_ok=True)
     (output/'incident-analysis.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (output/'incident-analysis.md').write_text(render(result),encoding='utf-8')
+
+    try:
+        update_n1_summary(output.parent, folder.name, native_sig, observation.get('timestamp'))
+    except Exception:
+        pass
+
     return result
+
+
+def native_signature_text(sig, zh):
+    if not sig:
+        return ''
+    title = '原生卡死特征：Taskmgr 内部错误' if zh else 'Native freeze signature: Taskmgr internal error'
+    lines = [f'## {title}', '']
+    if not sig.get('recorded'):
+        reason_map = {
+            'blind: monitoring inactive or lost before incident; onset indeterminate': '监测失明：事件前监测失效或断开；起点不可判定',
+            'missing_normal: no connected last normal observation before first candidate; onset indeterminate': '缺失正常基线：首次候选前无相连正常观察；起点不可判定',
+            'uncovered: trace history does not cover pre-candidate window': '未覆盖：追踪历史未完整覆盖候选前窗口',
+            'not_present: provider error did not occur in retained window': '确实没有：保留窗口内未出现该提供程序错误'
+        }
+        reason = sig.get('reason', 'unspecified')
+        reason_text = reason_map.get(reason, reason) if zh else reason
+        lines += [(f'未记录到原生特征（原因：{reason_text}）。' if zh else f'Not recorded (reason: {reason_text}).'), '']
+        return '\n'.join(lines) + '\n'
+
+    verdict_label = ('符合' if sig['verdict'] == 'conforming' else '不符合') if zh else sig['verdict'].capitalize()
+    lines += [
+        (f"状态：{verdict_label}（来自 `{sig['module']}` 的 `{sig['hresult']}`）。" if zh else
+         f"Status: {verdict_label} (`{sig['hresult']}` from `{sig['module']}`)."),
+        (f"时间：`{sig['utc']}`（QPC: `{sig['qpc']}`）；线程：`{sig['thread_id']}`（PID: `{sig.get('taskmgr_pid', 'unknown')}`）。" if zh else
+         f"Time: `{sig['utc']}` (QPC: `{sig['qpc']}`); Thread: `{sig['thread_id']}` (PID: `{sig.get('taskmgr_pid', 'unknown')}`)."),
+        (f"相对首次平线候选提前量：约 {sig.get('lead_seconds_before_first_candidate', 'unknown')} 秒。" if zh else
+         f"Lead time before first flat observation: ~{sig.get('lead_seconds_before_first_candidate', 'unknown')} s."),
+        ''
+    ]
+
+    cc = sig.get('call_chain', [])
+    lines += [(f'### 调用链（同线程 50 ms 内 {len(cc)} 条事件）：' if zh else
+               f'### Call chain ({len(cc)} events in thread within 50 ms):'), '']
+    for i, item in enumerate(cc, 1):
+        fn = item.get('file_basename') or item.get('file') or 'unknown'
+        ln = item.get('line', 0)
+        loc = f'{fn}:{ln}' if ln else fn
+        msg = f": {item['message']}" if item.get('message') else ''
+        lines.append(f"{i}. `[{item.get('failure_type_name', 'Event')}]` `{loc}` ({item.get('hresult', '')}){msg}")
+    lines.append('')
+
+    act = sig.get('activity_before')
+    if act:
+        lines += [(f"### 原生错误前 [-2, 0) 秒伴随活动：" if zh else
+                   f"### Activity in [-2, 0) s before native error:"), '']
+        lines += [
+            (f"- 进程启动：{act['process_starts']} 次（[-120, -20) 秒内 2 秒对照窗口中位数：{act['control_process_starts_median']}，最大值：{act['control_process_starts_max']}）。" if zh else
+             f"- Process starts: {act['process_starts']} (control median: {act['control_process_starts_median']}, max: {act['control_process_starts_max']} in 2 s windows [-120, -20) s)."),
+            (f"- 线程启动：{act['thread_starts']} 次（[-120, -20) 秒内 2 秒对照窗口中位数：{act['control_thread_starts_median']}，最大值：{act['control_thread_starts_max']}）。" if zh else
+             f"- Thread starts: {act['thread_starts']} (control median: {act['control_thread_starts_median']}, max: {act['control_thread_starts_max']} in 2 s windows [-120, -20) s).")
+        ]
+        procs = act.get('processes_started', [])
+        if procs:
+            procs_str = '、'.join(f"{p['parent']} -> {p['child']}" for p in procs) if zh else ', '.join(f"{p['parent']} -> {p['child']}" for p in procs)
+            lines.append((f"- 启动的进程（父→子）：{procs_str}" if zh else f"- Started processes (parent -> child): {procs_str}"))
+        top_t = act.get('top_thread_creators', [])
+        if top_t:
+            top_str = '、'.join(f"{t['image']} ({t['count']})" for t in top_t) if zh else ', '.join(f"{t['image']} ({t['count']})" for t in top_t)
+            lines.append((f"- 线程启动最多进程：{top_str}" if zh else f"- Top thread creators: {top_str}"))
+        lines.append('')
+
+    return '\n'.join(lines) + '\n'
 
 
 def render(result):
@@ -360,5 +785,6 @@ def render(result):
                 'Each phase ranks independently with a normal control of matching duration where available; shorter controls retain their actual exposure and rates. '
                 'Missing identities and controls remain unknown. JSON schema 2 top contains before-first rows only; overall event_counts still cover both phases. '
                 'Full boundaries, instance identities and controls are in incident-analysis.json. No Taskmgr query statuses, buffer-byte contributions or causal chain are measured.\n')
-        blocks.append(intro+phase_text('before_first',zh)+phase_text('after_first',zh)+tail)
+        native_sec = native_signature_text(result.get('native_signature'), zh)
+        blocks.append(intro+native_sec+phase_text('before_first',zh)+phase_text('after_first',zh)+tail)
     return 'The English version governs.\n\n'+ '\n---\n\n'.join(blocks)

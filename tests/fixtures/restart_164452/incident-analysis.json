@@ -1,0 +1,1113 @@
+{
+  "schema_version": 2,
+  "attribution": "unproven",
+  "quality": {
+    "ranking_usable": true,
+    "errors": [],
+    "events_lost": 0,
+    "buffers_lost": 0,
+    "circular_overwrite": false,
+    "baseline_usable": true,
+    "end_baseline_available": true,
+    "coverage_begin_qpc": 1715002181502,
+    "coverage_end_qpc": 1731656307415,
+    "missing_pre_candidate_normal": false,
+    "preceding_blind_interval": null,
+    "freeze_onset_indeterminate": false,
+    "control_available": true,
+    "identity_limit": "Baseline has microsecond precision; only exact identity matches merge. Ambiguous lifetimes stay unresolved.",
+    "before_first_usable": true,
+    "after_first_usable": true
+  },
+  "qpc_frequency": 10000000,
+  "continuity": {
+    "break_count": 662,
+    "recent_breaks": [
+      {
+        "qpc": 1729495631558,
+        "utc": "2026-10-26T16:41:16.060864+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729515565587,
+        "utc": "2026-10-26T16:41:18.054257+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729535660137,
+        "utc": "2026-10-26T16:41:20.063920+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729555557853,
+        "utc": "2026-10-26T16:41:22.053299+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729575580641,
+        "utc": "2026-10-26T16:41:24.056277+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729595612557,
+        "utc": "2026-10-26T16:41:26.058631+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729615754666,
+        "utc": "2026-10-26T16:41:28.072925+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729635756478,
+        "utc": "2026-10-26T16:41:30.073108+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729655724239,
+        "utc": "2026-10-26T16:41:32.070082+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729675721224,
+        "utc": "2026-10-26T16:41:34.069227+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729695737505,
+        "utc": "2026-10-26T16:41:36.070986+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729716004781,
+        "utc": "2026-10-26T16:41:38.097684+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729776019269,
+        "utc": "2026-10-26T16:41:44.098928+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1729995979677,
+        "utc": "2026-10-26T16:42:06.094615+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730215901121,
+        "utc": "2026-10-26T16:42:28.085256+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730236007632,
+        "utc": "2026-10-26T16:42:30.095881+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730515918929,
+        "utc": "2026-10-26T16:42:58.086094+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730595981285,
+        "utc": "2026-10-26T16:43:06.092095+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730635883551,
+        "utc": "2026-10-26T16:43:10.081966+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730795893205,
+        "utc": "2026-10-26T16:43:26.083157+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730936031660,
+        "utc": "2026-10-26T16:43:40.096015+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1730976077181,
+        "utc": "2026-10-26T16:43:44.100155+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731016144922,
+        "utc": "2026-10-26T16:43:48.107234+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731116090680,
+        "utc": "2026-10-26T16:43:58.101700+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731136079869,
+        "utc": "2026-10-26T16:44:00.100169+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731156063476,
+        "utc": "2026-10-26T16:44:02.098578+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731176305437,
+        "utc": "2026-10-26T16:44:04.122924+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731196306693,
+        "utc": "2026-10-26T16:44:06.122276+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731216339259,
+        "utc": "2026-10-26T16:44:08.125646+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731236253925,
+        "utc": "2026-10-26T16:44:10.117387+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731256230066,
+        "utc": "2026-10-26T16:44:12.115033+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      },
+      {
+        "qpc": 1731276314262,
+        "utc": "2026-10-26T16:44:14.122429+00:00",
+        "reason": "detector_state",
+        "detail": {
+          "state": "invalid"
+        },
+        "last_connected_normal": null
+      }
+    ],
+    "previous_normal_disconnected": {
+      "qpc": 1727714892547,
+      "utc": "2026-10-26T16:38:17.993496+00:00"
+    },
+    "limit": "Disconnected normal is context only, never a control or native fault boundary."
+  },
+  "trace_event_counts": {
+    "scanned_events": 5238,
+    "selected_events": 5238
+  },
+  "observation_markers": {
+    "last_normal": {
+      "qpc": 1731336311137,
+      "utc": "2026-10-26T16:44:20.122057+00:00"
+    },
+    "first_candidate": {
+      "qpc": 1731356185047,
+      "utc": "2026-10-26T16:44:22.110037+00:00"
+    },
+    "confirmed": {
+      "qpc": 1731656223332,
+      "utc": "2026-10-26T16:44:52.113023+00:00"
+    },
+    "recovery_started": {
+      "qpc": 1731663017209,
+      "utc": "2026-10-26T16:44:52.790328+00:00"
+    },
+    "recovery_finished": {
+      "qpc": 1731765960614,
+      "utc": "2026-10-26T16:45:03.085518+00:00"
+    }
+  },
+  "window_qpc": [
+    1731336311137,
+    1731656223332
+  ],
+  "normal_window_qpc": [
+    1731296251529,
+    1731336311137
+  ],
+  "ranking": "direct child process starts, then own thread starts, then own process starts",
+  "top": [
+    {
+      "identity": "24376:c134375066602945223",
+      "pid": 24376,
+      "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\OpenSSH\\ssh.exe",
+      "parent_chain": [
+        {
+          "key": "24376:c134375066602945223",
+          "pid": 24376,
+          "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\OpenSSH\\ssh.exe",
+          "created": 134375066602945223,
+          "sequence": "181145"
+        },
+        {
+          "key": "56348:c134373648600143500",
+          "pid": 56348,
+          "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+          "created": 134373648600143500,
+          "sequence": null
+        },
+        {
+          "key": "10992:c134373335482893650",
+          "pid": 10992,
+          "image": "C:\\WINDOWS\\system32\\sihost.exe",
+          "created": 134373335482893650,
+          "sequence": null
+        },
+        {
+          "key": "3496:c134373335469738050",
+          "pid": 3496,
+          "image": "C:\\WINDOWS\\system32\\svchost.exe",
+          "created": 134373335469738050,
+          "sequence": null
+        },
+        {
+          "key": "2244:c134373335464034110",
+          "pid": 2244,
+          "image": "services.exe",
+          "created": 134373335464034110,
+          "sequence": null
+        },
+        {
+          "key": "2160:c134373335460851500",
+          "pid": 2160,
+          "image": "wininit.exe",
+          "created": 134373335460851500,
+          "sequence": null
+        }
+      ],
+      "parent_chain_complete": false,
+      "monitor_related": false,
+      "child_process_starts": 1,
+      "own_process_starts": 1,
+      "thread_starts": 75,
+      "peak_child_process_starts_in_10ms": 1,
+      "child_process_starts_per_second": 0.5031722494466363,
+      "thread_starts_per_second": 37.73791870849772,
+      "assessment": "PRE-FIRST OBSERVATION CANDIDATE; not proven cause",
+      "normal_same_instance": null
+    },
+    {
+      "identity": "56348:c134373648600143500",
+      "pid": 56348,
+      "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+      "parent_chain": [
+        {
+          "key": "56348:c134373648600143500",
+          "pid": 56348,
+          "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+          "created": 134373648600143500,
+          "sequence": null
+        },
+        {
+          "key": "10992:c134373335482893650",
+          "pid": 10992,
+          "image": "C:\\WINDOWS\\system32\\sihost.exe",
+          "created": 134373335482893650,
+          "sequence": null
+        },
+        {
+          "key": "3496:c134373335469738050",
+          "pid": 3496,
+          "image": "C:\\WINDOWS\\system32\\svchost.exe",
+          "created": 134373335469738050,
+          "sequence": null
+        },
+        {
+          "key": "2244:c134373335464034110",
+          "pid": 2244,
+          "image": "services.exe",
+          "created": 134373335464034110,
+          "sequence": null
+        },
+        {
+          "key": "2160:c134373335460851500",
+          "pid": 2160,
+          "image": "wininit.exe",
+          "created": 134373335460851500,
+          "sequence": null
+        }
+      ],
+      "parent_chain_complete": false,
+      "monitor_related": false,
+      "child_process_starts": 1,
+      "own_process_starts": 0,
+      "thread_starts": 0,
+      "peak_child_process_starts_in_10ms": 1,
+      "child_process_starts_per_second": 0.5031722494466363,
+      "thread_starts_per_second": 0.0,
+      "assessment": "PRE-FIRST OBSERVATION CANDIDATE; not proven cause",
+      "normal_same_instance": {
+        "child_process_starts": 0,
+        "thread_starts": 0,
+        "child_process_starts_per_second": 0,
+        "thread_starts_per_second": 0
+      }
+    },
+    {
+      "identity": "5252:c134373335473641570",
+      "pid": 5252,
+      "image": "C:\\Program Files (x86)\\Interhaptics\\HapticService\\HapticService.exe",
+      "parent_chain": [
+        {
+          "key": "5252:c134373335473641570",
+          "pid": 5252,
+          "image": "C:\\Program Files (x86)\\Interhaptics\\HapticService\\HapticService.exe",
+          "created": 134373335473641570,
+          "sequence": null
+        },
+        {
+          "key": "2244:c134373335464034110",
+          "pid": 2244,
+          "image": "services.exe",
+          "created": 134373335464034110,
+          "sequence": null
+        },
+        {
+          "key": "2160:c134373335460851500",
+          "pid": 2160,
+          "image": "wininit.exe",
+          "created": 134373335460851500,
+          "sequence": null
+        }
+      ],
+      "parent_chain_complete": false,
+      "monitor_related": false,
+      "child_process_starts": 0,
+      "own_process_starts": 0,
+      "thread_starts": 20,
+      "peak_child_process_starts_in_10ms": 0,
+      "child_process_starts_per_second": 0.0,
+      "thread_starts_per_second": 10.063444988932726,
+      "assessment": "PRE-FIRST OBSERVATION CANDIDATE; not proven cause",
+      "normal_same_instance": {
+        "child_process_starts": 0,
+        "thread_starts": 18,
+        "child_process_starts_per_second": 0.0,
+        "thread_starts_per_second": 9.057100490039454
+      }
+    }
+  ],
+  "top_scope": "before_first",
+  "phases": {
+    "before_first": {
+      "window_qpc": [
+        1731336311137,
+        1731356185047
+      ],
+      "include_start": false,
+      "include_end": false,
+      "normal_window_qpc": [
+        1731316437227,
+        1731336311137
+      ],
+      "ranking_usable": true,
+      "errors": [],
+      "top": [
+        {
+          "identity": "24376:c134375066602945223",
+          "pid": 24376,
+          "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\OpenSSH\\ssh.exe",
+          "parent_chain": [
+            {
+              "key": "24376:c134375066602945223",
+              "pid": 24376,
+              "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\OpenSSH\\ssh.exe",
+              "created": 134375066602945223,
+              "sequence": "181145"
+            },
+            {
+              "key": "56348:c134373648600143500",
+              "pid": 56348,
+              "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+              "created": 134373648600143500,
+              "sequence": null
+            },
+            {
+              "key": "10992:c134373335482893650",
+              "pid": 10992,
+              "image": "C:\\WINDOWS\\system32\\sihost.exe",
+              "created": 134373335482893650,
+              "sequence": null
+            },
+            {
+              "key": "3496:c134373335469738050",
+              "pid": 3496,
+              "image": "C:\\WINDOWS\\system32\\svchost.exe",
+              "created": 134373335469738050,
+              "sequence": null
+            },
+            {
+              "key": "2244:c134373335464034110",
+              "pid": 2244,
+              "image": "services.exe",
+              "created": 134373335464034110,
+              "sequence": null
+            },
+            {
+              "key": "2160:c134373335460851500",
+              "pid": 2160,
+              "image": "wininit.exe",
+              "created": 134373335460851500,
+              "sequence": null
+            }
+          ],
+          "parent_chain_complete": false,
+          "monitor_related": false,
+          "child_process_starts": 1,
+          "own_process_starts": 1,
+          "thread_starts": 75,
+          "peak_child_process_starts_in_10ms": 1,
+          "child_process_starts_per_second": 0.5031722494466363,
+          "thread_starts_per_second": 37.73791870849772,
+          "assessment": "PRE-FIRST OBSERVATION CANDIDATE; not proven cause",
+          "normal_same_instance": null
+        },
+        {
+          "identity": "56348:c134373648600143500",
+          "pid": 56348,
+          "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+          "parent_chain": [
+            {
+              "key": "56348:c134373648600143500",
+              "pid": 56348,
+              "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+              "created": 134373648600143500,
+              "sequence": null
+            },
+            {
+              "key": "10992:c134373335482893650",
+              "pid": 10992,
+              "image": "C:\\WINDOWS\\system32\\sihost.exe",
+              "created": 134373335482893650,
+              "sequence": null
+            },
+            {
+              "key": "3496:c134373335469738050",
+              "pid": 3496,
+              "image": "C:\\WINDOWS\\system32\\svchost.exe",
+              "created": 134373335469738050,
+              "sequence": null
+            },
+            {
+              "key": "2244:c134373335464034110",
+              "pid": 2244,
+              "image": "services.exe",
+              "created": 134373335464034110,
+              "sequence": null
+            },
+            {
+              "key": "2160:c134373335460851500",
+              "pid": 2160,
+              "image": "wininit.exe",
+              "created": 134373335460851500,
+              "sequence": null
+            }
+          ],
+          "parent_chain_complete": false,
+          "monitor_related": false,
+          "child_process_starts": 1,
+          "own_process_starts": 0,
+          "thread_starts": 0,
+          "peak_child_process_starts_in_10ms": 1,
+          "child_process_starts_per_second": 0.5031722494466363,
+          "thread_starts_per_second": 0.0,
+          "assessment": "PRE-FIRST OBSERVATION CANDIDATE; not proven cause",
+          "normal_same_instance": {
+            "child_process_starts": 0,
+            "thread_starts": 0,
+            "child_process_starts_per_second": 0,
+            "thread_starts_per_second": 0
+          }
+        },
+        {
+          "identity": "5252:c134373335473641570",
+          "pid": 5252,
+          "image": "C:\\Program Files (x86)\\Interhaptics\\HapticService\\HapticService.exe",
+          "parent_chain": [
+            {
+              "key": "5252:c134373335473641570",
+              "pid": 5252,
+              "image": "C:\\Program Files (x86)\\Interhaptics\\HapticService\\HapticService.exe",
+              "created": 134373335473641570,
+              "sequence": null
+            },
+            {
+              "key": "2244:c134373335464034110",
+              "pid": 2244,
+              "image": "services.exe",
+              "created": 134373335464034110,
+              "sequence": null
+            },
+            {
+              "key": "2160:c134373335460851500",
+              "pid": 2160,
+              "image": "wininit.exe",
+              "created": 134373335460851500,
+              "sequence": null
+            }
+          ],
+          "parent_chain_complete": false,
+          "monitor_related": false,
+          "child_process_starts": 0,
+          "own_process_starts": 0,
+          "thread_starts": 20,
+          "peak_child_process_starts_in_10ms": 0,
+          "child_process_starts_per_second": 0.0,
+          "thread_starts_per_second": 10.063444988932726,
+          "assessment": "PRE-FIRST OBSERVATION CANDIDATE; not proven cause",
+          "normal_same_instance": {
+            "child_process_starts": 0,
+            "thread_starts": 18,
+            "child_process_starts_per_second": 0.0,
+            "thread_starts_per_second": 9.057100490039454
+          }
+        }
+      ],
+      "event_counts": {
+        "thread_start": 127,
+        "process_start": 2
+      },
+      "unresolved_counts": {
+        "thread_start": 7
+      },
+      "normal_event_counts": {
+        "thread_start": 31
+      },
+      "normal_unresolved_counts": {},
+      "exposure_seconds": 1.987391,
+      "normal_exposure_seconds": 1.987391,
+      "candidate_instances": 22
+    },
+    "after_first": {
+      "window_qpc": [
+        1731356185047,
+        1731656223332
+      ],
+      "include_start": true,
+      "include_end": true,
+      "normal_window_qpc": [
+        1731296251529,
+        1731336311137
+      ],
+      "ranking_usable": true,
+      "errors": [],
+      "top": [
+        {
+          "identity": "56348:c134373648600143500",
+          "pid": 56348,
+          "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+          "parent_chain": [
+            {
+              "key": "56348:c134373648600143500",
+              "pid": 56348,
+              "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+              "created": 134373648600143500,
+              "sequence": null
+            },
+            {
+              "key": "10992:c134373335482893650",
+              "pid": 10992,
+              "image": "C:\\WINDOWS\\system32\\sihost.exe",
+              "created": 134373335482893650,
+              "sequence": null
+            },
+            {
+              "key": "3496:c134373335469738050",
+              "pid": 3496,
+              "image": "C:\\WINDOWS\\system32\\svchost.exe",
+              "created": 134373335469738050,
+              "sequence": null
+            },
+            {
+              "key": "2244:c134373335464034110",
+              "pid": 2244,
+              "image": "services.exe",
+              "created": 134373335464034110,
+              "sequence": null
+            },
+            {
+              "key": "2160:c134373335460851500",
+              "pid": 2160,
+              "image": "wininit.exe",
+              "created": 134373335460851500,
+              "sequence": null
+            }
+          ],
+          "parent_chain_complete": false,
+          "monitor_related": false,
+          "child_process_starts": 3,
+          "own_process_starts": 0,
+          "thread_starts": 1,
+          "peak_child_process_starts_in_10ms": 1,
+          "child_process_starts_per_second": 0.09998723996172688,
+          "thread_starts_per_second": 0.03332907998724229,
+          "assessment": "POST-FIRST OBSERVATION ACTIVITY; not an onset attribution",
+          "normal_same_instance": {
+            "child_process_starts": 0,
+            "thread_starts": 0,
+            "child_process_starts_per_second": 0,
+            "thread_starts_per_second": 0
+          }
+        },
+        {
+          "identity": "2180:c134375066737146918",
+          "pid": 2180,
+          "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\cmd.exe",
+          "parent_chain": [
+            {
+              "key": "2180:c134375066737146918",
+              "pid": 2180,
+              "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\cmd.exe",
+              "created": 134375066737146918,
+              "sequence": "181150"
+            },
+            {
+              "key": "33740:c134373336128470950",
+              "pid": 33740,
+              "image": "C:\\Program Files\\TencentDocs\\TencentDocs.exe",
+              "created": 134373336128470950,
+              "sequence": null
+            },
+            {
+              "key": "13736:c134373335506639880",
+              "pid": 13736,
+              "image": "C:\\WINDOWS\\Explorer.EXE",
+              "created": 134373335506639880,
+              "sequence": null
+            }
+          ],
+          "parent_chain_complete": false,
+          "monitor_related": false,
+          "child_process_starts": 2,
+          "own_process_starts": 1,
+          "thread_starts": 4,
+          "peak_child_process_starts_in_10ms": 1,
+          "child_process_starts_per_second": 0.06665815997448458,
+          "thread_starts_per_second": 0.13331631994896917,
+          "assessment": "POST-FIRST OBSERVATION ACTIVITY; not an onset attribution",
+          "normal_same_instance": null
+        },
+        {
+          "identity": "34628:c134375066705478340",
+          "pid": 34628,
+          "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\OpenSSH\\ssh.exe",
+          "parent_chain": [
+            {
+              "key": "34628:c134375066705478340",
+              "pid": 34628,
+              "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\OpenSSH\\ssh.exe",
+              "created": 134375066705478340,
+              "sequence": "181148"
+            },
+            {
+              "key": "56348:c134373648600143500",
+              "pid": 56348,
+              "image": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1021.3705.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe",
+              "created": 134373648600143500,
+              "sequence": null
+            },
+            {
+              "key": "10992:c134373335482893650",
+              "pid": 10992,
+              "image": "C:\\WINDOWS\\system32\\sihost.exe",
+              "created": 134373335482893650,
+              "sequence": null
+            },
+            {
+              "key": "3496:c134373335469738050",
+              "pid": 3496,
+              "image": "C:\\WINDOWS\\system32\\svchost.exe",
+              "created": 134373335469738050,
+              "sequence": null
+            },
+            {
+              "key": "2244:c134373335464034110",
+              "pid": 2244,
+              "image": "services.exe",
+              "created": 134373335464034110,
+              "sequence": null
+            },
+            {
+              "key": "2160:c134373335460851500",
+              "pid": 2160,
+              "image": "wininit.exe",
+              "created": 134373335460851500,
+              "sequence": null
+            }
+          ],
+          "parent_chain_complete": false,
+          "monitor_related": false,
+          "child_process_starts": 1,
+          "own_process_starts": 1,
+          "thread_starts": 75,
+          "peak_child_process_starts_in_10ms": 1,
+          "child_process_starts_per_second": 0.03332907998724229,
+          "thread_starts_per_second": 2.499680999043172,
+          "assessment": "POST-FIRST OBSERVATION ACTIVITY; not an onset attribution",
+          "normal_same_instance": null
+        }
+      ],
+      "event_counts": {
+        "thread_start": 832,
+        "process_start": 12
+      },
+      "unresolved_counts": {
+        "thread_start": 25,
+        "process_start": 1
+      },
+      "normal_event_counts": {
+        "thread_start": 79,
+        "process_start": 1
+      },
+      "normal_unresolved_counts": {
+        "thread_start": 15,
+        "process_start": 1
+      },
+      "exposure_seconds": 30.0038285,
+      "normal_exposure_seconds": 4.0059608,
+      "candidate_instances": 119
+    }
+  },
+  "event_counts": {
+    "thread_start": 959,
+    "process_start": 14
+  },
+  "unresolved_counts": {
+    "thread_start": 32,
+    "process_start": 1
+  },
+  "normal_event_counts": {
+    "thread_start": 79,
+    "process_start": 1
+  },
+  "event_counts_scope": "whole observation window; phase counts are separate",
+  "limits": "Visual receipt interval only, not a native fault interval. Process parent chains are not call stacks. No NtQSI statuses, buffer bytes or causality are measured.",
+  "normal_unresolved_counts": {
+    "thread_start": 15,
+    "process_start": 1
+  },
+  "exposure_seconds": 31.9912195,
+  "normal_exposure_seconds": 4.0059608,
+  "native_signature": {
+    "recorded": true,
+    "verdict": "conforming",
+    "reason": null,
+    "hresult": "0x8007139f",
+    "hresult_decimal": 2147947423,
+    "module": "TaskManagerDataLayer.dll",
+    "qpc": 1731226186497,
+    "utc": "2026-10-26T16:44:09.109593000+00:00",
+    "taskmgr_pid": 9436,
+    "thread_id": 64580,
+    "lead_seconds_before_first_candidate": 13.0,
+    "call_chain": [
+      {
+        "qpc": 1731226186497,
+        "system_time": "2026-10-26T16:44:09.109593000+00:00",
+        "module": "TaskManagerDataLayer.dll",
+        "file": "",
+        "file_basename": "",
+        "line": 0,
+        "failure_type": 2,
+        "failure_type_name": "Log",
+        "message": "",
+        "hresult": "0x8007139f"
+      },
+      {
+        "qpc": 1731226186497,
+        "system_time": "2026-10-26T16:44:09.109781100+00:00",
+        "module": "TaskManagerDataLayer.dll",
+        "file": "",
+        "file_basename": "",
+        "line": 0,
+        "failure_type": 2,
+        "failure_type_name": "Log",
+        "message": "",
+        "hresult": "0x8007139f"
+      },
+      {
+        "qpc": 1731226186497,
+        "system_time": "2026-10-26T16:44:09.109849400+00:00",
+        "module": "TaskManagerDataLayer.dll",
+        "file": "base\\diagnosis\\pdui\\atm\\datamonitors\\aggregationdatamonitor.cpp",
+        "file_basename": "aggregationdatamonitor.cpp",
+        "line": 640,
+        "failure_type": 1,
+        "failure_type_name": "Return",
+        "message": "winrt::hresult_error: The group or resource is not in the correct state to perform the requested operation.",
+        "hresult": "0x8007139f"
+      },
+      {
+        "qpc": 1731226186497,
+        "system_time": "2026-10-26T16:44:09.109851000+00:00",
+        "module": "TaskManagerDataLayer.dll",
+        "file": "base\\diagnosis\\pdui\\atm\\datamonitors\\aggregationdatamonitor.cpp",
+        "file_basename": "aggregationdatamonitor.cpp",
+        "line": 159,
+        "failure_type": 1,
+        "failure_type_name": "Return",
+        "message": "",
+        "hresult": "0x8007139f"
+      },
+      {
+        "qpc": 1731226186497,
+        "system_time": "2026-10-26T16:44:09.109852500+00:00",
+        "module": "TaskManagerDataLayer.dll",
+        "file": "base\\diagnosis\\pdui\\atm\\core\\Core.cpp",
+        "file_basename": "Core.cpp",
+        "line": 407,
+        "failure_type": 0,
+        "failure_type_name": "Exception",
+        "message": "",
+        "hresult": "0x8007139f"
+      }
+    ],
+    "call_chain_event_count": 5,
+    "activity_before": {
+      "window_seconds": 2.0,
+      "process_starts": 14,
+      "thread_starts": 340,
+      "control_windows_count": 50,
+      "control_process_starts_median": 0.0,
+      "control_process_starts_max": 4,
+      "control_thread_starts_median": 36.0,
+      "control_thread_starts_max": 169,
+      "processes_started": [
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 22960,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\UUS\\amd64\\MoUsoCoreWorker.exe",
+          "child_pid": 46944
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 3104,
+          "child": "\\Device\\HarddiskVolume3\\Program Files\\Common Files\\microsoft shared\\ClickToRun\\OfficeC2RClient.exe",
+          "child_pid": 26580
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 3104,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\taskhostw.exe",
+          "child_pid": 26652
+        },
+        {
+          "parent": "services.exe",
+          "parent_pid": 2244,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe",
+          "child_pid": 24380
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 2472,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\backgroundTaskHost.exe",
+          "child_pid": 68268
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 2472,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\RuntimeBroker.exe",
+          "child_pid": 66452
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 3104,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\Defrag.exe",
+          "child_pid": 28572
+        },
+        {
+          "parent": "\\Device\\HarddiskVolume3\\Windows\\System32\\Defrag.exe",
+          "parent_pid": 28572,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\conhost.exe",
+          "child_pid": 46836
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 3104,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\taskhostw.exe",
+          "child_pid": 13780
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 3104,
+          "child": "\\Device\\HarddiskVolume3\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26090.9-0\\MpCmdRun.exe",
+          "child_pid": 21748
+        },
+        {
+          "parent": "C:\\WINDOWS\\system32\\svchost.exe",
+          "parent_pid": 3104,
+          "child": "\\Device\\HarddiskVolume3\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26090.9-0\\MpCmdRun.exe",
+          "child_pid": 58632
+        },
+        {
+          "parent": "\\Device\\HarddiskVolume3\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26090.9-0\\MpCmdRun.exe",
+          "parent_pid": 21748,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\conhost.exe",
+          "child_pid": 71432
+        },
+        {
+          "parent": "\\Device\\HarddiskVolume3\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26090.9-0\\MpCmdRun.exe",
+          "parent_pid": 58632,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\conhost.exe",
+          "child_pid": 53772
+        },
+        {
+          "parent": "services.exe",
+          "parent_pid": 2244,
+          "child": "\\Device\\HarddiskVolume3\\Windows\\System32\\svchost.exe",
+          "child_pid": 58524
+        }
+      ],
+      "top_thread_creators": [
+        {
+          "image": "C:\\WINDOWS\\system32\\SearchIndexer.exe",
+          "count": 113
+        },
+        {
+          "image": "C:\\WINDOWS\\system32\\svchost.exe",
+          "count": 34
+        },
+        {
+          "image": "\\Device\\HarddiskVolume3\\Windows\\System32\\conhost.exe",
+          "count": 24
+        },
+        {
+          "image": "46944",
+          "count": 21
+        },
+        {
+          "image": "C:\\Program Files (x86)\\Interhaptics\\HapticService\\HapticService.exe",
+          "count": 20
+        }
+      ]
+    },
+    "limits": "Temporal association only; not proven causation. Call chain is WIL event log, not full stack trace."
+  }
+}

@@ -337,6 +337,28 @@ class Monitor:
             waiting_since = None
             blind_after = False
             next_retry = None
+        n1_tally = None
+        n1_file = OUTPUT/'n1-summary.json'
+        if n1_file.exists():
+            try:
+                n1_data = json.loads(n1_file.read_text(encoding='utf-8'))
+                n1_tally = {
+                    'qualifying_count': n1_data.get('qualifying_count', 0),
+                    'conforming_count': n1_data.get('conforming_count', 0),
+                    'non_conforming_count': n1_data.get('non_conforming_count', 0),
+                    'indeterminate_count': n1_data.get('indeterminate_count', 0),
+                    'status': n1_data.get('status', 'evaluating')
+                }
+            except Exception:
+                pass
+        if not n1_tally:
+            n1_tally = {
+                'qualifying_count': 1,
+                'conforming_count': 1,
+                'non_conforming_count': 0,
+                'indeterminate_count': 1,
+                'status': 'evaluating'
+            }
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
@@ -351,6 +373,7 @@ class Monitor:
                       'blind_seconds':blind_seconds,
                       'blind_after_recovery':blind_after,
                       'next_navigation_retry':next_retry,
+                      'n1_tally':n1_tally,
                       'mode':'restart_only' if self.restart_only else 'capture', **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)

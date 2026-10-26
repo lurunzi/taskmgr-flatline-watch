@@ -18,7 +18,9 @@ from pathlib import Path
 
 PROVIDER = 'Microsoft-Windows-Kernel-Process'
 GUID = '{22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}'
-LIMIT_MB = 64
+TASKMGR_PROVIDER = 'Microsoft.Windows.Taskmgr'
+TASKMGR_GUID = '{2e635d8e-1107-4555-9319-32eeb895aaae}'
+LIMIT_MB = 128
 XML_LIMIT = 256*1024**2
 COMPACT_XML_LIMIT = 1024*1024**2
 
@@ -102,6 +104,11 @@ class Session:
         self.command_timeout = command_timeout
         self.baseline_timeout = baseline_timeout
         self.record = {'session':self.name,'provider':PROVIDER,'keywords':'0x30',
+                       'taskmgr_provider':TASKMGR_PROVIDER,'taskmgr_guid':TASKMGR_GUID,
+                       'providers':[
+                           {'name':PROVIDER,'guid':GUID,'keywords':'0x30','level':4},
+                           {'name':TASKMGR_PROVIDER,'guid':TASKMGR_GUID,'keywords':'0x0','level':2}
+                       ],
                        'max_etl_mb':LIMIT_MB,'clock':'raw QPC','qpc_frequency':frequency(),
                        'attribution':'unproven','status':'preflight'}
 
@@ -121,8 +128,10 @@ class Session:
         # A timed-out logman may still have started our uniquely named session.
         # Keep ownership set so the runner attempts cleanup even on that path.
         self.active = True
+        providers_file = self.folder/'providers.guid'
+        providers_file.write_text(f'{GUID} 0x30 4\n{TASKMGR_GUID} 0x0 2\n', encoding='ascii')
         self.command([str(self.system/'logman.exe'),'create','trace',self.name,
-                      '-o',str(self.folder/'process.etl'),'-p',PROVIDER,'0x30','4',
+                      '-o',str(self.folder/'process.etl'),'-pf',str(providers_file),
                       '-f','bincirc','-max',str(LIMIT_MB),'-bs','64','-nb','16','64',
                       '-ct','perf','-ets'],'start')
         self.save(status='running',started_qpc=qpc())

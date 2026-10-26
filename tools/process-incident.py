@@ -26,7 +26,8 @@ if __name__ == '__main__':
         (destination/'process-trace').mkdir()
         names = ['observation.json','trace-capture.json','event.json',
                  'process-trace/session.json','process-trace/baseline.json',
-                 'process-trace/end-baseline.json','process-trace/process.etl']
+                 'process-trace/end-baseline.json','process-trace/process.etl',
+                 'process-trace/providers.guid']
         copied = []
         for name in names:
             source = folder/name
