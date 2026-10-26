@@ -25,7 +25,7 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 | Workstream | Status | Exit criterion |
 |---|---|---|
 | Mitigation: visual detection, restart, navigation | Running | Retired only under the definition of done |
-| Native freeze signature: Taskmgr's own ETW error events | Probing since 25 October; repository code unchanged | The N1 decision rule below is met or failed |
+| Native freeze signature: Taskmgr's own ETW error events | Probing since 25 October. N1 so far 1 of 1 qualifying flatlines: on 26 October the frozen Taskmgr (PID 9436) reported `0x8007139F` once at 16:44:09.110 UTC, as a log, then returns at `aggregationdatamonitor.cpp:640` ("The group or resource is not in the correct state…") and `:159`, then an exception at `Core.cpp:407`. That is about 11 s before the first flat candidate and matches the pixel-estimated visible onset; it was the only `0x8007139F` in 4.75 h of recording. In the 2 s before it the light ETW trace has 14 process starts and 340 thread starts, against a median of 0 and 36 (maximum 4 and 169) in 2 s windows 20–120 s earlier, mostly scheduled maintenance tasks. The 15:42 flatline that day is indeterminate: the watcher had been blind since 25 October 17:08. `TaskManagerDataLayer.dll` also reports `0x8007000E` at `ProcessDataSource2.cpp:821` about six times an hour without freezing; it is not the signature | The N1 decision rule below is met or failed |
 | Evidence: light ETW, offline analysis, retry | Running; retry added 25 October | Every incident has a report or a recorded reason |
 | Defect identity | Done: 9278 native execution; 9549 static comparison plus real-kernel and controlled query runs | — |
 | Escalation | Feedback Hub report [AA13rk15](https://aka.ms/AA13rk15) exists; the corrected submission material is not yet sent | Corrected material posted by the owner |
@@ -52,8 +52,8 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 
 | # | Action | Done when | Cost and risk |
 |---|---|---|---|
-| N1 | Validate the native signature. The probe session `TaskmgrWilProbe` records this provider at error level into `D:\TaskmgrFreezeCaptures\wil-probe-20261025\wil.etl` (circular, 128 MB, QPC clock, lost on reboot). After each flatline, compare `FallbackError` events from `TaskManagerDataLayer.dll` with the visual markers | The decision rule below is met or failed | No repository change; under 1 MB/h at error level |
-| N2 | If N1 passes, add the provider at error level to the light ETW session and anchor the offline analysis on the first native error, with process and thread activity in a window before it | Tests pass; new reports name the native onset | Repository code; replaces A1 and A2 |
+| N1 | Validate the native signature. The probe session `TaskmgrWilProbe` records this provider at error level into `D:\TaskmgrFreezeCaptures\wil-probe-20261025\wil.etl` (circular, 128 MB, QPC clock, lost on reboot). After each flatline, compare `FallbackError` events from `TaskManagerDataLayer.dll` with the visual markers | The decision rule below is met or failed | No repository change; about 27 MB/h at error level, mostly unrelated `Taskmgr.exe` errors, so the 1 GB circular file holds about 37 h |
+| N2 | Now: record the provider at error level with each incident and report the first `0x8007139F`, its call chain and the process and thread activity before it, so that N1 is counted without handling the probe by hand. After N1 passes: anchor the offline ranking on the native error and retire A1 and A2 | Tests pass; new reports name the native onset or state that none was recorded | Repository code; keep at least 20 min of process coverage before the onset |
 | N3 | If N1 passes, trigger recovery on the native error, using a real-time ETW consumer, and keep the visual detector as a fallback and cross-check | Each recovery records which signal fired first | Repository code; recovery behaviour changes, so it needs a stop and start check |
 | N4 | Record `CurrentUpdateCycle` with an event-name filter, so that the high-volume `NetworkUtilizationRefresh` at the same level is excluded, and test whether the data model keeps cycling during a freeze | Answered for at least three incidents | Needs `EnableTraceEx2` with a name filter; `logman` cannot do it |
 | A1 | Fallback, only if N1 fails: add an onset phase to the offline analysis: estimate when the line went flat from the flat-run length in the first-candidate image and the measured chart speed, and analyse a window around that time with a control earlier in the same trace | Unit tests pass; reports state the estimate and its uncertainty | Repository code only; no new collection |
@@ -94,7 +94,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | 工作线 | 现状 | 退出条件 |
 |---|---|---|
 | 缓解：视觉检测、重启、导航 | 运行中 | 只按完成标准退役 |
-| 原生卡死特征：Taskmgr 自身的 ETW 错误事件 | 10 月 25 日起探测中；仓库代码未改 | 下文 N1 判定规则得出通过或不通过 |
+| 原生卡死特征：Taskmgr 自身的 ETW 错误事件 | 10 月 25 日起探测中。N1 目前合格平线 1 次中 1 次符合：10 月 26 日冻结的 Taskmgr（PID 9436）在 16:44:09.110 UTC 只报了一次 `0x8007139F`，先是日志，再从 `aggregationdatamonitor.cpp:640`（"The group or resource is not in the correct state…"）和 `:159` 返回，最后在 `Core.cpp:407` 抛出异常。它比首次平线候选早约 11 秒，与像素估计的可见起点一致；4.75 小时的记录里只有这一次 `0x8007139F`。它之前 2 秒内，轻量 ETW 记录到 14 次进程启动和 340 次线程启动，而 20–120 秒之前的 2 秒窗口中位数是 0 和 36（最大 4 和 169），主要是计划维护任务。当天 15:42 的平线无法判定：监测器自 10 月 25 日 17:08 起一直失明。`TaskManagerDataLayer.dll` 还会在 `ProcessDataSource2.cpp:821` 报 `0x8007000E`，约每小时六次且不伴随冻结，它不是卡死特征 | 下文 N1 判定规则得出通过或不通过 |
 | 证据：轻量 ETW、离线分析、重试 | 运行中；10 月 25 日加入重试 | 每次事件都有报告或记录在案的原因 |
 | 缺陷认定 | 已完成：9278 原函数执行；9549 静态比对加真实内核与受控查询 | — |
 | 上报 | 反馈中心报告 [AA13rk15](https://aka.ms/AA13rk15) 已存在；修订后的提交材料尚未发出 | 负责人发布修订材料 |
@@ -121,8 +121,8 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 
 | # | 行动 | 完成标志 | 成本与风险 |
 |---|---|---|---|
-| N1 | 验证原生特征。探测会话 `TaskmgrWilProbe` 以错误级记录该提供程序，写入 `D:\TaskmgrFreezeCaptures\wil-probe-20261025\wil.etl`（循环 128 MB，QPC 时钟，重启后消失）。每次平线后，把来自 `TaskManagerDataLayer.dll` 的 `FallbackError` 与视觉标记对照 | 下面的判定规则得出通过或不通过 | 不改仓库；错误级每小时不到 1 MB |
-| N2 | N1 通过后，把该提供程序以错误级并入轻量 ETW 会话，离线分析以第一条原生错误为起点，分析它之前窗口内的进程和线程活动 | 测试通过；新报告给出原生起点 | 改仓库代码；取代 A1 和 A2 |
+| N1 | 验证原生特征。探测会话 `TaskmgrWilProbe` 以错误级记录该提供程序，写入 `D:\TaskmgrFreezeCaptures\wil-probe-20261025\wil.etl`（循环 128 MB，QPC 时钟，重启后消失）。每次平线后，把来自 `TaskManagerDataLayer.dll` 的 `FallbackError` 与视觉标记对照 | 下面的判定规则得出通过或不通过 | 不改仓库；错误级约每小时 27 MB，大部分是无关的 `Taskmgr.exe` 错误，1 GB 循环文件约覆盖 37 小时 |
+| N2 | 现在做：每次事件以错误级记录该提供程序，报告第一条 `0x8007139F`、它的调用链及其之前的进程和线程活动，这样不用手动处理探测会话也能统计 N1。N1 通过后：离线排行以原生错误为起点，并撤销 A1 和 A2 | 测试通过；新报告给出原生起点，或写明没有记录到 | 改仓库代码；起点之前至少保留 20 分钟的进程覆盖 |
 | N3 | N1 通过后，用实时 ETW 消费者在原生错误出现时触发恢复，视觉检测保留作兜底和交叉核对 | 每次恢复记录哪个信号先触发 | 改仓库代码；恢复行为变化，需要实际停止和启动核对 |
 | N4 | 用事件名过滤记录 `CurrentUpdateCycle`，排除同级别、量很大的 `NetworkUtilizationRefresh`，检验冻结期间数据模型是否仍在循环 | 至少三次事件得到答案 | 需要带名称过滤的 `EnableTraceEx2`；`logman` 做不到 |
 | A1 | 兜底，仅在 N1 不通过时做：在离线分析中加入起点阶段：用首次候选截图里的平线长度和量得的图表速度估计开始变平的时间，分析该时间附近的窗口，并在同一 trace 更早处取对照 | 单元测试通过；报告写明估计值及其不确定度 | 只改仓库代码，不新增采集 |
