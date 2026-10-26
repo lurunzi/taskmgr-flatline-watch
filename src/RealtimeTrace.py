@@ -209,6 +209,31 @@ advapi32.CloseTrace.argtypes = [ctypes.c_uint64]
 advapi32.CloseTrace.restype = wintypes.DWORD
 
 
+def re_enable_session_provider(session_name, provider_guid_str=TASKMGR_GUID, level=2, keywords=0):
+    """Idempotently re-enables a provider on a named ETW session via ControlTraceW QUERY handle.
+
+    CRITICAL: Never modifies sessions outside TaskmgrRealtime-* or TaskmgrCorrelation-*.
+    """
+    if is_test_environment() or not session_name:
+        return 0
+    if not (re.fullmatch(r'TaskmgrRealtime-.*', session_name) or
+            re.fullmatch(r'TaskmgrCorrelation-[0-9a-f]{32}', session_name)):
+        return 87  # ERROR_INVALID_PARAMETER
+    buf_size = ctypes.sizeof(EVENT_TRACE_PROPERTIES) + 1024
+    buf = ctypes.create_string_buffer(buf_size)
+    props = EVENT_TRACE_PROPERTIES.from_buffer(buf)
+    props.Wnode.BufferSize = buf_size
+    props.LoggerNameOffset = ctypes.sizeof(EVENT_TRACE_PROPERTIES)
+    st = advapi32.ControlTraceW(0, session_name, buf, 0)
+    if st != 0:
+        return st
+    handle = props.Wnode.HistoricalContext
+    if not handle:
+        return 6  # ERROR_INVALID_HANDLE
+    pguid = parse_guid(provider_guid_str)
+    return advapi32.EnableTraceEx2(handle, ctypes.byref(pguid), 1, level, keywords, 0, 0, None)
+
+
 def stop_session_by_name(name):
     """Stop named ETW session safely via ControlTraceW, with logman fallback.
 
@@ -284,6 +309,10 @@ class RealtimeConsumer:
         self.last_error = None
         self.pending_native_error = None
         self.heartbeat_events = deque(maxlen=3600)
+        self.last_provider_event_utc = None
+        self.last_provider_event_qpc = None
+        self.last_provider_event_mono = None
+        self.provider_event_count = 0
         self._filter_buf = None
         self.state = {'state': 'stopped' if self.enabled else 'disabled', 'session': self.name}
         self._callback_ref = None
@@ -294,6 +323,47 @@ class RealtimeConsumer:
                 self.target_pid = pid
                 self.pending_native_error = None
                 self.heartbeat_events.clear()
+                self.provider_event_count = 0
+                if pid is not None:
+                    now_mono = time.monotonic()
+                    self.last_provider_event_mono = now_mono
+                    self.last_provider_event_utc = datetime.now(timezone.utc).isoformat()
+                    self.last_provider_event_qpc = qpc()
+                else:
+                    self.last_provider_event_mono = None
+                    self.last_provider_event_utc = None
+                    self.last_provider_event_qpc = None
+
+    def record_provider_event(self, qpc_val=None, utc_str=None, mono_val=None):
+        with self.lock:
+            self.last_provider_event_mono = time.monotonic() if mono_val is None else mono_val
+            self.last_provider_event_utc = datetime.now(timezone.utc).isoformat() if utc_str is None else utc_str
+            self.last_provider_event_qpc = qpc() if qpc_val is None else qpc_val
+            self.provider_event_count += 1
+
+    def re_enable_provider(self):
+        """Idempotently re-enables Microsoft.Windows.Taskmgr on this real-time session."""
+        with self.lock:
+            if not self.enabled or self.session_handle.value == 0:
+                return 0
+            provider_guid = parse_guid(TASKMGR_GUID)
+            if self._filter_buf:
+                filter_desc = EVENT_FILTER_DESCRIPTOR()
+                filter_desc.Ptr = ctypes.cast(self._filter_buf, ctypes.c_void_p).value
+                filter_desc.Size = len(self._filter_buf)
+                filter_desc.Type = EVENT_FILTER_TYPE_EVENT_NAME
+
+                params = ENABLE_TRACE_PARAMETERS()
+                params.Version = 2
+                params.EnableFilterDesc = ctypes.pointer(filter_desc)
+                params.FilterDescCount = 1
+
+                st = advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 5, 0, 0, 0, ctypes.byref(params))
+                if st != 0:
+                    st = advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
+                return st
+            else:
+                return advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
 
     def start(self):
         with self.lock:
@@ -380,14 +450,16 @@ class RealtimeConsumer:
             if provider_str != TASKMGR_GUID.lower():
                 return
 
+            now_mono = time.monotonic()
+            now_utc = datetime.now(timezone.utc).isoformat()
+            now_qpc = qpc()
+            self.record_provider_event(now_qpc, now_utc, now_mono)
+
             u_len = record.UserDataLength
             if not u_len or not record.UserData:
                 return
 
             raw = bytes((ctypes.c_char * u_len).from_address(record.UserData))
-            now_mono = time.monotonic()
-            now_utc = datetime.now(timezone.utc).isoformat()
-            now_qpc = qpc()
 
             # 1. Check for 0x8007139F native freeze error
             if SIGNATURE_HRESULT_BYTES in raw and SIGNATURE_MODULE_BYTES in raw:
@@ -493,4 +565,8 @@ class RealtimeConsumer:
             res['target_pid'] = self.target_pid
             res['heartbeat_count'] = len(self.heartbeat_events)
             res['last_heartbeat_utc'] = self.heartbeat_events[-1]['utc'] if self.heartbeat_events else None
+            res['provider_event_count'] = self.provider_event_count
+            res['last_provider_event_utc'] = self.last_provider_event_utc
+            res['last_provider_event_qpc'] = self.last_provider_event_qpc
+            res['last_provider_event_mono'] = self.last_provider_event_mono
             return res

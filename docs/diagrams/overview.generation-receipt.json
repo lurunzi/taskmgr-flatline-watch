@@ -1,6 +1,6 @@
 {
   "date": "2026-10-26",
-  "purpose": "Data layer heartbeat recording via EnableTraceEx2 event-name filter and offline continuity evaluation (N4).",
+  "purpose": "Native coverage watchdog (15s provider silence detection, idempotent re-enable, gap accounting, and N2 indeterminate verdict).",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -11,20 +11,20 @@
   "quality_profile": "showcase",
   "correction_rounds": 1,
   "corrections": [
-    "Data layer heartbeat: CurrentUpdateCycle filtered recording alongside 0x8007139F native error and process churn; offline freeze continuity analysis (N4)."
+    "Native coverage watchdog: 15s provider silence detection, idempotent re-enable, gap accounting, and N2 indeterminate verdict."
   ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "da2b3c1989b53bd1da9afa96a506b087bea59094605f0717f098e1cf049a3b03",
-        "bytes": 5609
+        "sha256": "e41a5a1c444c2c9700ff0afede861e9664eecc75f9e2a5872c5bf99ee8050119",
+        "bytes": 5390
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "8de74c1f7efe5cec0934c54fad98e9c25a1b031756456f815c2e63ae227c3171",
-        "bytes": 813498,
+        "sha256": "a4abe4c76ba6fb3d3326d9bfe333411ff7ccfb8d5eb6844c300ee00cef830076",
+        "bytes": 716941,
         "committed": false
       },
       "validation": {
@@ -41,16 +41,16 @@
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "6d5ee92a615ab202bb277228dc99243a2bb1e2bc65a0806cb1306b8b827b4558",
-          "bytes": 589218,
+          "sha256": "5405e68deb8cb3357aedd9a65586ebbf5b30d362c201c4713524346194f463af",
+          "bytes": 574564,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "1dbaeb26c0804645b6626dbec906601fdc401db598b53ff0206ccf0dc27019ca",
-          "bytes": 602390,
+          "sha256": "d37c518cea525026ecd1a9dbd0a67f411ba0b76c1a40d483b7b033ce870b8038",
+          "bytes": 588929,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -61,13 +61,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "cafb25941ebb87bdce0edfa740709205620c38f8bf9149bf64e2522ea236fa18",
-        "bytes": 5672
+        "sha256": "19814734388349731bea4d42e9bb98809e51fbcfc2565093d753cfabece278cc",
+        "bytes": 5459
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "bb025a144e77c677cbdf4992d0a8467dc7e18db3b8345d4e3dd803fa9ce148ee",
-        "bytes": 813275,
+        "sha256": "625500648254fdfba0e8405695aba1c71da077c7bc68634c5e28b2f52b7f2f4f",
+        "bytes": 716726,
         "committed": false
       },
       "validation": {
@@ -84,16 +84,16 @@
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "f681154009615a397cd545eebb0f3414a66b6412123dc726051a40eaa40caff4",
-          "bytes": 612293,
+          "sha256": "ab6119a337b8c6f0220d77ec2aaba730f2498f6dc42435436d8796f407712349",
+          "bytes": 610650,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "3fc5f910db2b6d7154a2975053ef9a489b07c98ef0bc3d747a456bd040a26d12",
-          "bytes": 622863,
+          "sha256": "bbe95f115fe84a7886ae8572a7f716331b5a22da951ed8039f90a02c978ac3f0",
+          "bytes": 621254,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true
@@ -106,5 +106,5 @@
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "local_artifacts": ".local/work-inbox/20261026-n2-native-record/overview.<lang>.html and delivery/visual/export receipts"
+  "local_artifacts": ".local/work-inbox/20261026-native-coverage-watchdog/overview.<lang>.html and delivery/visual/export receipts"
 }

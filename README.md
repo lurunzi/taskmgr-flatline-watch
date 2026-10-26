@@ -19,6 +19,16 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Native coverage watchdog and session capacity (26 October 2026)
+
+To guard against ETW event dropouts and ensure continuous monitoring of Task Manager's internal events, a real-time native coverage watchdog monitors event delivery from `Microsoft.Windows.Taskmgr` (`{2e635d8e-1107-4555-9319-32eeb895aaae}`):
+- **15-second provider silence detection**: While the target Task Manager PID remains running, if no provider events of any kind are received for 15 seconds, the watcher flags a native coverage gap.
+- **Idempotent provider re-enabling**: Upon detecting silence, the watcher invokes `EnableTraceEx2` for both `TaskmgrRealtime-Live` and the active file session `TaskmgrCorrelation-*` (querying its live session handle via `ControlTraceW`). This re-enables the provider in place without stopping, recreating, or losing historical circular buffers. Continued silence triggers retries on an exponential backoff schedule (`5s, 10s, 20s, 30s, 60s`).
+- **Target PID exit guard**: When the target Task Manager process exits or changes PID, silence is expected and is not counted as a provider gap; any open gap is cleanly closed without false alarms.
+- **Status reporting and tray alerts**: `status.json` exposes `native_coverage` (`ok` or `gap`), `native_coverage_gap_started`, `native_coverage_gap_seconds`, and `native_coverage_cumulative_gap_seconds`. If a gap persists for over 60 seconds, the status window appends ` · Native recording interrupted` and the system tray tooltip alerts `Native recording interrupted (<seconds> s)`.
+- **Offline N2 verdict integration**: Any ongoing or completed provider gap is saved in `Observations` and `observation.json`. Offline analysis inspects whether the first flat candidate falls within a gap or within 10 seconds after a gap ended; if so, the freeze onset is flagged as indeterminate and the N2 signature verdict evaluates to `indeterminate` (`reason: 'provider_gap'`).
+- **Session capacity experiment**: A controlled in-vivo experiment tested whether an ETW session count ceiling caused event delivery dropouts. Incrementing sessions from 6 to 12 showed that `EnableTraceEx2` succeeded at every step, `EnumerateTraceGuidsEx` showed the target PID's `enable_count` scaling linearly to 12, and both realtime and probe sessions received continuous events without loss. The hypothesis that exceeding 8 sessions shuts down provider event delivery was refuted; all temporary sessions were cleanly stopped and baseline buffer increments fully recovered.
+
 ## Data layer heartbeat recording (26 October 2026)
 
 To test whether Task Manager's data model keeps cycling during a visual freeze, the real-time ETW consumer enables `Microsoft.Windows.Taskmgr` up to Level 5 (Verbose) using `EnableTraceEx2` with an event-name filter (`EVENT_FILTER_TYPE_EVENT_NAME = 0x80000400`). This targets exclusively `CurrentUpdateCycle` and `FallbackError`, completely suppressing high-volume `NetworkUtilizationRefresh` events (which fire hundreds of times per second) without kernel or buffer overhead.
@@ -218,6 +228,7 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 ---
 
+
 <a id="zh"></a>
 
 [English](#en) · **中文**
@@ -234,6 +245,16 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 原生覆盖看门狗与会话容量（2026年10月26日）
+
+为防止 ETW 事件断流并确保任务管理器内部事件的持续监听，新增实时原生覆盖看门狗监听 `Microsoft.Windows.Taskmgr`（`{2e635d8e-1107-4555-9319-32eeb895aaae}`）：
+- **15 秒无提供程序事件检测**：在目标任务管理器 PID 存活期间，若连续 15 秒未收到该提供程序的任何事件，监测器判定为原生覆盖缺口。
+- **幂等重新启用提供程序**：检测到静默后，监测器通过 `EnableTraceEx2` 对 `TaskmgrRealtime-Live` 和当前活跃的 `TaskmgrCorrelation-*` 文件会话（通过 `ControlTraceW` 查询获取句柄）原地重新启用提供程序，无需停止或重建会话，不丢失既有循环缓冲区。若静默持续，按指数退避序列（`5秒、10秒、20秒、30秒、60秒`）重试。
+- **目标 PID 退出守卫**：当目标任务管理器退出或 PID 变更时，无事件属于正常现象，不计为提供程序缺口；处于活跃状态的缺口立即闭合清理，避免误报。
+- **状态报告与托盘告警**：`status.json` 导出 `native_coverage`（`ok` 或 `gap`）、`native_coverage_gap_started`、`native_coverage_gap_seconds` 与 `native_coverage_cumulative_gap_seconds`。当缺口持续超过 60 秒时，状态窗口文本追加 ` · 原生记录中断`，托盘图标悬浮提示显示「原生记录中断（X秒）」。
+- **离线 N2 判定联动**：发生过的缺口记录进 `Observations` 并持久化至 `observation.json`。离线分析检验首次平线候选点是否落在缺口内或缺口结束后 10 秒内；若是，冻结起点标记为不可判定，N2 判定输出为 `indeterminate`（原因注明 `provider_gap`）。
+- **会话容量受控实验**：实机受控实验检验了“ETW 会话数上限导致提供程序断流”假说。将总会话数由 6 逐个增加至 12，每一步 `EnableTraceEx2` 均返回成功（0），`EnumerateTraceGuidsEx` 显示目标 PID 的 `enable_count` 随之线性增长至 12，实时会话与独立探测会话均持续正常接收事件。此前推测的“超过 8 个会话导致提供程序关闭”假说被证伪；实验临时会话全部安全清理，基线会话缓冲区增量全量恢复。
 
 ## 数据层心跳记录（2026年10月26日）
 

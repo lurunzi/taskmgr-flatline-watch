@@ -239,7 +239,7 @@
       "title": "Candidates, not causal proof",
       "items": [
         "Full logical grid: 80% of widths within one adjacent pixel pair",
-        "Fast recovery: native 0x8007139F corroborated by 10 s flat chart",
+        "Fast recovery & watchdog: 0x8007139F / 10 s; 15 s silence re-enables; gaps mark N2 indeterminate",
         "Visual fallback: 30 s stale total curve confirms unassisted freeze",
         "Dual circular ETW: Kernel-Process + Taskmgr Error (128 MB)",
         "Trigger path recorded: native_fast, visual, or both",
@@ -248,4 +248,4 @@
       ]
     }
   ]
-}
+}

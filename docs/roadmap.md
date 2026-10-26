@@ -47,6 +47,7 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
    - The retry queue state is not reliable, as reproduced on 25 October: a failed attempt re-queued behind eight waiting items makes nine; after shutdown, retries that were waiting still read `retry_pending`; and an incident queued but not started before shutdown has no `analysis-status.json` at all.
    - The 300 s limit applies to a whole retry attempt. Decoding and compression inside it stay bounded at 90 s, so a retry does not help a slow decode. Any exit code other than 0 or 2 is retried, including failures that will repeat.
    - About 4.4 GiB of the 40 GiB ETW budget is used, and incident folders since 19 October average about 54 MB. At five incidents a day, recording will block in roughly four months unless a retention decision is made; evidence is never deleted automatically.
+   - On 26 October at 21:28 provider events vanished across all sessions, leaving a flatline incident uncovered (corrected to indeterminate). While initially suspected to be an ETW session count limit from leaked realtime sessions, a controlled experiment refuted this hypothesis up to 12 sessions. A 15-second native coverage watchdog with idempotent EnableTraceEx2 re-enabling, backoff retries, status reporting, and N2 provider_gap integration now mitigates provider dropouts automatically.
 
 ## Next actions, in order
 
@@ -64,12 +65,14 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 | A6 | Finalise the corrected Feedback Hub material now, without waiting for N1 or A2; the confirmed function defects justify it on their own. Add the 9549 result and the incident rate | The owner posts it | Owner only; external publication |
 | A7 | Decide whether to resume live query tracing on 9549 for the causal chain | A recorded decision | Parked unless N1 or A2 shows a clear association and the owner authorises it |
 | A8 | Resolve blind waiting after failed post-recovery navigation: retry navigation with exponential backoff (120, 300, 600, 1200, 1800 s) and an hourly cap (4/h); defer when the user interacts with Taskmgr in the foreground; terminate when the target PID exits; surface "Monitoring inactive" in tray and status.json after 5 minutes; record blind intervals in observations; flag indeterminate onset in offline analysis; and record bounded failure diagnostics (UIA tree summary and window screenshot) | Done 26 October 2026: navigation-only backoff retries, user non-interference guard, PID liveliness check, visible blind state, evidence recording, indeterminate onset warning, and bounded diagnostics | Small to medium |
+| A9 | Native coverage watchdog and session limit experiment | Done 26 October 2026: 15 s provider silence watchdog with idempotent EnableTraceEx2 re-enable, backoff retry, PID exit filtering, gap tracking in status/observations, N2 indeterminate provider_gap verdict, 60 s tray alert; controlled experiment refuted session limit up to 12 sessions | Repository code and live ETW experiment |
 
 Decision rule for N1: the signature passes if, in the first 10 flatlines recorded by the probe, `0x8007139F` from `TaskManagerDataLayer.dll` occurs in at least 9 no later than the first flat candidate, and if outside flatlines it occurs at most once a day. It fails if it is missing from 3 or more of those 10; the analysis then falls back to A1 and A2.
 
 Decision rule for A2: if, across at least 20 incidents, the median ratio of onset-window to normal-window process and thread start rates is no higher than 1.2, this method found no association between process churn and the visible onset. That does not exclude rare short bursts, misaligned windows or mixed causes. Further companion-process rankings would then stop. Before the batch run, try the method on a few incidents with complete evidence, check the controls for contamination and test whether the result is stable across window sizes. If the ratio is clearly higher, report the effect size and take it to A6 and A7.
 
 ---
+
 
 <a id="zh"></a>
 
@@ -116,6 +119,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
    - 重试队列的状态不可靠，10 月 25 日已复现：已有八个等待项时，失败的尝试重新排队后变成九个；退出后，原本在等待的重试仍显示 `retry_pending`；排队但退出前未开始的事件根本没有 `analysis-status.json`。
    - 300 秒限时针对整次重试尝试，其中的解码和压缩仍限 90 秒，所以重试帮不了慢解码。退出码只要不是 0 或 2 就会重试，包括必然重复的失败。
    - 40 GiB 的 ETW 预算已用约 4.4 GiB，10 月 19 日以来每个事件目录平均约 54 MB。按每天五次估算，约四个月后记录会被阻止，需要事先决定保留策略；证据不会被自动删除。
+   - 10 月 26 日 21:28 曾发生提供程序事件在所有会话中同时断流、导致平线未覆盖的情况（已更正为无法判定）。起初推测为实时会话泄漏超出 ETW 会话数上限导致，但实机受控实验证实 12 会话内无断流（上限推测未证实）。现已加入 15 秒原生覆盖看门狗，通过幂等 EnableTraceEx2 重启用、退避重试、状态导出以及 N2 provider_gap 联动，自动检测并缓解断流。
 
 ## 下一步行动（按顺序）
 
@@ -133,6 +137,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | A6 | 现在就定稿修订后的反馈中心材料，不等 N1 或 A2；已确认的函数缺陷本身就值得提交。补充 9549 结果和事件频率 | 负责人发布 | 仅负责人；属对外发布 |
 | A7 | 决定是否为因果链恢复 9549 上的现场查询追踪 | 有记录在案的决定 | 搁置，除非 N1 或 A2 显示明确关联且负责人授权 |
 | A8 | 解决恢复后导航失败导致的长时间失明：以指数退避（120、300、600、1200、1800 秒）和每小时上限（4 次）重试导航；任务管理器在前台且用户有操作时推迟；目标 PID 退出时终止；失明超过 5 分钟在托盘与 status.json 显示“监测失效”；在观察记录中留存失明区间；离线分析中标记起点不可判定；导航失败保存有上限的诊断（UIA 树摘要与窗口截图） | 2026-10-26 已完成：只导航退避重试、防抢占守卫、PID 存活检查、可见失明状态、证据区间记录、起点不可判定警示与诊断保存 | 小到中 |
+| A9 | 原生覆盖看门狗与会话上限实验 | 2026-10-26 已完成：15 秒无提供程序事件看门狗，幂等 EnableTraceEx2 重启用与退避重试，PID 退出过滤，状态与观察记录缺口留存，N2 provider_gap 无法判定判定，60 秒托盘告警；受控实验证实 12 会话内无断流（上限推测未证实） | 改仓库代码与实机 ETW 实验 |
 
 N1 的判定规则：探测记录到的前 10 次平线中，至少 9 次在首次平线候选之前或同时出现来自 `TaskManagerDataLayer.dll` 的 `0x8007139F`，且平线之外每天最多出现一次，则通过。10 次中有 3 次或以上缺失则不通过，分析退回 A1 和 A2。
 

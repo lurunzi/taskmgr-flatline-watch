@@ -434,6 +434,26 @@ def extract_native_signature(native_events, events, header, observation, resolve
     preceding_blind = quality.get('preceding_blind_interval') if quality else None
     circular = quality.get('circular_overwrite') if quality else False
 
+    # Check whether onset falls inside a provider coverage gap or within 10s after gap ended.
+    has_provider_gap = False
+    gaps = observation.get('native_coverage_gaps', []) if observation else []
+    for g in gaps:
+        g_start = g.get('start_qpc')
+        g_end = g.get('end_qpc')
+        if g_start is not None and first is not None:
+            gap_limit = (g_end + 10 * freq) if g_end is not None else float('inf')
+            if g_start <= first <= gap_limit:
+                has_provider_gap = True
+                break
+    if not has_provider_gap and quality and quality.get('preceding_native_gap'):
+        g = quality['preceding_native_gap']
+        g_start = g.get('start_qpc')
+        g_end = g.get('end_qpc')
+        if g_start is not None and first is not None:
+            gap_limit = (g_end + 10 * freq) if g_end is not None else float('inf')
+            if g_start <= first <= gap_limit:
+                has_provider_gap = True
+
     # Check whether the provider actually delivered events in the pre-onset window (e.g. 10s before first candidate).
     has_recent_provider_events = False
     if first is not None:
@@ -465,6 +485,9 @@ def extract_native_signature(native_events, events, header, observation, resolve
 
     if preceding_blind:
         reason = 'blind: monitoring inactive or lost before incident; onset indeterminate'
+        verdict = 'indeterminate'
+    elif has_provider_gap:
+        reason = 'provider_gap: provider event coverage gap at or within 10s of onset; onset indeterminate'
         verdict = 'indeterminate'
     elif last is None:
         reason = 'missing_normal: no connected last normal observation before first candidate; onset indeterminate'
@@ -624,6 +647,15 @@ def analyze(folder, output=None):
                 break
     if preceding_blind:
         control = None  # Blind intervals cannot serve as normal controls.
+    native_coverage_gaps = observation.get('native_coverage_gaps', [])
+    preceding_gap = None
+    if native_coverage_gaps:
+        first_qpc = marker('first_candidate')
+        for g in reversed(native_coverage_gaps):
+            end_qpc = g.get('end_qpc')
+            if end_qpc is None or (first_qpc and end_qpc >= first_qpc - 86400 * freq):
+                preceding_gap = g
+                break
     quality = {'ranking_usable':not errors, 'errors':sorted(set(errors)),
                'events_lost':header['EventsLost'], 'buffers_lost':header['BuffersLost'],
                'circular_overwrite':overwritten, 'baseline_usable':not overwritten,
@@ -631,7 +663,8 @@ def analyze(folder, output=None):
                'coverage_begin_qpc':coverage_begin, 'coverage_end_qpc':coverage_end,
                'missing_pre_candidate_normal':last is None,
                'preceding_blind_interval':preceding_blind,
-               'freeze_onset_indeterminate':bool(preceding_blind or last is None),
+               'preceding_native_gap':preceding_gap,
+               'freeze_onset_indeterminate':bool(preceding_blind or preceding_gap or last is None),
                'control_available':control is not None,
                'identity_limit':'Baseline has microsecond precision; only exact identity matches merge. Ambiguous lifetimes stay unresolved.'}
     result = {'schema_version':2, 'attribution':'unproven', 'quality':quality, 'qpc_frequency':freq,
@@ -710,6 +743,7 @@ def native_signature_text(sig, zh):
     if not sig.get('recorded'):
         reason_map = {
             'blind: monitoring inactive or lost before incident; onset indeterminate': '监测失明：事件前监测失效或断开；起点不可判定',
+            'provider_gap: provider event coverage gap at or within 10s of onset; onset indeterminate': '原生覆盖缺口：事件起点落在缺口内或结束后 10 秒内；起点不可判定',
             'missing_normal: no connected last normal observation before first candidate; onset indeterminate': '缺失正常基线：首次候选前无相连正常观察；起点不可判定',
             'uncovered: trace history does not cover pre-candidate window': '未覆盖：追踪历史未完整覆盖候选前窗口',
             'provider_uncovered: no provider events delivered in pre-onset window': '提供程序未覆盖：起点前窗口内未收到该提供程序事件',
@@ -939,6 +973,11 @@ def render(result):
                        if blind else '')
     blind_notice_en = (f"Preceding blind interval recorded: {blind.get('duration_seconds', 'unknown')} s (reason: {blind.get('reason', 'unknown')}). Freeze onset is indeterminate; blind intervals cannot serve as controls.\n\n"
                        if blind else '')
+    gap = q.get('preceding_native_gap')
+    gap_notice_zh = (f"前序原生覆盖缺口记录：持续 {gap.get('duration_seconds', 'unknown')} 秒（原因：{gap.get('reason', 'unknown')}）。原生提供程序事件存在覆盖断流，冻结发生起点不可判定。\n\n"
+                     if gap else '')
+    gap_notice_en = (f"Preceding native coverage gap recorded: {gap.get('duration_seconds', 'unknown')} s (reason: {gap.get('reason', 'unknown')}). Native provider event delivery had a gap; freeze onset is indeterminate.\n\n"
+                     if gap else '')
     blocks = []
     for zh in (False, True):
         intro = ('<a id="zh"></a>\n\n[English](#en) · **中文**\n\n以英文为准。\n\n# 首次平线前后活动\n\n'
@@ -946,14 +985,14 @@ def render(result):
                  '平线后是等待确认期间的伴随活动。边界受采样与界面延迟影响，不等于底层故障时刻。恰在首次平线边界的事件只计入后段。\n\n'
                  f"整体数据可用：{q['ranking_usable']}；错误：{errors}；循环覆盖：{q['circular_overwrite']}；事件／缓冲区丢失：{q['events_lost']}/{q['buffers_lost']}。\n\n"
                  f'最近连续性重置：{reason}；断开前的正常样本不作为对照。\n\n'
-                 + blind_notice_zh if zh else
+                 + blind_notice_zh + gap_notice_zh if zh else
                  '<a id="en"></a>\n\n**English** · [中文](#zh)\n\nEnglish is the controlling version.\n\n# Activity before and after first flat observation\n\n'
                  '**Temporal association only; causality unproven.** Parent chains are not call stacks. Before-first covers only the short transition '
                  'from the last normal observation to the first flat observation; after-first covers companion activity while awaiting confirmation. '
                  'Sampling and display latency mean this boundary is not the native fault time. Events exactly at the first-flat boundary belong only to after-first.\n\n'
                  f"Overall data usable: {q['ranking_usable']}; errors: {errors}; circular overwrite: {q['circular_overwrite']}; lost events/buffers: {q['events_lost']}/{q['buffers_lost']}.\n\n"
                  f'Latest continuity reset: {reason}; disconnected normal samples are never controls.\n\n'
-                 + blind_notice_en)
+                 + blind_notice_en + gap_notice_en)
         tail = ('每段独立排行，正常对照尽量等长；时长不足时保留实际时长与每秒速率，缺失身份和对照保持未知。'
                 'JSON schema 2 的顶层 top 仅代表平线前，整体 event_counts 仍是两段总计。完整边界、实例身份和对照保存在 incident-analysis.json。'
                 '这里未测量 Taskmgr 的查询返回值、缓冲区字节贡献或故障因果链。\n' if zh else

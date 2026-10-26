@@ -20,7 +20,7 @@ from OriginCapture import OriginWatch
 from TaskmgrRecovery import restart_taskmgr, restore_cpu_page, save_navigation_failure_window
 from ProcessTrace import qpc
 from RollingProcessTrace import RollingRecorder, TRACE_BUDGET
-from RealtimeTrace import RealtimeConsumer
+from RealtimeTrace import RealtimeConsumer, re_enable_session_provider
 from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS, mark_recovery
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +33,8 @@ CAPTURE_COOLDOWN = 600
 RESTART_COOLDOWN = 60
 BLIND_BACKOFF_SCHEDULE = (120, 300, 600, 1200, 1800)
 MAX_BLIND_RETRIES_PER_HOUR = 4
+NATIVE_GAP_THRESHOLD_SECONDS = 15.0
+NATIVE_GAP_BACKOFF_SCHEDULE = (5, 10, 20, 30, 60)
 
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
@@ -283,6 +285,13 @@ class Monitor:
         self.blind_retry_history = []
         self.next_navigation_retry_monotonic = None
         self.next_navigation_retry_utc = None
+        self.current_provider_gap = None
+        self.last_provider_re_enable_monotonic = 0.0
+        self.provider_gap_retry_count = 0
+        self.cumulative_provider_gap_seconds = 0.0
+        self.last_known_event_count = 0
+        self.current_monitored_pid = None
+        self.target_pid_start_monotonic = None
         self.origin = OriginWatch(PROCDUMP, OUTPUT, validate_full_dump, write_json, query_trace)
         self.last_origin_scan = 0
         self.origin_error = None
@@ -366,6 +375,16 @@ class Monitor:
                 'indeterminate_count': 1,
                 'status': 'evaluating'
             }
+        if self.current_provider_gap:
+            gap_seconds = round(time.monotonic() - self.current_provider_gap['start_monotonic'], 1)
+            native_coverage = 'gap'
+            gap_started = self.current_provider_gap['start_utc']
+            cumulative_gap = round(self.cumulative_provider_gap_seconds + gap_seconds, 1)
+        else:
+            gap_seconds = 0
+            native_coverage = 'ok'
+            gap_started = None
+            cumulative_gap = round(self.cumulative_provider_gap_seconds, 1)
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
@@ -382,10 +401,107 @@ class Monitor:
                       'blind_after_recovery':blind_after,
                       'next_navigation_retry':next_retry,
                       'n1_tally':n1_tally,
+                      'native_coverage':native_coverage,
+                      'native_coverage_gap_started':gap_started,
+                      'native_coverage_gap_seconds':gap_seconds,
+                      'native_coverage_cumulative_gap_seconds':cumulative_gap,
                       'mode':'restart_only' if self.restart_only else 'capture', **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
             self.last_status_write = time.monotonic()
+
+    def is_pid_alive(self, pid):
+        if not pid:
+            return False
+        if os.environ.get('TASKMGR_WATCH_TEST') == '1':
+            return getattr(self, '_mock_pid_alive', True)
+        try:
+            if pid in taskmgr_pids():
+                return True
+            kernel32 = ctypes.windll.kernel32
+            h = kernel32.OpenProcess(0x1000, False, pid)
+            if h:
+                exit_code = wintypes.DWORD()
+                kernel32.GetExitCodeProcess(h, ctypes.byref(exit_code))
+                kernel32.CloseHandle(h)
+                return exit_code.value == 259
+            return False
+        except Exception:
+            return False
+
+    def re_enable_native_providers(self):
+        if self.realtime:
+            try:
+                self.realtime.re_enable_provider()
+            except Exception:
+                pass
+        corr_session = None
+        if self.recorder:
+            try:
+                rec_status = self.recorder.status()
+                corr_session = rec_status.get('session')
+            except Exception:
+                pass
+        if corr_session:
+            try:
+                re_enable_session_provider(corr_session, level=2)
+            except Exception:
+                pass
+
+    def check_native_coverage(self, now):
+        if not self.realtime:
+            return
+        target_pid = self.realtime.target_pid or self.state.get('taskmgr_pid')
+        if not target_pid:
+            if self.current_provider_gap:
+                self.current_provider_gap = None
+            return
+
+        if not self.is_pid_alive(target_pid):
+            if self.current_provider_gap:
+                self.current_provider_gap = None
+            return
+
+        rt_status = self.realtime.status()
+        cur_event_count = rt_status.get('provider_event_count', 0)
+        last_mono = rt_status.get('last_provider_event_mono')
+        last_utc = rt_status.get('last_provider_event_utc')
+        last_qpc = rt_status.get('last_provider_event_qpc')
+
+        if cur_event_count > self.last_known_event_count:
+            self.last_known_event_count = cur_event_count
+            if self.current_provider_gap:
+                gap = dict(self.current_provider_gap)
+                gap['end_utc'] = last_utc or timestamp()
+                gap['end_qpc'] = last_qpc or qpc()
+                duration = round(now - gap.pop('start_monotonic'), 1)
+                gap['duration_seconds'] = duration
+                self.cumulative_provider_gap_seconds += duration
+                self.observations.record_native_coverage_gap(gap)
+                self.current_provider_gap = None
+                self.provider_gap_retry_count = 0
+
+        ref_mono = last_mono if last_mono is not None else self.target_pid_start_monotonic
+        if ref_mono is not None and (now - ref_mono >= NATIVE_GAP_THRESHOLD_SECONDS):
+            if self.current_provider_gap is None:
+                self.current_provider_gap = {
+                    'start_utc': last_utc or timestamp(),
+                    'start_qpc': last_qpc or qpc(),
+                    'start_monotonic': ref_mono,
+                    'gap_detected_utc': timestamp(),
+                    'gap_detected_qpc': qpc(),
+                    'taskmgr_pid': target_pid,
+                    'reason': 'no_provider_events_for_15s'
+                }
+                self.provider_gap_retry_count = 0
+                self.re_enable_native_providers()
+                self.last_provider_re_enable_monotonic = now
+            else:
+                delay = NATIVE_GAP_BACKOFF_SCHEDULE[min(self.provider_gap_retry_count, len(NATIVE_GAP_BACKOFF_SCHEDULE)-1)]
+                if now - self.last_provider_re_enable_monotonic >= delay:
+                    self.provider_gap_retry_count += 1
+                    self.re_enable_native_providers()
+                    self.last_provider_re_enable_monotonic = now
 
     def tick(self):
         now = time.monotonic()
@@ -400,6 +516,7 @@ class Monitor:
                     self.realtime.start()
                 except Exception:
                     pass
+            self.check_native_coverage(now)
             if self.pending_navigation:
                 folder,saved=self.pending_navigation
                 self.pending_navigation=None
@@ -473,9 +590,17 @@ class Monitor:
             self.next_navigation_retry_monotonic = None
             self.next_navigation_retry_utc = None
             self.blind_retry_count = 0
+        else:
+            now = time.monotonic()
         self.watch_origin(sample['pid'])
         if self.realtime:
             self.realtime.set_target_pid(sample['pid'])
+        if sample['pid'] != self.current_monitored_pid:
+            self.current_monitored_pid = sample['pid']
+            self.target_pid_start_monotonic = now
+            self.last_known_event_count = self.realtime.status().get('provider_event_count', 0) if self.realtime else 0
+            if self.current_provider_gap:
+                self.current_provider_gap = None
         if self.retry and sample['pid'] != self.retry[1]['taskmgr_pid']:
             self.retry = None  # A working CPU page from another Taskmgr ends the retry.
         identity = (sample['pid'], sample['hwnd'], sample['total'].shape, sample['cores'].shape)
@@ -629,7 +754,8 @@ class Monitor:
         observation = self.observations.record(frames, sample['pid'], os.getpid(),
                                                current_blind=self.current_blind_interval,
                                                trigger_kind=trigger_kind, native_error=native_error,
-                                               corroboration_seconds=corroboration_seconds) if self.recorder else None
+                                               corroboration_seconds=corroboration_seconds,
+                                               current_native_gap=self.current_provider_gap) if self.recorder else None
         self.dump_thread = threading.Thread(target=self.restart_with_trace,
                                             args=(folder,record,frames,observation),daemon=False)
         self.dump_thread.start()

@@ -104,6 +104,7 @@ class Observations:
     def __init__(self):
         self.breaks = deque(maxlen=32)
         self.blind_intervals = deque(maxlen=16)
+        self.native_coverage_gaps = deque(maxlen=16)
         self.uncorroborated_native_errors = deque(maxlen=16)
         self.previous_normal = None
         self.break_count = 0
@@ -112,6 +113,10 @@ class Observations:
     def record_blind_interval(self, interval):
         if interval:
             self.blind_intervals.append(interval)
+
+    def record_native_coverage_gap(self, gap):
+        if gap:
+            self.native_coverage_gaps.append(gap)
 
     def record_uncorroborated_native_error(self, event, reason='not_flat_for_10s'):
         if event:
@@ -150,10 +155,14 @@ class Observations:
             self.reset('detector_state', {'state':state})
 
     def record(self, frames, taskmgr_pid, watcher_pid, current_blind=None,
-               trigger_kind='visual', native_error=None, corroboration_seconds=None):
+               trigger_kind='visual', native_error=None, corroboration_seconds=None,
+               current_native_gap=None):
         intervals = list(self.blind_intervals)
         if current_blind:
             intervals.append(current_blind)
+        gaps = list(self.native_coverage_gaps)
+        if current_native_gap:
+            gaps.append(current_native_gap)
         rec = {'schema_version': 2, 'qpc_frequency': frequency(),
                 'taskmgr_pid': taskmgr_pid, 'watcher_pid': watcher_pid,
                 'clock_basis': 'watcher sample receipt; not native fault timing',
@@ -162,6 +171,7 @@ class Observations:
                                'previous_normal_disconnected':self.previous_normal,
                                'limit':'Disconnected normal is context only, never a control or native fault boundary.'},
                 'blind_intervals': intervals,
+                'native_coverage_gaps': gaps,
                 'uncorroborated_native_events': list(self.uncorroborated_native_errors),
                 'markers': {'last_normal': self.last_normal, 'first_candidate': self.first_candidate,
                             'confirmed': self.confirmed, 'recovery_started': None, 'recovery_finished': None},
