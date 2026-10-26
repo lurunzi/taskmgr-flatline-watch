@@ -2,6 +2,19 @@ $ErrorActionPreference = 'Stop'
 $statusPath = 'D:\TaskmgrFreezeCaptures\status.json'
 $requestPath = Join-Path $PSScriptRoot '.local\stop.request'
 
+function Clean-RealtimeSessions {
+    try {
+        $sessions = logman query -ets 2>$null | Where-Object { $_ -match '^TaskmgrRealtime-' }
+        foreach ($sess in $sessions) {
+            $sessName = ($sess -split '\s+')[0]
+            if ($sessName -match '^TaskmgrRealtime-') {
+                logman stop $sessName -ets 2>$null | Out-Null
+            }
+        }
+    } catch {
+    }
+}
+
 # 1. Check dump_running in status.json
 $watcherPid = $null
 if (Test-Path -LiteralPath $statusPath) {
@@ -31,6 +44,7 @@ if (-not $targetProcess) {
 }
 
 if (-not $targetProcess) {
+    Clean-RealtimeSessions
     Write-Host "Task Manager Flatline Watch is not running."
     exit 0
 }
@@ -57,6 +71,7 @@ while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
 }
 
 if ($exited) {
+    Clean-RealtimeSessions
     Write-Host ("Task Manager Flatline Watch (PID {0}) stopped cleanly in {1:N1}s." -f $watcherPid, $stopwatch.Elapsed.TotalSeconds)
     exit 0
 } else {

@@ -96,8 +96,8 @@
       "lane": "watcher",
       "col": 2,
       "type": "backend",
-      "label": "Confirm stale total",
-      "sublabel": "exact flat / empty: 30 s",
+      "label": "Freeze confirmation",
+      "sublabel": "native 10 s / visual 30 s",
       "width": 150
     },
     {
@@ -239,10 +239,10 @@
       "title": "Candidates, not causal proof",
       "items": [
         "Full logical grid: 80% of widths within one adjacent pixel pair",
-        "Dual ETW: Kernel-Process + Taskmgr Error (128 MB circular)",
-        "0x8007139F native onset and WIL call chain extracted",
-        "Non-empty total: zero tail variation and unchanged height for 30 s",
-        "Empty total needs a painted frame, CPU >= 2% and moving cores",
+        "Fast recovery: native 0x8007139F corroborated by 10 s flat chart",
+        "Visual fallback: 30 s stale total curve confirms unassisted freeze",
+        "Dual circular ETW: Kernel-Process + Taskmgr Error (128 MB)",
+        "Trigger path recorded: native_fast, visual, or both",
         "Missing required coverage or event loss suppresses named ranks",
         "No debugger or dumps; independent phase ranks and controls"
       ]

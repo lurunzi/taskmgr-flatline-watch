@@ -20,6 +20,7 @@ from OriginCapture import OriginWatch
 from TaskmgrRecovery import restart_taskmgr, restore_cpu_page, save_navigation_failure_window
 from ProcessTrace import qpc
 from RollingProcessTrace import RollingRecorder, TRACE_BUDGET
+from RealtimeTrace import RealtimeConsumer
 from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS, mark_recovery
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -239,6 +240,12 @@ class Monitor:
         self.observations = Observations()
         self.recorder = RollingRecorder(OUTPUT, trace_budget=etw_budget) if light_etw else None
         self.offline = OfflineProcessor() if light_etw else None
+        self.realtime = RealtimeConsumer() if light_etw else None
+        if self.realtime:
+            try:
+                self.realtime.start()
+            except Exception:
+                pass
         self.process = self.pipe = None
         self.pending = None
         self.identity = None
@@ -367,6 +374,7 @@ class Monitor:
                       'origin_mode':'query_trace' if self.origin.query_trace else 'procdump',
                       'light_etw':self.recorder.status() if self.recorder else {'state':'disabled'},
                       'incident_analysis':self.offline.status() if self.offline else {'status':'disabled'},
+                      'realtime_consumer':self.realtime.status() if self.realtime else {'state':'disabled'},
                       'target_dll':self.target_dll,
                       'dll_changed':self.target_dll.get('dll_changed', False),
                       'waiting_since':waiting_since,
@@ -387,6 +395,11 @@ class Monitor:
         try:
             if self.recorder and self.recorder.status()['state']=='stopped':
                 self.recorder.start()
+            if self.realtime and self.realtime.status()['state']=='stopped' and self.light_etw:
+                try:
+                    self.realtime.start()
+                except Exception:
+                    pass
             if self.pending_navigation:
                 folder,saved=self.pending_navigation
                 self.pending_navigation=None
@@ -461,6 +474,8 @@ class Monitor:
             self.next_navigation_retry_utc = None
             self.blind_retry_count = 0
         self.watch_origin(sample['pid'])
+        if self.realtime:
+            self.realtime.set_target_pid(sample['pid'])
         if self.retry and sample['pid'] != self.retry[1]['taskmgr_pid']:
             self.retry = None  # A working CPU page from another Taskmgr ends the retry.
         identity = (sample['pid'], sample['hwnd'], sample['total'].shape, sample['cores'].shape)
@@ -493,8 +508,32 @@ class Monitor:
             VERIFY_REQUEST.unlink()
             self.trigger(sample, verification=True, recovery_test=recovery_test)
             return
+        if self.realtime:
+            native_error = self.realtime.poll_native_error()
+            if (native_error and native_error.get('taskmgr_pid') == sample['pid'] and
+                str(native_error.get('hresult', '')).upper() in ('0X8007139F', '2147947423', '-2147019873') and
+                native_error.get('module') == 'TaskManagerDataLayer.dll'):
+                t_native = native_error['timestamp_monotonic']
+                dt = now - t_native
+                flat_since = self.detector.since
+                if flat_since is not None and self.detector.anchor is not None:
+                    corroboration_seconds = now - max(flat_since, t_native)
+                    if dt >= 10.0 and corroboration_seconds >= 10.0:
+                        self.realtime.clear_native_error()
+                        trigger_kind = 'both' if result['state'] == 'suspect' else 'native_fast'
+                        self.trigger(sample, trigger_kind=trigger_kind, native_error=native_error,
+                                     corroboration_seconds=corroboration_seconds)
+                        return
+                elif dt >= 25.0:
+                    self.realtime.clear_native_error()
+                    self.observations.record_uncorroborated_native_error(native_error, 'chart_not_flat_for_10s')
+
         if result['state'] == 'suspect' and (result['alert'] or self.capture_result in ('dump_failed','recovered',None)):
-            self.trigger(sample)
+            native_error = self.realtime.clear_native_error() if self.realtime else None
+            trigger_kind = 'both' if native_error else 'visual'
+            corroboration_seconds = (now - native_error['timestamp_monotonic']) if native_error else None
+            self.trigger(sample, trigger_kind=trigger_kind, native_error=native_error,
+                         corroboration_seconds=corroboration_seconds)
             return
         self.publish(result['state'], taskmgr_pid=sample['pid'], seconds=result['seconds'],
                      logical_graphs=len(sample['geometry'])-1,
@@ -502,7 +541,8 @@ class Monitor:
                      detector_reason=result.get('reason'),
                      system_cpu_percent=sample.get('system_cpu_percent'))
 
-    def trigger(self, sample, verification=False, recovery_test=False):
+    def trigger(self, sample, verification=False, recovery_test=False,
+                trigger_kind='visual', native_error=None, corroboration_seconds=None):
         if self.dump_thread and self.dump_thread.is_alive():
             self.publish(self.background_phase(),taskmgr_pid=sample['pid'])
             return
@@ -514,7 +554,8 @@ class Monitor:
             self.publish('cooldown',taskmgr_pid=sample['pid'],cooldown_remaining=round(remaining))
             return
         if self.restart_only and not verification:
-            self.restart_now(sample, target)
+            self.restart_now(sample, target, trigger_kind=trigger_kind, native_error=native_error,
+                             corroboration_seconds=corroboration_seconds)
             return
         if not storage_available():
             self.publish('storage_limit')
@@ -544,11 +585,18 @@ class Monitor:
         self.dump_thread.start()
         self.publish('capturing',taskmgr_pid=sample['pid'])
 
-    def restart_now(self, sample, target):
+    def restart_now(self, sample, target, trigger_kind='visual', native_error=None, corroboration_seconds=None):
         folder = OUTPUT/('restart-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
         folder.mkdir()
         record = {'classification':'restart_only', 'timestamp':timestamp(), 'taskmgr_pid':sample['pid'],
-                  'window':sample['hwnd'], 'confirm_seconds':30, 'status':'complete'}
+                  'window':sample['hwnd'],
+                  'confirm_seconds':30 if trigger_kind == 'visual' else round(corroboration_seconds or 10.0, 1),
+                  'trigger_kind':trigger_kind, 'status':'complete'}
+        if native_error:
+            record['native_event_time'] = native_error.get('timestamp_utc')
+            record['native_event_qpc'] = native_error.get('timestamp_qpc')
+        if corroboration_seconds is not None:
+            record['visual_corroboration_seconds'] = round(corroboration_seconds, 1)
         write_json(folder/'event.json',record)
         self.last_capture = time.monotonic()
         self.last_capture_target = target
@@ -557,7 +605,9 @@ class Monitor:
         self.recovery_result = None
         frames = list(self.frames)
         observation = self.observations.record(frames, sample['pid'], os.getpid(),
-                                               current_blind=self.current_blind_interval) if self.recorder else None
+                                               current_blind=self.current_blind_interval,
+                                               trigger_kind=trigger_kind, native_error=native_error,
+                                               corroboration_seconds=corroboration_seconds) if self.recorder else None
         self.dump_thread = threading.Thread(target=self.restart_with_trace,
                                             args=(folder,record,frames,observation),daemon=False)
         self.dump_thread.start()
@@ -799,6 +849,8 @@ class Monitor:
         self.reset_worker()
         if self.recorder:
             self.recorder.stop()
+        if self.realtime:
+            self.realtime.stop()
         self.reset_observations('monitor_stopped')
         self.last_status_write = 0
         self.publish('stopped')

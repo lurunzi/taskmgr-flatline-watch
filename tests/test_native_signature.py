@@ -79,11 +79,23 @@ class NativeSignatureTests(unittest.TestCase):
         self.assertEqual(sig['verdict'], 'indeterminate')
         self.assertIn('blind', sig['reason'])
 
-    def test_unrecorded_not_present(self):
+    def test_unrecorded_provider_uncovered(self):
         sig = A.extract_native_signature(
             [], [], {},
-            {'markers': {'first_candidate': {'qpc': 5000}, 'last_normal': {'qpc': 4000}}},
-            None, 1000, 0, 8000,
+            {'markers': {'first_candidate': {'qpc': 50000}, 'last_normal': {'qpc': 40000}}},
+            None, 1000, 0, 80000,
+            quality={'preceding_blind_interval': None, 'circular_overwrite': False}
+        )
+        self.assertFalse(sig['recorded'])
+        self.assertEqual(sig['verdict'], 'indeterminate')
+        self.assertIn('provider_uncovered', sig['reason'])
+
+    def test_unrecorded_not_present(self):
+        # Provider delivered an event in the 10s pre-candidate window (qpc 45000), but not the signature error
+        sig = A.extract_native_signature(
+            [{'raw': '45000', 'module': 'Taskmgr.exe', 'hresult': 0}], [], {},
+            {'markers': {'first_candidate': {'qpc': 50000}, 'last_normal': {'qpc': 40000}}},
+            None, 1000, 0, 80000,
             quality={'preceding_blind_interval': None, 'circular_overwrite': False}
         )
         self.assertFalse(sig['recorded'])

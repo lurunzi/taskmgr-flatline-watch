@@ -19,6 +19,13 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Native freeze error fast recovery (26 October 2026)
+
+The watcher now consumes `Microsoft.Windows.Taskmgr` (`{2e635d8e-1107-4555-9319-32eeb895aaae}`) in real time via a dedicated Win32 ETW consumer (`RealtimeConsumer`). When `TaskManagerDataLayer.dll` reports `0x8007139F` on the currently monitored Task Manager process:
+- **Fast recovery path (`native_fast`)**: The watcher checks whether the total CPU chart stays flat (`tail_spread == 0.0`) for at least 10 seconds following the native error. If corroborated, it immediately triggers incident preservation and recovery without waiting for the full 30-second visual threshold.
+- **Uncorroborated guard**: If the chart continues fluctuating or does not stay flat for 10 seconds within 25 seconds of the native error, the signal is recorded as "Native error not corroborated visually" (`chart_not_flat_for_10s`) and no recovery is triggered.
+- **Visual fallback and cross-check**: The 30-second visual flatline detector remains active as a safety net. Each incident records its trigger path (`native_fast`, `visual`, or `both`), native error timestamp, and visual corroboration duration in `event.json`, `observation.json`, and offline reports. Cooldown and deduplication rules ensure that repeat events on the same target trigger recovery only once.
+
 ## Native freeze signature recording (26 October 2026)
 
 Lightweight incident recording now includes Task Manager's own TraceLogging provider `Microsoft.Windows.Taskmgr` (`{2e635d8e-1107-4555-9319-32eeb895aaae}`) at Level 2 (Error) alongside kernel process and thread start/exit events. Both providers are captured in a single unified circular ETW session using `logman -pf providers.guid` with the buffer size increased to 128 MB (providing over 2 hours of history, well above the 20-minute minimum requirement).
@@ -216,6 +223,13 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 原生错误触发快速恢复（2026年10月26日）
+
+监测器现通过专用的 Win32 实时 ETW 消费者（`RealtimeConsumer`）实时监听 `Microsoft.Windows.Taskmgr`（`{2e635d8e-1107-4555-9319-32eeb895aaae}`）。当当前被监测的任务管理器进程中 `TaskManagerDataLayer.dll` 报出 `0x8007139F` 错误时：
+- **快速恢复路径（`native_fast`）**：监测器检验总 CPU 图表在原生错误发生后是否保持平直（`tail_spread == 0.0`）至少 10 秒。若得到视觉印证，立即触发事件留存与自动恢复，无需等待满 30 秒视觉阈值。
+- **未印证防误触发守卫**：若原生错误发生后图表仍在波动或在 25 秒内未能满足连续 10 秒平直，该信号记录为“原生信号未得到视觉印证”（`chart_not_flat_for_10s`），不触发恢复。
+- **视觉兜底与交叉核对**：原有的 30 秒视觉平线检测完整保留作为兜底安全网。每次事件在 `event.json`、`observation.json` 与离线分析报告中记录具体触发方式（`native_fast`、`visual` 或 `both`）、原生事件时间及视觉印证时长。冷却机制与防重复设计确保同一目标上的重复事件只恢复一次。
 
 ## 原生卡死特征记录（2026年10月26日）
 

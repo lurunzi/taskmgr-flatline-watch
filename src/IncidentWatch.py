@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ProcessTrace import frequency, qpc
@@ -104,6 +104,7 @@ class Observations:
     def __init__(self):
         self.breaks = deque(maxlen=32)
         self.blind_intervals = deque(maxlen=16)
+        self.uncorroborated_native_errors = deque(maxlen=16)
         self.previous_normal = None
         self.break_count = 0
         self.reset('watcher_start')
@@ -111,6 +112,14 @@ class Observations:
     def record_blind_interval(self, interval):
         if interval:
             self.blind_intervals.append(interval)
+
+    def record_uncorroborated_native_error(self, event, reason='not_flat_for_10s'):
+        if event:
+            self.uncorroborated_native_errors.append({
+                'event': event,
+                'recorded_utc': datetime.now(timezone.utc).isoformat(),
+                'reason': reason
+            })
 
     def reset(self, reason='unspecified', detail=None):
         prior = getattr(self,'last_normal',None)
@@ -140,20 +149,32 @@ class Observations:
         else:
             self.reset('detector_state', {'state':state})
 
-    def record(self, frames, taskmgr_pid, watcher_pid, current_blind=None):
+    def record(self, frames, taskmgr_pid, watcher_pid, current_blind=None,
+               trigger_kind='visual', native_error=None, corroboration_seconds=None):
         intervals = list(self.blind_intervals)
         if current_blind:
             intervals.append(current_blind)
-        return {'schema_version': 2, 'qpc_frequency': frequency(),
+        rec = {'schema_version': 2, 'qpc_frequency': frequency(),
                 'taskmgr_pid': taskmgr_pid, 'watcher_pid': watcher_pid,
                 'clock_basis': 'watcher sample receipt; not native fault timing',
+                'trigger_kind': trigger_kind,
                 'continuity': {'break_count':self.break_count,'recent_breaks':list(self.breaks),
                                'previous_normal_disconnected':self.previous_normal,
                                'limit':'Disconnected normal is context only, never a control or native fault boundary.'},
                 'blind_intervals': intervals,
+                'uncorroborated_native_events': list(self.uncorroborated_native_errors),
                 'markers': {'last_normal': self.last_normal, 'first_candidate': self.first_candidate,
                             'confirmed': self.confirmed, 'recovery_started': None, 'recovery_finished': None},
                 'samples': [{'qpc': f['qpc'], 'utc': f['timestamp'], **f['result']} for f in frames]}
+        if rec['markers']['confirmed'] is None and frames:
+            rec['markers']['confirmed'] = {'qpc': frames[-1]['qpc'], 'utc': frames[-1]['timestamp']}
+        if rec['markers']['first_candidate'] is None and rec['markers']['confirmed'] is not None:
+            rec['markers']['first_candidate'] = rec['markers']['confirmed']
+        if native_error:
+            rec['native_event'] = native_error
+        if corroboration_seconds is not None:
+            rec['visual_corroboration_seconds'] = round(corroboration_seconds, 1)
+        return rec
 
 
 def mark_recovery(folder, name, utc):

@@ -1,6 +1,6 @@
 {
   "date": "2026-10-26",
-  "purpose": "Record Taskmgr Error ETW provider alongside kernel events and extract 0x8007139F native call chain (N2).",
+  "purpose": "Fast recovery triggered on Taskmgr native 0x8007139F error with 10s visual flat corroboration; visual 30s fallback (N3).",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -11,20 +11,20 @@
   "quality_profile": "showcase",
   "correction_rounds": 1,
   "corrections": [
-    "Dual circular ETW: Kernel-Process + Taskmgr Error (128 MB circular); native error and WIL call chain extracted alongside process churn."
+    "Fast recovery: native 0x8007139F corroborated by 10 s flat chart; 30 s visual fallback and trigger path recording (N3)."
   ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "a0ab4678cd6eccaf92413f4775df46613e3ac458ca96944bf3706f58e15d2b7e",
-        "bytes": 5603
+        "sha256": "c741b6f276b819910a0f8e508955c3d4da6edc8841bd13f28b041d5ceff7c853",
+        "bytes": 5606
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "0c98793b77072889169aaeee6ff2c91191bed6da3b122caa7cfb51b2360d98b4",
-        "bytes": 716880,
+        "sha256": "7e2d4ff510ec1979c71e10ff0ce77adcaa12a445a57c04a53e7cd21512189900",
+        "bytes": 716883,
         "committed": false
       },
       "validation": {
@@ -41,16 +41,16 @@
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "71d505909139a3f81647a74816cbbd5d0dd991a3a98214e8c2e41b325a65b9c9",
-          "bytes": 573131,
+          "sha256": "98a811ff9c3b8b177b3ab3dbeb0d53dd4023b8b4fc6e70719bd169b1637b0413",
+          "bytes": 573997,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "b15ce9b5cc26bbad42f4fc15aa8a8ebf2e9b84cd740321d6c3cc4e26bcd3f584",
-          "bytes": 587100,
+          "sha256": "8feff3585b0f994aec7ed8d12c6eb04021623a64c37d9ff45167700e7e0efb6b",
+          "bytes": 588294,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -61,13 +61,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "11ad2dd0ac871b97b334c477a0fc2f41a8a9aa8f3aa610102c76f1b87002a91f",
-        "bytes": 5644
+        "sha256": "5b10ec6b910fdfe4c730cc927acc15de22c2814057dfc115b1db9eec2baed1e5",
+        "bytes": 5656
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "5a78a966998d27f925f078e4ed503efa033b7cf7546bc588e3eaf4e4ecc9d157",
-        "bytes": 716630,
+        "sha256": "2cc46b722446f6cf24e840885dee94b2cf68c7f6459256bedeff4ff53f2c45c7",
+        "bytes": 716672,
         "committed": false
       },
       "validation": {
@@ -84,16 +84,16 @@
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "49ee2b60ebacce2a2f3b8187553405bcfcfc04e383416249ddce13ad46a515fb",
-          "bytes": 608439,
+          "sha256": "3c3f9ca1124a463efccb334e23dec57e66aaaaf58136336583f564d80c76df65",
+          "bytes": 608883,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "1cfb3ccc725556b6fd4a2e678e850e6fdeeb36d7ce6c22cab4db95b9c3f975dd",
-          "bytes": 618751,
+          "sha256": "fdc61948ad869928179ffb2663baa82778619b42aad83cd0499f1a34c41f824b",
+          "bytes": 619442,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true

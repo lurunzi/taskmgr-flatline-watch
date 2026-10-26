@@ -426,11 +426,42 @@ def extract_native_signature(native_events, events, header, observation, resolve
                 'processes_started': processes_started,
                 'top_thread_creators': top_thread_creators
             },
-            'limits': 'Temporal association only; not proven causation. Call chain is WIL event log, not full stack trace.'
+            'limits': 'Temporal association only; not proven causation. Call chain is WIL event log, not full stack trace.',
+            'trigger_kind': observation.get('trigger_kind', 'visual'),
+            'visual_corroboration_seconds': observation.get('visual_corroboration_seconds')
         }
 
     preceding_blind = quality.get('preceding_blind_interval') if quality else None
     circular = quality.get('circular_overwrite') if quality else False
+
+    # Check whether the provider actually delivered events in the pre-onset window (e.g. 10s before first candidate).
+    has_recent_provider_events = False
+    if first is not None:
+        provider_window_start = first - 10 * freq
+        for ev in native_events:
+            ev_qpc = None
+            if ev.get('raw'):
+                try:
+                    ev_qpc = int(ev['raw'])
+                except ValueError:
+                    pass
+            if ev_qpc is None and ev.get('system_time') and anchor_utc and anchor_qpc:
+                try:
+                    dt = datetime.fromisoformat(ev['system_time'])
+                    diff_sec = (dt - anchor_utc).total_seconds()
+                    ev_qpc = anchor_qpc + int(diff_sec * freq)
+                except Exception:
+                    pass
+            elif ev_qpc is None and ev.get('system_time') and header.get('raw_start') and header.get('StartTime'):
+                try:
+                    dt = datetime.fromisoformat(ev['system_time'])
+                    ticks_val = int(dt.timestamp()) * 10_000_000 + 116444736000000000 + dt.microsecond * 10
+                    ev_qpc = header['raw_start'] + (ticks_val - header['StartTime']) * freq // 10_000_000
+                except Exception:
+                    pass
+            if ev_qpc is not None and provider_window_start <= ev_qpc <= first:
+                has_recent_provider_events = True
+                break
 
     if preceding_blind:
         reason = 'blind: monitoring inactive or lost before incident; onset indeterminate'
@@ -440,6 +471,9 @@ def extract_native_signature(native_events, events, header, observation, resolve
         verdict = 'indeterminate'
     elif first and (first - 120 * freq > 0 and coverage_begin > first - 120 * freq or circular):
         reason = 'uncovered: trace history does not cover pre-candidate window'
+        verdict = 'indeterminate'
+    elif not has_recent_provider_events:
+        reason = 'provider_uncovered: no provider events delivered in pre-onset window'
         verdict = 'indeterminate'
     else:
         reason = 'not_present: provider error did not occur in retained window'
@@ -476,40 +510,45 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
     summary.setdefault('status', 'evaluating')
     summary.setdefault('history', [])
 
-    existing = [h for h in summary['history'] if h.get('incident') == incident_name]
-    if not existing:
-        verdict = native_sig.get('verdict', 'indeterminate')
-        entry = {
-            'incident': incident_name,
-            'timestamp_utc': timestamp_utc or datetime.now(timezone.utc).isoformat(),
-            'verdict': verdict,
-            'recorded': native_sig.get('recorded', False),
-            'reason': native_sig.get('reason'),
-            'hresult': native_sig.get('hresult'),
-            'qpc': native_sig.get('qpc'),
-            'lead_seconds': native_sig.get('lead_seconds_before_first_candidate')
-        }
-        if verdict == 'conforming':
-            summary['qualifying_count'] += 1
-            summary['conforming_count'] += 1
-        elif verdict == 'non_conforming':
-            summary['qualifying_count'] += 1
-            summary['non_conforming_count'] += 1
-        else:
-            summary['indeterminate_count'] += 1
+    existing_idx = None
+    for idx, h in enumerate(summary['history']):
+        if h.get('incident') == incident_name:
+            existing_idx = idx
+            break
+
+    verdict = native_sig.get('verdict', 'indeterminate')
+    entry = {
+        'incident': incident_name,
+        'timestamp_utc': timestamp_utc or datetime.now(timezone.utc).isoformat(),
+        'verdict': verdict,
+        'recorded': native_sig.get('recorded', False),
+        'reason': native_sig.get('reason'),
+        'hresult': native_sig.get('hresult'),
+        'qpc': native_sig.get('qpc'),
+        'lead_seconds': native_sig.get('lead_seconds_before_first_candidate')
+    }
+
+    if existing_idx is not None:
+        summary['history'][existing_idx] = entry
+    else:
         summary['history'].append(entry)
 
-        if summary['conforming_count'] >= 9:
-            summary['status'] = 'passed'
-        elif summary['non_conforming_count'] >= 3:
-            summary['status'] = 'failed'
-        else:
-            summary['status'] = 'evaluating'
+    summary['conforming_count'] = sum(1 for h in summary['history'] if h.get('verdict') == 'conforming')
+    summary['non_conforming_count'] = sum(1 for h in summary['history'] if h.get('verdict') == 'non_conforming')
+    summary['indeterminate_count'] = sum(1 for h in summary['history'] if h.get('verdict') == 'indeterminate')
+    summary['qualifying_count'] = summary['conforming_count'] + summary['non_conforming_count']
 
-        try:
-            summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        except Exception:
-            pass
+    if summary['conforming_count'] >= 9:
+        summary['status'] = 'passed'
+    elif summary['non_conforming_count'] >= 3:
+        summary['status'] = 'failed'
+    else:
+        summary['status'] = 'evaluating'
+
+    try:
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    except Exception:
+        pass
     return summary
 
 
@@ -644,6 +683,9 @@ def analyze(folder, output=None):
         coverage_begin, coverage_end, quality=quality, folder=folder
     )
     result['native_signature'] = native_sig
+    result['trigger_kind'] = observation.get('trigger_kind', 'visual')
+    if observation.get('visual_corroboration_seconds') is not None:
+        result['visual_corroboration_seconds'] = observation['visual_corroboration_seconds']
 
     output.mkdir(parents=True,exist_ok=True)
     (output/'incident-analysis.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
@@ -667,6 +709,7 @@ def native_signature_text(sig, zh):
             'blind: monitoring inactive or lost before incident; onset indeterminate': '监测失明：事件前监测失效或断开；起点不可判定',
             'missing_normal: no connected last normal observation before first candidate; onset indeterminate': '缺失正常基线：首次候选前无相连正常观察；起点不可判定',
             'uncovered: trace history does not cover pre-candidate window': '未覆盖：追踪历史未完整覆盖候选前窗口',
+            'provider_uncovered: no provider events delivered in pre-onset window': '提供程序未覆盖：起点前窗口内未收到该提供程序事件',
             'not_present: provider error did not occur in retained window': '确实没有：保留窗口内未出现该提供程序错误'
         }
         reason = sig.get('reason', 'unspecified')
@@ -674,8 +717,16 @@ def native_signature_text(sig, zh):
         lines += [(f'未记录到原生特征（原因：{reason_text}）。' if zh else f'Not recorded (reason: {reason_text}).'), '']
         return '\n'.join(lines) + '\n'
 
+    trigger = sig.get('trigger_kind')
+    corroboration = sig.get('visual_corroboration_seconds')
+    trigger_lines = []
+    if trigger:
+        corrob_str = f" ({corroboration} s visual corroboration)" if corroboration is not None else ""
+        corrob_zh = f"（视觉印证 {corroboration} 秒）" if corroboration is not None else ""
+        trigger_lines.append(f"触发方式：`{trigger}`{corrob_zh}。" if zh else f"Trigger path: `{trigger}`{corrob_str}.")
+
     verdict_label = ('符合' if sig['verdict'] == 'conforming' else '不符合') if zh else sig['verdict'].capitalize()
-    lines += [
+    lines += trigger_lines + [
         (f"状态：{verdict_label}（来自 `{sig['module']}` 的 `{sig['hresult']}`）。" if zh else
          f"Status: {verdict_label} (`{sig['hresult']}` from `{sig['module']}`)."),
         (f"时间：`{sig['utc']}`（QPC: `{sig['qpc']}`）；线程：`{sig['thread_id']}`（PID: `{sig.get('taskmgr_pid', 'unknown')}`）。" if zh else
