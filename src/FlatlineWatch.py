@@ -25,6 +25,7 @@ TEXT = {
  'autostart':'开机自启动', 'autostart_missing':'未安装自启动（运行 Install.cmd）', 'query_trace':'查询追踪',
  'restart_only':'只重启，不取证', 'hint_restart':'持续异常 30 秒后直接重启任务管理器，不保存转储和图表，然后继续检测。',
  'restart_cooldown':'重启冷却中', 'restarted':'任务管理器已重启', 'restart_failed':'重启未完成，稍后重试',
+ 'blind_status':'监测失效', 'blind_alert':'监测失效（等待 CPU 页面）',
  'light_etw':'轻量事件记录', 'etw_error':'事件记录不可用，请查看状态记录',
  'etw_budget':'事件记录暂停：{used:.2f} / {budget:g} GiB',
  'etw_disk':'事件记录暂停：磁盘可用 {free:.2f} GiB',
@@ -43,6 +44,7 @@ TEXT = {
  'autostart':'Start at logon', 'autostart_missing':'Autostart not installed (run Install.cmd)', 'query_trace':'Query trace',
  'restart_only':'Restart only, no evidence', 'hint_restart':'After 30 seconds of suspected freezing, restarts Task Manager directly without saving dumps or graphs, then resumes detection.',
  'restart_cooldown':'Restart cooldown', 'restarted':'Task Manager restarted', 'restart_failed':'Restart incomplete; retrying',
+ 'blind_status':'Monitoring inactive', 'blind_alert':'Monitoring inactive (waiting for CPU page)',
  'light_etw':'Light event recording', 'etw_error':'Event recording unavailable; see status record',
  'etw_budget':'Recording paused: {used:.2f} / {budget:g} GiB',
  'etw_disk':'Recording paused: {free:.2f} GiB disk free',
@@ -134,8 +136,11 @@ class Watch(QWidget):
         state=self.monitor.state
         restart_only=self.monitor.restart_only
         key=state['state']
+        blind_sec=state.get('blind_seconds', 0)
+        is_blind_timeout = (key == 'waiting' and blind_sec >= 300)
         if restart_only and key=='cooldown':key='restart_cooldown'
-        self.status.setText(self.text(key) + (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else '')
+        base_label = self.text('blind_status') if is_blind_timeout else self.text(key)
+        self.status.setText(base_label + (f" · {blind_sec:.0f}s" if is_blind_timeout else (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else ''))
                             + (f" · {self.text('query_trace')}" if self.monitor.origin.query_trace and not restart_only else '')
                             + (f" · {self.text('light_etw')}" if self.monitor.light_etw else ''))
         result=self.monitor.capture_result
@@ -162,7 +167,10 @@ class Watch(QWidget):
             self.details.setToolTip('')
         self.pause.setText(self.text('pause' if self.monitor.enabled else 'resume'))
         self.report_action.setEnabled(bool(self.report_path()))
-        self.tray.setToolTip(self.text('title')+'\n'+self.status.text())
+        if is_blind_timeout:
+            self.tray.setToolTip(f"{self.text('title')}\n{self.text('blind_alert')} ({blind_sec:.0f}s)")
+        else:
+            self.tray.setToolTip(self.text('title')+'\n'+self.status.text())
     def report_path(self):
         from pathlib import Path
         current=self.monitor.offline.status() if self.monitor.offline else {}

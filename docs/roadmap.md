@@ -63,6 +63,7 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
 | A5 | Fix the operational gaps: each analysis attempt runs in a Windows Job Object so a timeout ends its whole process tree; the queue writes each incident's state when it is queued, keeps retries within its capacity and records cancelled work on shutdown; failures are classified by stage before retrying; `Stop.ps1` waits for the process to exit and `Start.cmd` confirms the new instance's heartbeat | Done 25 October 2026: Job Object process tree termination, queue capacity, shutdown cancellation, stage timings, and verified Stop/Start wait loop | Small to medium |
 | A6 | Finalise the corrected Feedback Hub material now, without waiting for N1 or A2; the confirmed function defects justify it on their own. Add the 9549 result and the incident rate | The owner posts it | Owner only; external publication |
 | A7 | Decide whether to resume live query tracing on 9549 for the causal chain | A recorded decision | Parked unless N1 or A2 shows a clear association and the owner authorises it |
+| A8 | Resolve blind waiting after failed post-recovery navigation: retry navigation with exponential backoff (120, 300, 600, 1200, 1800 s) and an hourly cap (4/h); defer when the user interacts with Taskmgr in the foreground; terminate when the target PID exits; surface "Monitoring inactive" in tray and status.json after 5 minutes; record blind intervals in observations; flag indeterminate onset in offline analysis; and record bounded failure diagnostics (UIA tree summary and window screenshot) | Done 26 October 2026: navigation-only backoff retries, user non-interference guard, PID liveliness check, visible blind state, evidence recording, indeterminate onset warning, and bounded diagnostics | Small to medium |
 
 Decision rule for N1: the signature passes if, in the first 10 flatlines recorded by the probe, `0x8007139F` from `TaskManagerDataLayer.dll` occurs in at least 9 no later than the first flat candidate, and if outside flatlines it occurs at most once a day. It fails if it is missing from 3 or more of those 10; the analysis then falls back to A1 and A2.
 
@@ -131,6 +132,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | A5 | 补运行缺口：每次分析尝试放进 Windows Job Object，超时时结束整个进程树；队列在入队时就写入事件状态，重试不超出容量，退出时记录被取消的项目；重试前按阶段区分失败类型；`Stop.ps1` 等进程退出，`Start.cmd` 确认新实例的心跳 | 2026-10-25 已完成：Job Object 进程树清理、队列容量与退出状态、分阶段限时与耗时记录、启停等待心跳均已受控验证 | 小到中 |
 | A6 | 现在就定稿修订后的反馈中心材料，不等 N1 或 A2；已确认的函数缺陷本身就值得提交。补充 9549 结果和事件频率 | 负责人发布 | 仅负责人；属对外发布 |
 | A7 | 决定是否为因果链恢复 9549 上的现场查询追踪 | 有记录在案的决定 | 搁置，除非 N1 或 A2 显示明确关联且负责人授权 |
+| A8 | 解决恢复后导航失败导致的长时间失明：以指数退避（120、300、600、1200、1800 秒）和每小时上限（4 次）重试导航；任务管理器在前台且用户有操作时推迟；目标 PID 退出时终止；失明超过 5 分钟在托盘与 status.json 显示“监测失效”；在观察记录中留存失明区间；离线分析中标记起点不可判定；导航失败保存有上限的诊断（UIA 树摘要与窗口截图） | 2026-10-26 已完成：只导航退避重试、防抢占守卫、PID 存活检查、可见失明状态、证据区间记录、起点不可判定警示与诊断保存 | 小到中 |
 
 N1 的判定规则：探测记录到的前 10 次平线中，至少 9 次在首次平线候选之前或同时出现来自 `TaskManagerDataLayer.dll` 的 `0x8007139F`，且平线之外每天最多出现一次，则通过。10 次中有 3 次或以上缺失则不通过，分析退回 A1 和 A2。
 

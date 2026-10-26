@@ -103,9 +103,14 @@ class JobObject:
 class Observations:
     def __init__(self):
         self.breaks = deque(maxlen=32)
+        self.blind_intervals = deque(maxlen=16)
         self.previous_normal = None
         self.break_count = 0
         self.reset('watcher_start')
+
+    def record_blind_interval(self, interval):
+        if interval:
+            self.blind_intervals.append(interval)
 
     def reset(self, reason='unspecified', detail=None):
         prior = getattr(self,'last_normal',None)
@@ -135,13 +140,17 @@ class Observations:
         else:
             self.reset('detector_state', {'state':state})
 
-    def record(self, frames, taskmgr_pid, watcher_pid):
+    def record(self, frames, taskmgr_pid, watcher_pid, current_blind=None):
+        intervals = list(self.blind_intervals)
+        if current_blind:
+            intervals.append(current_blind)
         return {'schema_version': 2, 'qpc_frequency': frequency(),
                 'taskmgr_pid': taskmgr_pid, 'watcher_pid': watcher_pid,
                 'clock_basis': 'watcher sample receipt; not native fault timing',
                 'continuity': {'break_count':self.break_count,'recent_breaks':list(self.breaks),
                                'previous_normal_disconnected':self.previous_normal,
                                'limit':'Disconnected normal is context only, never a control or native fault boundary.'},
+                'blind_intervals': intervals,
                 'markers': {'last_normal': self.last_normal, 'first_candidate': self.first_candidate,
                             'confirmed': self.confirmed, 'recovery_started': None, 'recovery_finished': None},
                 'samples': [{'qpc': f['qpc'], 'utc': f['timestamp'], **f['result']} for f in frames]}

@@ -15,14 +15,34 @@ def main_window(pid):
             return hwnd
     return None
 
-def restore_cpu_page(pid):
+def save_navigation_failure_window(pid, folder):
+    """Save bounded screenshot of Taskmgr window only upon navigation failure."""
+    if not folder:
+        return
+    try:
+        dest = Path(folder)/'navigation-window.png'
+        if dest.exists():
+            return
+        hwnd = main_window(pid)
+        if hwnd:
+            from NativeCapture import capture
+            import cv2
+            img = capture(hwnd)
+            cv2.imwrite(str(dest), img)
+    except Exception:
+        pass
+
+def restore_cpu_page(pid, folder=None):
     script=Path(__file__).resolve().parents[1]/'tools/Restore-CpuPage.ps1'
     result={'navigation':[]}
     for attempt in range(2):
         started=time.monotonic()
         try:
-            completed=subprocess.run(['powershell.exe','-NoProfile','-STA','-ExecutionPolicy','Bypass',
-                                      '-File',str(script),'-TargetPid',str(pid)],
+            cmd = ['powershell.exe','-NoProfile','-STA','-ExecutionPolicy','Bypass',
+                   '-File',str(script),'-TargetPid',str(pid)]
+            if folder:
+                cmd.extend(['-DiagnoseFolder',str(folder)])
+            completed=subprocess.run(cmd,
                                      capture_output=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
             code,output=completed.returncode,(completed.stdout+completed.stderr).decode(errors='replace')[-4000:]
         except subprocess.TimeoutExpired:
@@ -36,10 +56,12 @@ def restore_cpu_page(pid):
             if found and found[1]==pid:
                 result.update(status='restarted',new_pid=pid,logical_graphs=len(found[3]))
                 return result
+    if folder:
+        save_navigation_failure_window(pid, folder)
     result.update(status='restarted_waiting_for_cpu_page')
     return result
 
-def restart_taskmgr(pid, hwnd):
+def restart_taskmgr(pid, hwnd, folder=None):
     k=c.WinDLL('kernel32',use_last_error=True)
     signature(k,'OpenProcess',[w.DWORD,w.BOOL,w.DWORD],w.HANDLE)
     signature(k,'CloseHandle',[w.HANDLE],w.BOOL)
@@ -89,5 +111,5 @@ def restart_taskmgr(pid, hwnd):
             break
     result['launch_seconds']=round(time.monotonic()-started,1)
     # Navigation is bounded to the newly launched Task Manager.
-    result.update(restore_cpu_page(child.pid))
+    result.update(restore_cpu_page(child.pid, folder=folder))
     return result

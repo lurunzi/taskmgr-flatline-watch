@@ -225,12 +225,25 @@ def analyze(folder, output=None):
     control = normal_window(samples,last,bounds[1]-bounds[0]) if valid_window and last is not None else None
     if control and not coverage_begin<=control[0]<control[1]<=coverage_end:
         control = None
+    blind_intervals = observation.get('blind_intervals', [])
+    preceding_blind = None
+    if blind_intervals:
+        first_qpc = marker('first_candidate')
+        for b in reversed(blind_intervals):
+            end_qpc = b.get('end_qpc')
+            if end_qpc is None or (first_qpc and end_qpc >= first_qpc - 86400 * freq):
+                preceding_blind = b
+                break
+    if preceding_blind:
+        control = None  # Blind intervals cannot serve as normal controls.
     quality = {'ranking_usable':not errors, 'errors':sorted(set(errors)),
                'events_lost':header['EventsLost'], 'buffers_lost':header['BuffersLost'],
                'circular_overwrite':overwritten, 'baseline_usable':not overwritten,
                'end_baseline_available':bool(end_baseline),
                'coverage_begin_qpc':coverage_begin, 'coverage_end_qpc':coverage_end,
                'missing_pre_candidate_normal':last is None,
+               'preceding_blind_interval':preceding_blind,
+               'freeze_onset_indeterminate':bool(preceding_blind or last is None),
                'control_available':control is not None,
                'identity_limit':'Baseline has microsecond precision; only exact identity matches merge. Ambiguous lifetimes stay unresolved.'}
     result = {'schema_version':2, 'attribution':'unproven', 'quality':quality, 'qpc_frequency':freq,
@@ -321,19 +334,26 @@ def render(result):
     continuity = result.get('continuity',{})
     last_break = (continuity.get('recent_breaks') or [None])[-1]
     reason = last_break.get('reason') if last_break else 'not recorded'
+    blind = q.get('preceding_blind_interval')
+    blind_notice_zh = (f"前序监测失明记录：持续 {blind.get('duration_seconds', 'unknown')} 秒（原因：{blind.get('reason', 'unknown')}）。冻结发生起点不可判定，失明区间不能作为正常对照。\n\n"
+                       if blind else '')
+    blind_notice_en = (f"Preceding blind interval recorded: {blind.get('duration_seconds', 'unknown')} s (reason: {blind.get('reason', 'unknown')}). Freeze onset is indeterminate; blind intervals cannot serve as controls.\n\n"
+                       if blind else '')
     blocks = []
     for zh in (False, True):
         intro = ('<a id="zh"></a>\n\n[English](#en) · **中文**\n\n以英文为准。\n\n# 首次平线前后活动\n\n'
                  '**仅为时间关联，未证明因果。** 父进程链不是调用栈。平线前仅指最后正常观察到首次平线之间的短暂转变窗口；'
                  '平线后是等待确认期间的伴随活动。边界受采样与界面延迟影响，不等于底层故障时刻。恰在首次平线边界的事件只计入后段。\n\n'
                  f"整体数据可用：{q['ranking_usable']}；错误：{errors}；循环覆盖：{q['circular_overwrite']}；事件／缓冲区丢失：{q['events_lost']}/{q['buffers_lost']}。\n\n"
-                 f'最近连续性重置：{reason}；断开前的正常样本不作为对照。\n\n' if zh else
+                 f'最近连续性重置：{reason}；断开前的正常样本不作为对照。\n\n'
+                 + blind_notice_zh if zh else
                  '<a id="en"></a>\n\n**English** · [中文](#zh)\n\nEnglish is the controlling version.\n\n# Activity before and after first flat observation\n\n'
                  '**Temporal association only; causality unproven.** Parent chains are not call stacks. Before-first covers only the short transition '
                  'from the last normal observation to the first flat observation; after-first covers companion activity while awaiting confirmation. '
                  'Sampling and display latency mean this boundary is not the native fault time. Events exactly at the first-flat boundary belong only to after-first.\n\n'
                  f"Overall data usable: {q['ranking_usable']}; errors: {errors}; circular overwrite: {q['circular_overwrite']}; lost events/buffers: {q['events_lost']}/{q['buffers_lost']}.\n\n"
-                 f'Latest continuity reset: {reason}; disconnected normal samples are never controls.\n\n')
+                 f'Latest continuity reset: {reason}; disconnected normal samples are never controls.\n\n'
+                 + blind_notice_en)
         tail = ('每段独立排行，正常对照尽量等长；时长不足时保留实际时长与每秒速率，缺失身份和对照保持未知。'
                 'JSON schema 2 的顶层 top 仅代表平线前，整体 event_counts 仍是两段总计。完整边界、实例身份和对照保存在 incident-analysis.json。'
                 '这里未测量 Taskmgr 的查询返回值、缓冲区字节贡献或故障因果链。\n' if zh else

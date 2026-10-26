@@ -17,7 +17,7 @@ import cv2
 from FlatlineDetection import FlatlineDetector
 from NativeCapture import worker, taskmgr_pids
 from OriginCapture import OriginWatch
-from TaskmgrRecovery import restart_taskmgr, restore_cpu_page
+from TaskmgrRecovery import restart_taskmgr, restore_cpu_page, save_navigation_failure_window
 from ProcessTrace import qpc
 from RollingProcessTrace import RollingRecorder, TRACE_BUDGET
 from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS, mark_recovery
@@ -30,6 +30,39 @@ RETRY_LIMIT = 3
 RETRY_INTERVAL = 30
 CAPTURE_COOLDOWN = 600
 RESTART_COOLDOWN = 60
+BLIND_BACKOFF_SCHEDULE = (120, 300, 600, 1200, 1800)
+MAX_BLIND_RETRIES_PER_HOUR = 4
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
+
+def is_user_interacting_with_window(target_pid, idle_threshold_ms=10000):
+    """Return True if target_pid window is in foreground and user interacted recently."""
+    try:
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        fg = u.GetForegroundWindow()
+        if not fg:
+            return False
+        fg_pid = ctypes.c_uint()
+        u.GetWindowThreadProcessId(fg, ctypes.byref(fg_pid))
+        if fg_pid.value != target_pid:
+            return False
+        lii = LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+        if not u.GetLastInputInfo(ctypes.byref(lii)):
+            return True
+        idle_ms = (k.GetTickCount() & 0xFFFFFFFF) - lii.dwTime
+        return idle_ms < idle_threshold_ms
+    except Exception:
+        return False
+
+def is_taskmgr_process_alive(pid):
+    try:
+        require_taskmgr(pid)
+        return True
+    except Exception:
+        return False
 
 def timestamp():
     return datetime.now().astimezone().isoformat()
@@ -234,6 +267,15 @@ class Monitor:
         self.retry_folder = None
         self.retry_count = 0
         self.last_retry = 0
+        self.waiting_since_monotonic = None
+        self.waiting_since_utc = None
+        self.blind_after_recovery = False
+        self.current_blind_interval = None
+        self.blind_navigation_target = None
+        self.blind_retry_count = 0
+        self.blind_retry_history = []
+        self.next_navigation_retry_monotonic = None
+        self.next_navigation_retry_utc = None
         self.origin = OriginWatch(PROCDUMP, OUTPUT, validate_full_dump, write_json, query_trace)
         self.last_origin_scan = 0
         self.origin_error = None
@@ -247,7 +289,11 @@ class Monitor:
             latest=max(history,key=lambda p:p.stat().st_mtime)
             saved=json.loads(latest.read_text(encoding='utf-8'))
             if saved.get('recovery',{}).get('status')=='restarted_waiting_for_cpu_page':
-                self.pending_navigation=(latest.parent,saved)
+                if saved.get('recovery',{}).get('retry_exhausted'):
+                    self.blind_after_recovery = True
+                    self.arm_blind_navigation(latest.parent, saved)
+                else:
+                    self.pending_navigation=(latest.parent,saved)
         if self.recorder:
             self.recorder.start()
 
@@ -280,6 +326,17 @@ class Monitor:
             extra['sample_state'] = state
             state = phase
         changed = state != self.state.get('state')
+        sample_state = extra.get('sample_state', state)
+        if sample_state == 'waiting':
+            blind_seconds = round(time.monotonic() - self.waiting_since_monotonic, 1) if self.waiting_since_monotonic else 0.0
+            waiting_since = self.waiting_since_utc
+            blind_after = bool(self.blind_after_recovery)
+            next_retry = self.next_navigation_retry_utc
+        else:
+            blind_seconds = 0
+            waiting_since = None
+            blind_after = False
+            next_retry = None
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
@@ -290,6 +347,10 @@ class Monitor:
                       'incident_analysis':self.offline.status() if self.offline else {'status':'disabled'},
                       'target_dll':self.target_dll,
                       'dll_changed':self.target_dll.get('dll_changed', False),
+                      'waiting_since':waiting_since,
+                      'blind_seconds':blind_seconds,
+                      'blind_after_recovery':blind_after,
+                      'next_navigation_retry':next_retry,
                       'mode':'restart_only' if self.restart_only else 'capture', **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
@@ -310,6 +371,7 @@ class Monitor:
                 self.dump_thread=threading.Thread(target=self.resume_navigation,args=(folder,saved),daemon=False)
                 self.dump_thread.start()
             self.retry_recovery(now)
+            self.check_blind_navigation(now)
             if now-self.last_origin_scan >= 5:
                 # Any page can hit the aggregation error, not only the CPU page.
                 self.last_origin_scan = now
@@ -343,9 +405,38 @@ class Monitor:
             self.reset_observations('recovery_rearm')
             self.rearm_requested = False
         if sample['state'] != 'captured':
+            if sample['state'] == 'waiting':
+                now = time.monotonic()
+                if self.waiting_since_monotonic is None:
+                    self.waiting_since_monotonic = now
+                    self.waiting_since_utc = timestamp()
+                    self.current_blind_interval = {
+                        'start_utc': self.waiting_since_utc,
+                        'start_qpc': qpc(),
+                        'start_monotonic': now,
+                        'reason': 'post_recovery_navigation' if self.blind_after_recovery else 'waiting_for_cpu_page',
+                        'after_recovery': bool(self.blind_after_recovery),
+                        'taskmgr_pid': sample.get('pid') or self.state.get('taskmgr_pid')
+                    }
             self.reset_observations('capture_state', {'state':sample['state'],'error':sample.get('error')})
             self.publish(sample['state'], error=sample.get('error'))
             return
+        if self.waiting_since_monotonic is not None:
+            now = time.monotonic()
+            if self.current_blind_interval:
+                interval = dict(self.current_blind_interval)
+                interval['end_utc'] = timestamp()
+                interval['end_qpc'] = qpc()
+                interval['duration_seconds'] = round(now - interval.pop('start_monotonic'), 1)
+                self.observations.record_blind_interval(interval)
+                self.current_blind_interval = None
+            self.waiting_since_monotonic = None
+            self.waiting_since_utc = None
+            self.blind_after_recovery = False
+            self.blind_navigation_target = None
+            self.next_navigation_retry_monotonic = None
+            self.next_navigation_retry_utc = None
+            self.blind_retry_count = 0
         self.watch_origin(sample['pid'])
         if self.retry and sample['pid'] != self.retry[1]['taskmgr_pid']:
             self.retry = None  # A working CPU page from another Taskmgr ends the retry.
@@ -442,7 +533,8 @@ class Monitor:
         self.capture_result = None
         self.recovery_result = None
         frames = list(self.frames)
-        observation = self.observations.record(frames, sample['pid'], os.getpid()) if self.recorder else None
+        observation = self.observations.record(frames, sample['pid'], os.getpid(),
+                                               current_blind=self.current_blind_interval) if self.recorder else None
         self.dump_thread = threading.Thread(target=self.restart_with_trace,
                                             args=(folder,record,frames,observation),daemon=False)
         self.dump_thread.start()
@@ -529,6 +621,12 @@ class Monitor:
                 self.watch_origin(result['launch_pid'])
             evidence['recovery'].update(result,finished=timestamp())
             self.capture_result='recovered' if result['status']=='restarted' else 'recovery_failed'
+            if result.get('status') == 'restarted_waiting_for_cpu_page':
+                save_navigation_failure_window(result.get('launch_pid'), folder)
+                self.blind_after_recovery = True
+                if self.current_blind_interval:
+                    self.current_blind_interval['after_recovery'] = True
+                    self.current_blind_interval['reason'] = 'post_recovery_navigation'
         except Exception as exc:
             evidence['recovery']={'status':'failed','error':str(exc),'finished':timestamp()}
             self.capture_result='recovery_failed'
@@ -550,12 +648,29 @@ class Monitor:
         try:
             result=restore_cpu_page(evidence['recovery']['launch_pid'])
             evidence['recovery'].update(result,finished=timestamp())
-            self.capture_result='recovered' if result['status']=='restarted' else 'recovery_failed'
+            if result.get('status') == 'restarted':
+                self.capture_result='recovered'
+                self.blind_after_recovery = False
+                self.blind_navigation_target = None
+                self.next_navigation_retry_monotonic = None
+                self.next_navigation_retry_utc = None
+            else:
+                save_navigation_failure_window(evidence['recovery']['launch_pid'], folder)
+                self.capture_result='recovery_failed'
+                self.blind_after_recovery = True
+                if self.current_blind_interval:
+                    self.current_blind_interval['after_recovery'] = True
+                    self.current_blind_interval['reason'] = 'post_recovery_navigation'
         except Exception as exc:
             evidence['recovery'].update(error=str(exc),finished=timestamp())
             self.capture_result='recovery_failed'
+            self.blind_after_recovery = True
+            if self.current_blind_interval:
+                self.current_blind_interval['after_recovery'] = True
+                self.current_blind_interval['reason'] = 'post_recovery_navigation'
         finally:
-            self.schedule_retry(folder,evidence)
+            if not self.blind_navigation_target:
+                self.schedule_retry(folder,evidence)
             write_json(folder/'event.json',evidence)
             self.recovery_result=evidence['recovery']
             self.rearm_requested=True
@@ -572,6 +687,53 @@ class Monitor:
         if self.retry_count >= RETRY_LIMIT:
             evidence['recovery']['retry_exhausted'] = True
             self.retry = None
+            if evidence.get('recovery', {}).get('status') == 'restarted_waiting_for_cpu_page':
+                self.blind_after_recovery = True
+                self.arm_blind_navigation(folder, evidence)
+
+    def arm_blind_navigation(self, folder, evidence, now=None):
+        target_pid = evidence.get('recovery', {}).get('launch_pid') or evidence.get('recovery', {}).get('new_pid')
+        if not target_pid:
+            return
+        self.blind_navigation_target = {'folder': folder, 'evidence': evidence, 'target_pid': target_pid}
+        delay = BLIND_BACKOFF_SCHEDULE[min(self.blind_retry_count, len(BLIND_BACKOFF_SCHEDULE)-1)]
+        cur = time.monotonic() if now is None else now
+        self.next_navigation_retry_monotonic = cur + delay
+        self.next_navigation_retry_utc = datetime.fromtimestamp(time.time() + (cur - time.monotonic()) + delay).astimezone().isoformat()
+
+    def check_blind_navigation(self, now):
+        if not self.blind_navigation_target or (self.dump_thread and self.dump_thread.is_alive()):
+            return
+        target_pid = self.blind_navigation_target['target_pid']
+        if not is_taskmgr_process_alive(target_pid):
+            self.blind_navigation_target = None
+            self.next_navigation_retry_monotonic = None
+            self.next_navigation_retry_utc = None
+            return
+        if self.next_navigation_retry_monotonic is None or now < self.next_navigation_retry_monotonic:
+            return
+        cutoff = now - 3600
+        self.blind_retry_history = [t for t in self.blind_retry_history if t > cutoff]
+        if len(self.blind_retry_history) >= MAX_BLIND_RETRIES_PER_HOUR:
+            delay = max(60, self.blind_retry_history[0] + 3600 - now)
+            self.next_navigation_retry_monotonic = now + delay
+            self.next_navigation_retry_utc = datetime.fromtimestamp(time.time() + delay).astimezone().isoformat()
+            return
+        if is_user_interacting_with_window(target_pid):
+            self.next_navigation_retry_monotonic = now + 60
+            self.next_navigation_retry_utc = datetime.fromtimestamp(time.time() + 60).astimezone().isoformat()
+            return
+
+        folder = self.blind_navigation_target['folder']
+        evidence = self.blind_navigation_target['evidence']
+        self.blind_retry_history.append(now)
+        self.blind_retry_count += 1
+        next_delay = BLIND_BACKOFF_SCHEDULE[min(self.blind_retry_count, len(BLIND_BACKOFF_SCHEDULE)-1)]
+        self.next_navigation_retry_monotonic = now + next_delay
+        self.next_navigation_retry_utc = datetime.fromtimestamp(time.time() + next_delay).astimezone().isoformat()
+        self.last_event = str(folder)
+        self.dump_thread = threading.Thread(target=self.resume_navigation, args=(folder, evidence), daemon=False)
+        self.dump_thread.start()
 
     def retry_recovery(self, now):
         """Bounded retry of a failed recovery; the saved dumps are revalidated, never retaken."""
