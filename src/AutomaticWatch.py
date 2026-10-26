@@ -563,6 +563,17 @@ class Monitor:
         prefix = 'verification-' if verification else ''
         folder = OUTPUT/(prefix+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
         folder.mkdir()
+        if self.realtime:
+            try:
+                write_json(folder/'heartbeat.json', {
+                    'schema_version': 1,
+                    'event_count': len(self.realtime.get_heartbeat_events()),
+                    'filter_type': 'EVENT_FILTER_TYPE_EVENT_NAME',
+                    'filter_names': ['CurrentUpdateCycle', 'FallbackError'],
+                    'events': self.realtime.get_heartbeat_events()
+                })
+            except Exception:
+                pass
         frames = list(self.frames)
         evidence = {'classification':'installation_verification' if verification else 'suspected_visual_aggregate_freeze', 'timestamp':timestamp(),
             'taskmgr_pid':sample['pid'], 'window':sample['hwnd'], 'geometry':sample['geometry'],
@@ -588,6 +599,17 @@ class Monitor:
     def restart_now(self, sample, target, trigger_kind='visual', native_error=None, corroboration_seconds=None):
         folder = OUTPUT/('restart-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
         folder.mkdir()
+        if self.realtime:
+            try:
+                write_json(folder/'heartbeat.json', {
+                    'schema_version': 1,
+                    'event_count': len(self.realtime.get_heartbeat_events()),
+                    'filter_type': 'EVENT_FILTER_TYPE_EVENT_NAME',
+                    'filter_names': ['CurrentUpdateCycle', 'FallbackError'],
+                    'events': self.realtime.get_heartbeat_events()
+                })
+            except Exception:
+                pass
         record = {'classification':'restart_only', 'timestamp':timestamp(), 'taskmgr_pid':sample['pid'],
                   'window':sample['hwnd'],
                   'confirm_seconds':30 if trigger_kind == 'visual' else round(corroboration_seconds or 10.0, 1),

@@ -19,6 +19,17 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Data layer heartbeat recording (26 October 2026)
+
+To test whether Task Manager's data model keeps cycling during a visual freeze, the real-time ETW consumer enables `Microsoft.Windows.Taskmgr` up to Level 5 (Verbose) using `EnableTraceEx2` with an event-name filter (`EVENT_FILTER_TYPE_EVENT_NAME = 0x80000400`). This targets exclusively `CurrentUpdateCycle` and `FallbackError`, completely suppressing high-volume `NetworkUtilizationRefresh` events (which fire hundreds of times per second) without kernel or buffer overhead.
+- **Heartbeat capture**: The consumer parses `CurrentUpdateCycle` payload fields (`layer`, `operation`, `tab`, `correlation_id`) into a rolling in-memory buffer (retaining up to 3600 updates, or roughly 1 hour of runtime at ~1 update pair per second).
+- **Incident evidence**: On incident preservation, the buffer is saved to `heartbeat.json` inside the incident directory.
+- **Offline continuity evaluation**: `IncidentAnalysis` inspects `heartbeat.json` across the freeze window:
+  - Verifies whether `UpdateStarted` and `UpdateFinalized` cycles continued after the flatline onset (`continued_during_freeze: true|false`).
+  - Reports cycle count, data model layer breakdown, and cycle interval statistics (median, minimum, maximum; normally ~1.0 s).
+  - Determines the lead time of the last recorded heartbeat cycle before the visual flat candidate and relative timing to the native `0x8007139F` error.
+  - Generates a dedicated evaluation section in `incident-analysis.json` and bilingual markdown reports (`incident-analysis.md`).
+
 ## Native freeze error fast recovery (26 October 2026)
 
 The watcher now consumes `Microsoft.Windows.Taskmgr` (`{2e635d8e-1107-4555-9319-32eeb895aaae}`) in real time via a dedicated Win32 ETW consumer (`RealtimeConsumer`). When `TaskManagerDataLayer.dll` reports `0x8007139F` on the currently monitored Task Manager process:
@@ -223,6 +234,17 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 数据层心跳记录（2026年10月26日）
+
+为了检验任务管理器在发生视觉平线冻结期间其数据模型是否仍在持续循环更新，实时 ETW 消费者通过 `EnableTraceEx2` 配合事件名过滤器（`EVENT_FILTER_TYPE_EVENT_NAME = 0x80000400`）将 `Microsoft.Windows.Taskmgr` 启用至 Level 5（详细级别）。该过滤机制精准锁定 `CurrentUpdateCycle` 与 `FallbackError`，在提供程序源头彻底过滤掉同级别每秒数百次的 `NetworkUtilizationRefresh` 高频事件，避免无谓的缓冲区与解析开销。
+- **心跳捕获**：消费者实时解析 `CurrentUpdateCycle` 的载荷字段（`layer`、`operation`、`tab`、`correlation_id`），存入滚动内存缓冲（最多保留 3600 条记录，按正常每秒 1 对更新计算可覆盖约 1 小时）。
+- **异常留存**：每次触发事件留存时，自动将内存缓冲序列化为事件目录下的 `heartbeat.json`。
+- **离线时序评估**：`IncidentAnalysis` 在离线分析中核对 `heartbeat.json`：
+  - 判定数据模型循环在可见冻结发生后是否仍在持续（`continued_during_freeze: true|false`）。
+  - 统计循环次数、分层分布与更新周期分布（中位数、最小值、最大值；正常周期约为 1.0 秒）。
+  - 计算最后一次心跳相对首次视觉平线候选的提前量，以及相对原生 `0x8007139F` 错误的相对时序。
+  - 在 `incident-analysis.json` 与双语 Markdown 报告（`incident-analysis.md`）中单独成节给出评估结论。
 
 ## 原生错误触发快速恢复（2026年10月26日）
 

@@ -1,13 +1,17 @@
-"""Real-time ETW consumer for Task Manager native error events (N3).
+"""Real-time ETW consumer for Task Manager native error events and data layer heartbeat (N3, N4).
 
 Consumes provider Microsoft.Windows.Taskmgr {2e635d8e-1107-4555-9319-32eeb895aaae}
-at Level 2 (Error) via Win32 real-time ETW API. Filters specifically for
-hresult=0x8007139F and module=TaskManagerDataLayer.dll on the target Taskmgr PID.
+via Win32 real-time ETW API. Filters specifically for:
+- hresult=0x8007139F and module=TaskManagerDataLayer.dll on the target Taskmgr PID (Level 2 Error)
+- CurrentUpdateCycle (UpdateStarted/UpdateFinalized) heartbeat (Level 5 Verbose)
+Excludes high-volume NetworkUtilizationRefresh events using EVENT_FILTER_TYPE_EVENT_NAME.
 """
 import ctypes
+from collections import deque
 from ctypes import wintypes
 import os
 import re
+import struct
 import subprocess
 import sys
 import threading
@@ -21,6 +25,7 @@ TASKMGR_GUID = '{2e635d8e-1107-4555-9319-32eeb895aaae}'
 SIGNATURE_HRESULT_BYTES = b'\x9f\x13\x07\x80'  # 0x8007139F in little-endian
 SIGNATURE_MODULE_BYTES = b'TaskManagerDataLayer.dll'
 DEFAULT_SESSION_NAME = 'TaskmgrRealtime-Live'
+EVENT_FILTER_TYPE_EVENT_NAME = 0x80000400
 
 advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
 
@@ -79,6 +84,23 @@ class EVENT_TRACE_PROPERTIES(ctypes.Structure):
         ('LoggerThreadId', wintypes.HANDLE),
         ('LogFileNameOffset', wintypes.ULONG),
         ('LoggerNameOffset', wintypes.ULONG),
+    ]
+
+class EVENT_FILTER_DESCRIPTOR(ctypes.Structure):
+    _fields_ = [
+        ('Ptr', ctypes.c_uint64),
+        ('Size', wintypes.ULONG),
+        ('Type', wintypes.ULONG)
+    ]
+
+class ENABLE_TRACE_PARAMETERS(ctypes.Structure):
+    _fields_ = [
+        ('Version', wintypes.ULONG),
+        ('EnableProperty', wintypes.ULONG),
+        ('ControlFlags', wintypes.ULONG),
+        ('SourceId', GUID),
+        ('EnableFilterDesc', ctypes.POINTER(EVENT_FILTER_DESCRIPTOR)),
+        ('FilterDescCount', wintypes.ULONG)
     ]
 
 class EVENT_DESCRIPTOR(ctypes.Structure):
@@ -241,13 +263,14 @@ def is_test_environment():
 
 
 class RealtimeConsumer:
-    """Manages real-time ETW session for Microsoft.Windows.Taskmgr Level 2 errors.
+    """Manages real-time ETW session for Microsoft.Windows.Taskmgr Level 2 errors and Level 5 heartbeat.
 
     Filters specifically for:
     - Target Taskmgr PID
     - Provider {2e635d8e-1107-4555-9319-32eeb895aaae}
-    - HRESULT 0x8007139F
-    - Module TaskManagerDataLayer.dll
+    - HRESULT 0x8007139F and module TaskManagerDataLayer.dll (Level 2)
+    - CurrentUpdateCycle (UpdateStarted/UpdateFinalized) heartbeat (Level 5)
+    Excludes high-volume NetworkUtilizationRefresh using EVENT_FILTER_TYPE_EVENT_NAME.
     """
     def __init__(self, target_pid=None, name=DEFAULT_SESSION_NAME, enabled=True):
         self.target_pid = target_pid
@@ -260,6 +283,8 @@ class RealtimeConsumer:
         self.active = False
         self.last_error = None
         self.pending_native_error = None
+        self.heartbeat_events = deque(maxlen=3600)
+        self._filter_buf = None
         self.state = {'state': 'stopped' if self.enabled else 'disabled', 'session': self.name}
         self._callback_ref = None
 
@@ -268,6 +293,7 @@ class RealtimeConsumer:
             if self.target_pid != pid:
                 self.target_pid = pid
                 self.pending_native_error = None
+                self.heartbeat_events.clear()
 
     def start(self):
         with self.lock:
@@ -292,8 +318,27 @@ class RealtimeConsumer:
                 return
 
             provider_guid = parse_guid(TASKMGR_GUID)
-            # Level 2 = ERROR, MatchAnyKeyword = 0
-            en_st = advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
+            # Level 5 (Verbose) filtered specifically for CurrentUpdateCycle (heartbeat) and FallbackError (errors)
+            # Excludes high-volume NetworkUtilizationRefresh events
+            name_bytes = b'CurrentUpdateCycle\x00FallbackError\x00'
+            header_bytes = struct.pack('<QQBBH', 0, 0, 5, 1, 2)
+            filter_data = header_bytes + name_bytes
+            self._filter_buf = ctypes.create_string_buffer(filter_data)
+
+            filter_desc = EVENT_FILTER_DESCRIPTOR()
+            filter_desc.Ptr = ctypes.cast(self._filter_buf, ctypes.c_void_p).value
+            filter_desc.Size = len(filter_data)
+            filter_desc.Type = EVENT_FILTER_TYPE_EVENT_NAME
+
+            params = ENABLE_TRACE_PARAMETERS()
+            params.Version = 2  # ENABLE_TRACE_PARAMETERS_VERSION_2
+            params.EnableFilterDesc = ctypes.pointer(filter_desc)
+            params.FilterDescCount = 1
+
+            en_st = advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 5, 0, 0, 0, ctypes.byref(params))
+            if en_st != 0:
+                # Fallback to level 2 without filter if name filter unsupported
+                en_st = advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
             if en_st != 0:
                 self.stop()
                 self.last_error = f'EnableTraceEx2 error {en_st}'
@@ -340,10 +385,12 @@ class RealtimeConsumer:
                 return
 
             raw = bytes((ctypes.c_char * u_len).from_address(record.UserData))
+            now_mono = time.monotonic()
+            now_utc = datetime.now(timezone.utc).isoformat()
+            now_qpc = qpc()
+
+            # 1. Check for 0x8007139F native freeze error
             if SIGNATURE_HRESULT_BYTES in raw and SIGNATURE_MODULE_BYTES in raw:
-                now_mono = time.monotonic()
-                now_utc = datetime.now(timezone.utc).isoformat()
-                now_qpc = qpc()
                 event_info = {
                     'hresult': '0x8007139F',
                     'module': 'TaskManagerDataLayer.dll',
@@ -356,6 +403,34 @@ class RealtimeConsumer:
                 with self.lock:
                     if self.pending_native_error is None:
                         self.pending_native_error = event_info
+
+            # 2. Check for CurrentUpdateCycle heartbeat (UpdateStarted / UpdateFinalized)
+            if b'UpdateStarted' in raw or b'UpdateFinalized' in raw:
+                try:
+                    idx1 = raw.find(b'\x00')
+                    layer = raw[:idx1].decode('utf-8', errors='ignore') if idx1 > 0 else 'DataModel'
+                    idx2 = raw.find(b'\x00', idx1 + 1)
+                    op = raw[idx1 + 1:idx2].decode('utf-8', errors='ignore') if idx2 > idx1 else (
+                        'UpdateStarted' if b'UpdateStarted' in raw else 'UpdateFinalized')
+                    tab = 1
+                    if len(raw) >= idx2 + 9:
+                        tab = struct.unpack('<Q', raw[idx2 + 1:idx2 + 9])[0]
+                    idx3 = raw.find(b'\x00', idx2 + 9)
+                    cid = raw[idx2 + 9:idx3].decode('utf-8', errors='ignore') if idx3 > idx2 + 9 else ''
+                    hb_entry = {
+                        'qpc': now_qpc,
+                        'utc': now_utc,
+                        'pid': pid,
+                        'tid': hdr.ThreadId,
+                        'layer': layer,
+                        'operation': op,
+                        'tab': tab,
+                        'correlation_id': cid
+                    }
+                    with self.lock:
+                        self.heartbeat_events.append(hb_entry)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -376,6 +451,10 @@ class RealtimeConsumer:
             err = self.pending_native_error
             self.pending_native_error = None
             return err
+
+    def get_heartbeat_events(self):
+        with self.lock:
+            return list(self.heartbeat_events)
 
     def stop(self, timeout=3.0):
         with self.lock:
@@ -412,4 +491,6 @@ class RealtimeConsumer:
             res = dict(self.state)
             res['has_pending_error'] = bool(self.pending_native_error)
             res['target_pid'] = self.target_pid
+            res['heartbeat_count'] = len(self.heartbeat_events)
+            res['last_heartbeat_utc'] = self.heartbeat_events[-1]['utc'] if self.heartbeat_events else None
             return res

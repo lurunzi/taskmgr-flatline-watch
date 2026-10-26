@@ -142,7 +142,7 @@
       "col": 4,
       "type": "database",
       "label": "Incident evidence",
-      "sublabel": "ETL, markers, charts",
+      "sublabel": "ETL, heartbeat, charts",
       "width": 150
     },
     {
@@ -160,7 +160,7 @@
       "col": 5,
       "type": "backend",
       "label": "Native & churn",
-      "sublabel": "0x8007139F + call chain",
+      "sublabel": "0x8007139F & heartbeat",
       "width": 150
     }
   ],
@@ -243,7 +243,7 @@
         "Visual fallback: 30 s stale total curve confirms unassisted freeze",
         "Dual circular ETW: Kernel-Process + Taskmgr Error (128 MB)",
         "Trigger path recorded: native_fast, visual, or both",
-        "Missing required coverage or event loss suppresses named ranks",
+        "Data layer heartbeat: CurrentUpdateCycle (level 5 name-filtered)",
         "No debugger or dumps; independent phase ranks and controls"
       ]
     }

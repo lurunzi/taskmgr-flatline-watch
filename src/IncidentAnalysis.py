@@ -687,6 +687,9 @@ def analyze(folder, output=None):
     if observation.get('visual_corroboration_seconds') is not None:
         result['visual_corroboration_seconds'] = observation['visual_corroboration_seconds']
 
+    hb_path = folder/'heartbeat.json'
+    result['heartbeat'] = analyze_heartbeat(hb_path, observation, markers, native_sig, freq) if hb_path.exists() else None
+
     output.mkdir(parents=True,exist_ok=True)
     (output/'incident-analysis.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (output/'incident-analysis.md').write_text(render(result),encoding='utf-8')
@@ -770,6 +773,127 @@ def native_signature_text(sig, zh):
     return '\n'.join(lines) + '\n'
 
 
+
+
+def analyze_heartbeat(heartbeat_path, observation, markers, native_sig, freq):
+    """Analyze Task Manager CurrentUpdateCycle heartbeat events (N4)."""
+    if not heartbeat_path or not Path(heartbeat_path).exists():
+        return {'recorded': False, 'reason': 'no heartbeat file found in incident folder'}
+    try:
+        data = json.loads(Path(heartbeat_path).read_text(encoding='utf-8'))
+    except Exception as exc:
+        return {'recorded': False, 'reason': f'heartbeat file corrupted: {exc}'}
+
+    events = data.get('events', [])
+    if not events:
+        return {'recorded': False, 'reason': 'heartbeat event list is empty'}
+
+    first = markers.get('first_candidate', {}).get('qpc') if isinstance(markers.get('first_candidate'), dict) else None
+    confirmed = markers.get('confirmed', {}).get('qpc') if isinstance(markers.get('confirmed'), dict) else None
+    native_qpc = native_sig.get('qpc') if native_sig and native_sig.get('recorded') else None
+
+    started = [e for e in events if e.get('operation') == 'UpdateStarted']
+    finalized = [e for e in events if e.get('operation') == 'UpdateFinalized']
+
+    intervals = []
+    for a, b in zip(started, started[1:]):
+        if type(a.get('qpc')) is int and type(b.get('qpc')) is int and b['qpc'] > a['qpc']:
+            intervals.append((b['qpc'] - a['qpc']) / freq)
+
+    med_interval = float(statistics.median(intervals)) if intervals else 1.0
+    min_interval = float(min(intervals)) if intervals else 1.0
+    max_interval = float(max(intervals)) if intervals else 1.0
+
+    onset_qpc = first or confirmed
+    continued_during_freeze = False
+    updates_before_onset = []
+    updates_after_onset = []
+
+    if onset_qpc:
+        updates_before_onset = [e for e in started if e.get('qpc', 0) < onset_qpc]
+        updates_after_onset = [e for e in started if e.get('qpc', 0) >= onset_qpc]
+        continued_during_freeze = len(updates_after_onset) > 0
+
+    last_update = updates_before_onset[-1] if updates_before_onset else (started[-1] if started else None)
+    first_missing_qpc = None
+    lead_seconds_before_first_candidate = None
+    timing_relative_to_native_error_seconds = None
+
+    if last_update and not continued_during_freeze and onset_qpc:
+        first_missing_qpc = last_update['qpc'] + int(med_interval * freq)
+        if first:
+            lead_seconds_before_first_candidate = round((first - first_missing_qpc) / freq, 3)
+        if native_qpc:
+            timing_relative_to_native_error_seconds = round((first_missing_qpc - native_qpc) / freq, 3)
+
+    return {
+        'recorded': True,
+        'total_events': len(events),
+        'update_started_count': len(started),
+        'update_finalized_count': len(finalized),
+        'continued_during_freeze': continued_during_freeze,
+        'interval_seconds': {
+            'median': round(med_interval, 3),
+            'min': round(min_interval, 3),
+            'max': round(max_interval, 3),
+            'samples': len(intervals)
+        },
+        'last_update_before_onset': last_update,
+        'first_missing_qpc': first_missing_qpc,
+        'lead_seconds_before_first_candidate': lead_seconds_before_first_candidate,
+        'timing_relative_to_native_error_seconds': timing_relative_to_native_error_seconds,
+        'limits': 'Heartbeat is recorded for offline diagnostic evaluation only; it is not a recovery criterion.'
+    }
+
+
+def heartbeat_text(hb, zh):
+    if not hb:
+        return ''
+    title = '数据层心跳：CurrentUpdateCycle' if zh else 'Data layer heartbeat: CurrentUpdateCycle'
+    lines = [f'## {title}', '']
+    if not hb.get('recorded'):
+        reason = hb.get('reason', 'not recorded')
+        reason_zh = '未记录到心跳事件' if ('empty' in reason or 'not found' in reason) else reason
+        lines += [(f'未记录到数据层心跳（原因：{reason_zh}）。' if zh else f'Heartbeat not recorded (reason: {reason}).'),
+                  ('注：数据层心跳仅作离线诊断评估记录，不作为恢复判据。' if zh else
+                   'Note: Heartbeat is recorded for offline diagnostic evaluation only; not a recovery criterion.'),
+                  '']
+        return '\n'.join(lines) + '\n'
+
+    continued = hb.get('continued_during_freeze')
+    status_en = 'Continued during freeze' if continued else 'Stopped before freeze onset'
+    status_zh = '冻结期间持续循环' if continued else '在冻结起点前停止循环'
+    intervals = hb.get('interval_seconds', {})
+
+    lines += [
+        (f"状态：{status_zh}（更新开始：{hb.get('update_started_count')} 次，更新完成：{hb.get('update_finalized_count')} 次）。" if zh else
+         f"Status: {status_en} ({hb.get('update_started_count')} started, {hb.get('update_finalized_count')} finalized)."),
+        (f"循环间隔：中位数 {intervals.get('median')} 秒（范围：{intervals.get('min')}–{intervals.get('max')} 秒，样本数：{intervals.get('samples')}）。" if zh else
+         f"Cycle interval: median {intervals.get('median')} s (range: {intervals.get('min')}–{intervals.get('max')} s, samples: {intervals.get('samples')}).")
+    ]
+
+    if not continued and hb.get('lead_seconds_before_first_candidate') is not None:
+        lines.append(
+            f"首次缺失周期提前量：相对首次平线候选约 {hb.get('lead_seconds_before_first_candidate')} 秒。" if zh else
+            f"First missing cycle lead time: ~{hb.get('lead_seconds_before_first_candidate')} s before first flat observation."
+        )
+    if not continued and hb.get('timing_relative_to_native_error_seconds') is not None:
+        diff = hb.get('timing_relative_to_native_error_seconds')
+        order_zh = f"原生错误后 {diff} 秒" if diff >= 0 else f"原生错误前 {abs(diff)} 秒"
+        order_en = f"{diff} s after native error" if diff >= 0 else f"{abs(diff)} s before native error"
+        lines.append(
+            f"与原生错误先后：{order_zh}。" if zh else
+            f"Timing relative to native error: {order_en}."
+        )
+
+    lines += [
+        ('注：数据层心跳仅作离线诊断评估记录，不作为恢复判据。' if zh else
+         'Note: Data layer heartbeat is recorded for diagnostic evaluation only; it is not a recovery criterion.'),
+        ''
+    ]
+    return '\n'.join(lines) + '\n'
+
+
 def render(result):
     def cell(value):
         return str(value or 'unknown').replace('|','\\|').replace('\n',' ').replace('\r',' ')
@@ -837,5 +961,6 @@ def render(result):
                 'Missing identities and controls remain unknown. JSON schema 2 top contains before-first rows only; overall event_counts still cover both phases. '
                 'Full boundaries, instance identities and controls are in incident-analysis.json. No Taskmgr query statuses, buffer-byte contributions or causal chain are measured.\n')
         native_sec = native_signature_text(result.get('native_signature'), zh)
-        blocks.append(intro+native_sec+phase_text('before_first',zh)+phase_text('after_first',zh)+tail)
+        hb_sec = heartbeat_text(result.get('heartbeat'), zh)
+        blocks.append(intro+native_sec+hb_sec+phase_text('before_first',zh)+phase_text('after_first',zh)+tail)
     return 'The English version governs.\n\n'+ '\n---\n\n'.join(blocks)
