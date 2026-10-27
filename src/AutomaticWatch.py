@@ -2,6 +2,7 @@
 import hashlib
 import json
 import ctypes
+from ctypes import wintypes
 import multiprocessing as mp
 import os
 import shutil
@@ -17,7 +18,7 @@ import cv2
 from FlatlineDetection import FlatlineDetector
 from NativeCapture import worker, taskmgr_pids
 from OriginCapture import OriginWatch
-from TaskmgrRecovery import restart_taskmgr, restore_cpu_page, save_navigation_failure_window
+from TaskmgrRecovery import restart_taskmgr, restore_cpu_page, save_navigation_failure_window, launch_taskmgr
 from ProcessTrace import qpc
 from RollingProcessTrace import RollingRecorder, TRACE_BUDGET
 from RealtimeTrace import RealtimeConsumer, re_enable_session_provider
@@ -33,11 +34,77 @@ CAPTURE_COOLDOWN = 600
 RESTART_COOLDOWN = 60
 BLIND_BACKOFF_SCHEDULE = (120, 300, 600, 1200, 1800)
 MAX_BLIND_RETRIES_PER_HOUR = 4
+USER_CLOSED_COOLDOWN_SECONDS = 600  # 10 min wait after user closes Taskmgr to avoid focus fighting
 NATIVE_GAP_THRESHOLD_SECONDS = 15.0
 NATIVE_GAP_BACKOFF_SCHEDULE = (5, 10, 20, 30, 60)
 
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
+
+class PROCESSENTRY32(ctypes.Structure):
+    _fields_ = [
+        ('dwSize', wintypes.DWORD),
+        ('cntUsage', wintypes.DWORD),
+        ('th32ProcessID', wintypes.DWORD),
+        ('th32DefaultHeapID', ctypes.c_size_t),
+        ('th32ModuleID', wintypes.DWORD),
+        ('cntThreads', wintypes.DWORD),
+        ('th32ParentProcessID', wintypes.DWORD),
+        ('pcPriClassBase', wintypes.LONG),
+        ('dwFlags', wintypes.DWORD),
+        ('szExeFile', ctypes.c_wchar * 260)
+    ]
+
+def is_desktop_ready():
+    """Return True when explorer is running and user session desktop is unlocked."""
+    if os.environ.get('TASKMGR_WATCH_TEST') == '1':
+        return getattr(Monitor, '_mock_desktop_ready', True)
+    try:
+        kernel = ctypes.windll.kernel32
+        h = kernel.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
+        if h == -1 or not h:
+            return False
+        found_explorer = False
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        if kernel.Process32FirstW(h, ctypes.byref(pe)):
+            while True:
+                if pe.szExeFile.lower() == 'explorer.exe':
+                    found_explorer = True
+                    break
+                if not kernel.Process32NextW(h, ctypes.byref(pe)):
+                    break
+        kernel.CloseHandle(h)
+        if not found_explorer:
+            return False
+
+        user32 = ctypes.windll.user32
+        hdesk = user32.OpenInputDesktop(0, False, 0x0100)  # DESKTOP_SWITCHDESKTOP
+        if not hdesk:
+            return False
+        try:
+            unlocked = bool(user32.SwitchDesktop(hdesk))
+        finally:
+            user32.CloseDesktop(hdesk)
+        return unlocked
+    except Exception:
+        return False
+
+def is_user_interacting_system(idle_threshold_ms=10000):
+    """Return True if user performed keyboard/mouse input within idle_threshold_ms."""
+    if os.environ.get('TASKMGR_WATCH_TEST') == '1':
+        return getattr(Monitor, '_mock_user_interacting_system', False)
+    try:
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        lii = LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+        if not u.GetLastInputInfo(ctypes.byref(lii)):
+            return False
+        idle_ms = (k.GetTickCount() & 0xFFFFFFFF) - lii.dwTime
+        return idle_ms < idle_threshold_ms
+    except Exception:
+        return False
 
 def is_user_interacting_with_window(target_pid, idle_threshold_ms=10000):
     """Return True if target_pid window is in foreground and user interacted recently."""
@@ -285,6 +352,19 @@ class Monitor:
         self.blind_retry_history = []
         self.next_navigation_retry_monotonic = None
         self.next_navigation_retry_utc = None
+        self.auto_open_count = 0
+        self.auto_open_last_utc = None
+        self.auto_open_last_result = None
+        self.next_auto_open_monotonic = None
+        self.next_auto_open_utc = None
+        self.next_auto_open_text_zh = None
+        self.next_auto_open_text_en = None
+        self.auto_open_reason = None
+        self.taskmgr_was_running = None
+        self.boot_auto_open_checked = False
+        self.auto_navigation_count = 0
+        self.auto_navigation_last_utc = None
+        self.auto_navigation_last_result = None
         self.current_provider_gap = None
         self.last_provider_re_enable_monotonic = 0.0
         self.provider_gap_retry_count = 0
@@ -385,6 +465,10 @@ class Monitor:
             native_coverage = 'ok'
             gap_started = None
             cumulative_gap = round(self.cumulative_provider_gap_seconds, 1)
+        auto_open_text_zh = self.next_auto_open_text_zh if not self.get_taskmgr_pids() else None
+        auto_open_text_en = self.next_auto_open_text_en if not self.get_taskmgr_pids() else None
+        auto_open_text = auto_open_text_zh
+
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
                       'output':str(OUTPUT), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
@@ -405,10 +489,32 @@ class Monitor:
                       'native_coverage_gap_started':gap_started,
                       'native_coverage_gap_seconds':gap_seconds,
                       'native_coverage_cumulative_gap_seconds':cumulative_gap,
-                      'mode':'restart_only' if self.restart_only else 'capture', **extra}
+                      'mode':'restart_only' if self.restart_only else 'capture',
+                      'auto_open': {
+                          'count': self.auto_open_count,
+                          'last_utc': self.auto_open_last_utc,
+                          'last_result': self.auto_open_last_result,
+                          'next_open_utc': self.next_auto_open_utc,
+                          'status_text': auto_open_text,
+                          'status_text_zh': auto_open_text_zh,
+                          'status_text_en': auto_open_text_en,
+                          'reason': self.auto_open_reason
+                      },
+                      'auto_navigation': {
+                          'count': self.auto_navigation_count,
+                          'last_utc': self.auto_navigation_last_utc,
+                          'last_result': self.auto_navigation_last_result,
+                          'next_retry_utc': self.next_navigation_retry_utc
+                      },
+                      **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(OUTPUT/'status.json', self.state)
             self.last_status_write = time.monotonic()
+
+    def get_taskmgr_pids(self):
+        if os.environ.get('TASKMGR_WATCH_TEST') == '1' and hasattr(self, '_mock_taskmgr_pids'):
+            return set(self._mock_taskmgr_pids)
+        return taskmgr_pids()
 
     def is_pid_alive(self, pid):
         if not pid:
@@ -416,7 +522,7 @@ class Monitor:
         if os.environ.get('TASKMGR_WATCH_TEST') == '1':
             return getattr(self, '_mock_pid_alive', True)
         try:
-            if pid in taskmgr_pids():
+            if pid in self.get_taskmgr_pids():
                 return True
             kernel32 = ctypes.windll.kernel32
             h = kernel32.OpenProcess(0x1000, False, pid)
@@ -525,6 +631,7 @@ class Monitor:
                 self.dump_thread.start()
             self.retry_recovery(now)
             self.check_blind_navigation(now)
+            self.check_auto_open(now)
             if now-self.last_origin_scan >= 5:
                 # Any page can hit the aggregation error, not only the CPU page.
                 self.last_origin_scan = now
@@ -560,6 +667,13 @@ class Monitor:
         if sample['state'] != 'captured':
             if sample['state'] == 'waiting':
                 now = time.monotonic()
+                pid = sample.get('pid')
+                if not pid:
+                    pids = self.get_taskmgr_pids()
+                    if pids:
+                        pid = next(iter(pids))
+                if pid:
+                    self.taskmgr_was_running = True
                 if self.waiting_since_monotonic is None:
                     self.waiting_since_monotonic = now
                     self.waiting_since_utc = timestamp()
@@ -569,11 +683,17 @@ class Monitor:
                         'start_monotonic': now,
                         'reason': 'post_recovery_navigation' if self.blind_after_recovery else 'waiting_for_cpu_page',
                         'after_recovery': bool(self.blind_after_recovery),
-                        'taskmgr_pid': sample.get('pid') or self.state.get('taskmgr_pid')
+                        'taskmgr_pid': pid or self.state.get('taskmgr_pid')
                     }
+                if pid and (not self.blind_navigation_target or self.blind_navigation_target.get('target_pid') != pid):
+                    self.arm_blind_navigation(target_pid=pid, now=now)
             self.reset_observations('capture_state', {'state':sample['state'],'error':sample.get('error')})
             self.publish(sample['state'], error=sample.get('error'))
             return
+        self.taskmgr_was_running = True
+        self.boot_auto_open_checked = True
+        if self.next_auto_open_monotonic is not None:
+            self.clear_auto_open()
         if self.waiting_since_monotonic is not None:
             now = time.monotonic()
             if self.current_blind_interval:
@@ -864,37 +984,54 @@ class Monitor:
         except Exception as exc:
             evidence.setdefault('observation_errors',[]).append(repr(exc))
 
-    def resume_navigation(self,folder,evidence):
-        self.recovery_result=evidence['recovery']
+    def resume_navigation(self, folder, evidence, target_pid=None):
+        if target_pid is None and evidence:
+            target_pid = evidence.get('recovery', {}).get('launch_pid') or evidence.get('recovery', {}).get('new_pid')
+        if not target_pid:
+            return
+        if evidence:
+            self.recovery_result = evidence.get('recovery')
+        self.auto_navigation_count += 1
+        self.auto_navigation_last_utc = timestamp()
         try:
-            result=restore_cpu_page(evidence['recovery']['launch_pid'])
-            evidence['recovery'].update(result,finished=timestamp())
+            result = restore_cpu_page(target_pid)
+            self.auto_navigation_last_result = result.get('status', 'unknown')
+            if evidence and 'recovery' in evidence:
+                evidence['recovery'].update(result, finished=timestamp())
             if result.get('status') == 'restarted':
-                self.capture_result='recovered'
+                if evidence:
+                    self.capture_result = 'recovered'
                 self.blind_after_recovery = False
                 self.blind_navigation_target = None
                 self.next_navigation_retry_monotonic = None
                 self.next_navigation_retry_utc = None
+                self.blind_retry_count = 0
             else:
-                save_navigation_failure_window(evidence['recovery']['launch_pid'], folder)
-                self.capture_result='recovery_failed'
-                self.blind_after_recovery = True
+                if folder:
+                    save_navigation_failure_window(target_pid, folder)
+                if evidence:
+                    self.capture_result = 'recovery_failed'
+                    self.blind_after_recovery = True
                 if self.current_blind_interval:
-                    self.current_blind_interval['after_recovery'] = True
-                    self.current_blind_interval['reason'] = 'post_recovery_navigation'
+                    self.current_blind_interval['after_recovery'] = bool(self.blind_after_recovery)
+                    if self.blind_after_recovery:
+                        self.current_blind_interval['reason'] = 'post_recovery_navigation'
         except Exception as exc:
-            evidence['recovery'].update(error=str(exc),finished=timestamp())
-            self.capture_result='recovery_failed'
-            self.blind_after_recovery = True
-            if self.current_blind_interval:
+            self.auto_navigation_last_result = f"error: {exc}"
+            if evidence and 'recovery' in evidence:
+                evidence['recovery'].update(error=str(exc), finished=timestamp())
+                self.capture_result = 'recovery_failed'
+                self.blind_after_recovery = True
+            if self.current_blind_interval and self.blind_after_recovery:
                 self.current_blind_interval['after_recovery'] = True
                 self.current_blind_interval['reason'] = 'post_recovery_navigation'
         finally:
-            if not self.blind_navigation_target:
-                self.schedule_retry(folder,evidence)
-            write_json(folder/'event.json',evidence)
-            self.recovery_result=evidence['recovery']
-            self.rearm_requested=True
+            if evidence and folder:
+                if not self.blind_navigation_target:
+                    self.schedule_retry(folder, evidence)
+                write_json(folder/'event.json', evidence)
+                self.recovery_result = evidence.get('recovery')
+                self.rearm_requested = True
 
     def schedule_retry(self, folder, evidence):
         if self.capture_result != 'recovery_failed':
@@ -912,8 +1049,9 @@ class Monitor:
                 self.blind_after_recovery = True
                 self.arm_blind_navigation(folder, evidence)
 
-    def arm_blind_navigation(self, folder, evidence, now=None):
-        target_pid = evidence.get('recovery', {}).get('launch_pid') or evidence.get('recovery', {}).get('new_pid')
+    def arm_blind_navigation(self, folder=None, evidence=None, now=None, target_pid=None):
+        if target_pid is None and evidence:
+            target_pid = evidence.get('recovery', {}).get('launch_pid') or evidence.get('recovery', {}).get('new_pid')
         if not target_pid:
             return
         self.blind_navigation_target = {'folder': folder, 'evidence': evidence, 'target_pid': target_pid}
@@ -945,16 +1083,96 @@ class Monitor:
             self.next_navigation_retry_utc = datetime.fromtimestamp(time.time() + 60).astimezone().isoformat()
             return
 
-        folder = self.blind_navigation_target['folder']
-        evidence = self.blind_navigation_target['evidence']
+        folder = self.blind_navigation_target.get('folder')
+        evidence = self.blind_navigation_target.get('evidence')
         self.blind_retry_history.append(now)
         self.blind_retry_count += 1
         next_delay = BLIND_BACKOFF_SCHEDULE[min(self.blind_retry_count, len(BLIND_BACKOFF_SCHEDULE)-1)]
         self.next_navigation_retry_monotonic = now + next_delay
         self.next_navigation_retry_utc = datetime.fromtimestamp(time.time() + next_delay).astimezone().isoformat()
-        self.last_event = str(folder)
-        self.dump_thread = threading.Thread(target=self.resume_navigation, args=(folder, evidence), daemon=False)
+        if folder:
+            self.last_event = str(folder)
+        self.dump_thread = threading.Thread(target=self.resume_navigation, args=(folder, evidence, target_pid), daemon=False)
         self.dump_thread.start()
+
+    def schedule_auto_open(self, delay, reason, now=None):
+        cur = time.monotonic() if now is None else now
+        self.next_auto_open_monotonic = cur + delay
+        target_time = time.time() + (cur - time.monotonic()) + delay
+        open_dt = datetime.fromtimestamp(target_time).astimezone()
+        self.next_auto_open_utc = open_dt.isoformat()
+        time_str = open_dt.strftime('%H:%M:%S')
+        self.next_auto_open_text_zh = f"任务管理器未运行，将于 {time_str} 自动打开"
+        self.next_auto_open_text_en = f"Task Manager not running; will open automatically at {time_str}"
+        self.auto_open_reason = reason
+
+    def clear_auto_open(self):
+        self.next_auto_open_monotonic = None
+        self.next_auto_open_utc = None
+        self.next_auto_open_text_zh = None
+        self.next_auto_open_text_en = None
+        self.auto_open_reason = None
+
+    def check_auto_open(self, now):
+        if self.dump_thread and self.dump_thread.is_alive():
+            return
+        pids = self.get_taskmgr_pids()
+        has_pids = bool(pids)
+
+        if not self.boot_auto_open_checked:
+            self.boot_auto_open_checked = True
+            if has_pids:
+                self.taskmgr_was_running = True
+            else:
+                self.taskmgr_was_running = False
+                # Boot startup: wait for desktop ready, then open Taskmgr
+                self.schedule_auto_open(2.0, 'boot_startup', now=now)
+            return
+
+        if has_pids:
+            self.taskmgr_was_running = True
+            if self.next_auto_open_monotonic is not None:
+                self.clear_auto_open()
+            return
+
+        # If Taskmgr was running and now exited (and not in recovery restart):
+        if self.taskmgr_was_running is True and not self.recovery_result:
+            self.taskmgr_was_running = False
+            # User closed Taskmgr. Wait 10 minutes to respect user intent before reopening.
+            self.schedule_auto_open(USER_CLOSED_COOLDOWN_SECONDS, 'user_closed', now=now)
+            return
+
+        if self.next_auto_open_monotonic is None or now < self.next_auto_open_monotonic:
+            return
+
+        if not is_desktop_ready():
+            return
+
+        if is_user_interacting_system():
+            self.schedule_auto_open(60.0, self.auto_open_reason or 'user_closed', now=now)
+            return
+
+        self.clear_auto_open()
+        self.dump_thread = threading.Thread(target=self._run_auto_open, daemon=False)
+        self.dump_thread.start()
+
+    def _run_auto_open(self):
+        self.auto_open_count += 1
+        self.auto_open_last_utc = timestamp()
+        try:
+            result = launch_taskmgr()
+            self.auto_open_last_result = result.get('status', 'unknown')
+            pid = result.get('launch_pid') or result.get('new_pid')
+            if pid:
+                self.watch_origin(pid)
+            if result.get('status') == 'restarted':
+                self.taskmgr_was_running = True
+                self.auto_open_reason = None
+            else:
+                self.taskmgr_was_running = bool(pid and self.is_pid_alive(pid))
+        except Exception as exc:
+            self.auto_open_last_result = f"error: {exc}"
+            self.schedule_auto_open(120.0, 'retry_after_error')
 
     def retry_recovery(self, now):
         """Bounded retry of a failed recovery; the saved dumps are revalidated, never retaken."""

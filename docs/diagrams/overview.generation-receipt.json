@@ -1,6 +1,6 @@
 {
-  "date": "2026-10-26",
-  "purpose": "Native coverage watchdog (15s provider silence detection, idempotent re-enable, gap accounting, and N2 indeterminate verdict).",
+  "date": "2026-10-27",
+  "purpose": "Boot auto-launch Task Manager and navigate off-page instances back to CPU logical processors (A10).",
   "generator": {
     "name": "Archify",
     "version": "2.17.0-dev.1",
@@ -11,20 +11,20 @@
   "quality_profile": "showcase",
   "correction_rounds": 1,
   "corrections": [
-    "Native coverage watchdog: 15s provider silence detection, idempotent re-enable, gap accounting, and N2 indeterminate verdict."
+    "Boot auto-launch on desktop ready with SW_SHOWNOACTIVATE, 2 min waiting off-page navigation with A8 backoff, and 10 min user closure cooldown."
   ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "e41a5a1c444c2c9700ff0afede861e9664eecc75f9e2a5872c5bf99ee8050119",
-        "bytes": 5390
+        "sha256": "404cd655a05f5d46fa1aefc8a660290c4ce99d7c249abe5d2ad870f1fd90236c",
+        "bytes": 5490
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "a4abe4c76ba6fb3d3326d9bfe333411ff7ccfb8d5eb6844c300ee00cef830076",
-        "bytes": 716941,
+        "sha256": "8f17e45352ccf254fb6b9f0c4a80cd1666e56d7bb40e748f236086d98269bbbc",
+        "bytes": 813690,
         "committed": false
       },
       "validation": {
@@ -41,16 +41,16 @@
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "5405e68deb8cb3357aedd9a65586ebbf5b30d362c201c4713524346194f463af",
-          "bytes": 574564,
+          "sha256": "c72962fd0f45a19b7fcae1d1c05cce6a88fe877b44747263278263ff41432bae",
+          "bytes": 591060,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "d37c518cea525026ecd1a9dbd0a67f411ba0b76c1a40d483b7b033ce870b8038",
-          "bytes": 588929,
+          "sha256": "ec1ec4e388805da8da4b844273ce1e32bcfc0e796970a1a3ed484f07108d1a2a",
+          "bytes": 604546,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -61,13 +61,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "19814734388349731bea4d42e9bb98809e51fbcfc2565093d753cfabece278cc",
-        "bytes": 5459
+        "sha256": "66e8b98adf90d251365f00a18dc3b27651b881bd7b15a28b73147b49b54aa693",
+        "bytes": 5572
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "625500648254fdfba0e8405695aba1c71da077c7bc68634c5e28b2f52b7f2f4f",
-        "bytes": 716726,
+        "sha256": "adf99232e259828cc1bdab5b682a66eb90dfd2fd92df27ccb633f51bef3012b8",
+        "bytes": 813429,
         "committed": false
       },
       "validation": {
@@ -84,16 +84,16 @@
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "ab6119a337b8c6f0220d77ec2aaba730f2498f6dc42435436d8796f407712349",
-          "bytes": 610650,
+          "sha256": "23426e954d655089c3bf6549b02f515eb7ac0f78190cd113e62baa5b283c818b",
+          "bytes": 612250,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "bbe95f115fe84a7886ae8572a7f716331b5a22da951ed8039f90a02c978ac3f0",
-          "bytes": 621254,
+          "sha256": "1303ced3455619259bba9ba3a0a0b23d0161c80b14a12f5714e77905edfc9929",
+          "bytes": 622816,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true
@@ -106,5 +106,5 @@
     "node <archify>/bin/archify.mjs visual-check <out>/overview.<lang>.html --json",
     "node tools/archify-export-png.mjs <out>/overview.<lang>.html light|dark docs/diagrams/overview.<lang>.<theme>.png"
   ],
-  "local_artifacts": ".local/work-inbox/20261026-native-coverage-watchdog/overview.<lang>.html and delivery/visual/export receipts"
+  "local_artifacts": ".local/overview.<lang>.html and delivery/visual/export receipts"
 }

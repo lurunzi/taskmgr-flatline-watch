@@ -123,8 +123,8 @@
       "lane": "taskmgr",
       "col": 5,
       "type": "backend",
-      "label": "Restart + CPU",
-      "sublabel": "verify target and restore",
+      "label": "Restart / restore CPU",
+      "sublabel": "boot launch & A8 backoff",
       "width": 150
     },
     {
@@ -239,6 +239,7 @@
       "title": "Candidates, not causal proof",
       "items": [
         "Full logical grid: 80% of widths within one adjacent pixel pair",
+        "Boot auto-launch & off-page restore: SW_SHOWNOACTIVATE; 2 min off-page A8 backoff",
         "Fast recovery & watchdog: 0x8007139F / 10 s; 15 s silence re-enables; gaps mark N2 indeterminate",
         "Visual fallback: 30 s stale total curve confirms unassisted freeze",
         "Dual circular ETW: Kernel-Process + Taskmgr Error (128 MB)",

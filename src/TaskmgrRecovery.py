@@ -32,6 +32,31 @@ def save_navigation_failure_window(pid, folder):
     except Exception:
         pass
 
+def launch_taskmgr(folder=None):
+    """Launch Task Manager without activating it, wait for UI, and navigate to CPU page."""
+    expected = Path(os.environ['SystemRoot']) / 'System32/Taskmgr.exe'
+    startup = subprocess.STARTUPINFO()
+    startup.dwFlags = subprocess.STARTF_USESHOWWINDOW
+    startup.wShowWindow = 4  # Show without activating.
+    child = subprocess.Popen([str(expected)], startupinfo=startup)
+    result = {'launch_pid': child.pid, 'status': 'starting'}
+    started = time.monotonic()
+    shown = None
+    while time.monotonic() - started < 10:
+        time.sleep(.25)
+        found = locate()
+        if found and found[1] == child.pid:
+            result.update(status='restarted', new_pid=child.pid, logical_graphs=len(found[3]),
+                          launch_seconds=round(time.monotonic() - started, 1))
+            return result
+        if shown is None and main_window(child.pid):
+            shown = time.monotonic()
+        if shown is not None and time.monotonic() - shown >= 2:
+            break
+    result['launch_seconds'] = round(time.monotonic() - started, 1)
+    result.update(restore_cpu_page(child.pid, folder=folder))
+    return result
+
 def restore_cpu_page(pid, folder=None):
     script=Path(__file__).resolve().parents[1]/'tools/Restore-CpuPage.ps1'
     result={'navigation':[]}

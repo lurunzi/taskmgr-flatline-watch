@@ -162,7 +162,9 @@ def capture(hwnd):
 def sample():
     found = locate()
     if not found:
-        return {'state':'waiting'}
+        pids = taskmgr_pids()
+        pid = next(iter(pids)) if pids else None
+        return {'state':'waiting', 'pid':pid}
     hwnd, pid, total, cores = found
     images = [capture(h) for h,_ in cores]
     # Preserve each graph, with stable padding for fractional DPI sizes.

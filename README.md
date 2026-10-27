@@ -19,6 +19,15 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Automatic startup and off-page CPU navigation (27 October 2026)
+
+To resolve blind monitoring after system boot and prevent prolonged `waiting` intervals when Task Manager is absent or navigates away from the CPU page:
+- **Boot auto-launch on desktop ready**: When the watcher starts (such as via logon scheduled task) and detects no running Task Manager, it monitors desktop readiness (verifying `explorer.exe` is running and the interactive desktop is unlocked via `OpenInputDesktop` and `SwitchDesktop`). Once ready, it launches Task Manager using Win32 `SW_SHOWNOACTIVATE` (`wShowWindow = 4`) so it does not steal active window focus, and invokes `Restore-CpuPage.ps1` to route the interface to **Performance > CPU > Logical processors**.
+- **Automatic navigation for off-page instances**: Any Task Manager instance remaining in `waiting` state for longer than 2 minutes (whether manually started by the user or switched to another tab) is automatically scheduled for navigation back to the CPU logical processor grid. The retry schedule reuses the A8 exponential backoff (`120s, 300s, 600s, 1200s, 1800s`) capped at 4 attempts per rolling 60 minutes.
+- **User non-interference and activity guards**: If the user has interacted with the system in the last 10 seconds (`GetLastInputInfo` idle time < 10000 ms) while Task Manager is in the foreground, navigation is deferred by 60 seconds to prevent disrupting user workflows.
+- **10-minute cooldown on user closure**: If the user explicitly closes Task Manager during monitoring, the watcher respects user intent and initiates a 10-minute cooldown timer before automatically reopening Task Manager, requiring system-wide mouse and keyboard idle state before launching.
+- **Status metrics and bilingual tray updates**: `status.json` exposes `auto_open` metrics (`count`, `last_result`, `last_time`, `next_open_time`, `reason`, `text_zh`, `text_en`) and `auto_navigation` metrics (`count`, `last_result`, `last_time`, `next_retry`). While waiting for automatic reopening, the status window and system tray tooltip display the localized scheduled reopening time (e.g. "Task Manager not running; will open automatically at HH:MM:SS" / "任务管理器未运行，将于 HH:MM:SS 自动打开").
+
 ## Native coverage watchdog and session capacity (26 October 2026)
 
 To guard against ETW event dropouts and ensure continuous monitoring of Task Manager's internal events, a real-time native coverage watchdog monitors event delivery from `Microsoft.Windows.Taskmgr` (`{2e635d8e-1107-4555-9319-32eeb895aaae}`):
@@ -245,6 +254,15 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 开机自启动接管与离页自动切回（2026年10月27日）
+
+为解决系统开机后因无任务管理器导致的持续失明等待，以及任务管理器不在 CPU 页面时的长时间失明：
+- **开机桌面就绪自启动**：监测器启动后（如登录自启任务）若未检测到任务管理器进程，会自动监测桌面就绪状态（检查 `explorer.exe` 已启动且通过 `OpenInputDesktop` 与 `SwitchDesktop` 确认交互桌面已解锁）。桌面就绪后以 Win32 `SW_SHOWNOACTIVATE`（`wShowWindow = 4`）无焦点启动任务管理器，避免强夺用户前台窗口，并由提权的监测器调用 `Restore-CpuPage.ps1` 自动切至「性能 → CPU → 逻辑处理器」页。
+- **离页实例自动切回**：任何处于 `waiting` 状态超过 2 分钟的任务管理器实例（包括用户手动启动或切至其他选项卡的实例），自动按 A8 指数退避序列（`120秒、300秒、600秒、1200秒、1800秒`，每小时上限 4 次）调度纯导航切回 CPU 逻辑处理器网格。
+- **用户操作防争抢守卫**：若最近 10 秒内用户在系统有键鼠输入（`GetLastInputInfo` 空闲时间 < 10000 毫秒）且任务管理器处于前台，导航自动推迟 60 秒，避免干扰用户正常操作。
+- **用户关闭后 10 分钟冷却**：若监测期间用户主动关闭了任务管理器，监测器尊重用户意图，启动 10 分钟防争抢冷却倒计时，并在全系统键鼠空闲时才重新打开。
+- **状态指标与托盘中英同步**：`status.json` 导出 `auto_open`（次数、最近结果、最近时间、计划时间、原因、中英描述）与 `auto_navigation`（次数、最近结果、最近时间、下次重试）指标。在等待自动重新打开期间，状态窗口与托盘悬浮提示同步显示本地化的自动打开时间点（如「任务管理器未运行，将于 HH:MM:SS 自动打开」/ "Task Manager not running; will open automatically at HH:MM:SS"）。
 
 ## 原生覆盖看门狗与会话容量（2026年10月26日）
 

@@ -26,6 +26,7 @@ TEXT = {
  'restart_only':'只重启，不取证', 'hint_restart':'持续异常 30 秒后直接重启任务管理器，不保存转储和图表，然后继续检测。',
  'restart_cooldown':'重启冷却中', 'restarted':'任务管理器已重启', 'restart_failed':'重启未完成，稍后重试',
  'blind_status':'监测失效', 'blind_alert':'监测失效（等待 CPU 页面）',
+ 'not_running_status':'任务管理器未运行', 'not_running_auto_open':'任务管理器未运行，将于 {time} 自动打开',
  'native_gap_status':'原生记录中断', 'native_gap_alert':'原生记录中断',
  'light_etw':'轻量事件记录', 'etw_error':'事件记录不可用，请查看状态记录',
  'etw_budget':'事件记录暂停：{used:.2f} / {budget:g} GiB',
@@ -46,6 +47,7 @@ TEXT = {
  'restart_only':'Restart only, no evidence', 'hint_restart':'After 30 seconds of suspected freezing, restarts Task Manager directly without saving dumps or graphs, then resumes detection.',
  'restart_cooldown':'Restart cooldown', 'restarted':'Task Manager restarted', 'restart_failed':'Restart incomplete; retrying',
  'blind_status':'Monitoring inactive', 'blind_alert':'Monitoring inactive (waiting for CPU page)',
+ 'not_running_status':'Task Manager not running', 'not_running_auto_open':'Task Manager not running; will open automatically at {time}',
  'native_gap_status':'Native recording interrupted', 'native_gap_alert':'Native recording interrupted',
  'light_etw':'Light event recording', 'etw_error':'Event recording unavailable; see status record',
  'etw_budget':'Recording paused: {used:.2f} / {budget:g} GiB',
@@ -142,9 +144,16 @@ class Watch(QWidget):
         gap_sec=state.get('native_coverage_gap_seconds', 0)
         is_blind_timeout = (key == 'waiting' and blind_sec >= 300)
         is_native_gap = (state.get('native_coverage') == 'gap' and gap_sec >= 60)
+        auto_open = state.get('auto_open', {})
+        not_running_text = auto_open.get('status_text_' + self.lang)
         if restart_only and key=='cooldown':key='restart_cooldown'
-        base_label = self.text('blind_status') if is_blind_timeout else self.text(key)
-        self.status.setText(base_label + (f" · {blind_sec:.0f}s" if is_blind_timeout else (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else ''))
+        if key == 'waiting' and not_running_text:
+            base_label = not_running_text
+        elif is_blind_timeout:
+            base_label = self.text('blind_status')
+        else:
+            base_label = self.text(key)
+        self.status.setText(base_label + (f" · {blind_sec:.0f}s" if (is_blind_timeout and not not_running_text) else (f" · {state.get('seconds',0):.0f}s" if state.get('seconds') else ''))
                             + (f" · {self.text('native_gap_status')}" if is_native_gap else '')
                             + (f" · {self.text('query_trace')}" if self.monitor.origin.query_trace and not restart_only else '')
                             + (f" · {self.text('light_etw')}" if self.monitor.light_etw else ''))
@@ -173,7 +182,9 @@ class Watch(QWidget):
         self.pause.setText(self.text('pause' if self.monitor.enabled else 'resume'))
         self.report_action.setEnabled(bool(self.report_path()))
         alerts = []
-        if is_blind_timeout:
+        if key == 'waiting' and not_running_text:
+            alerts.append(not_running_text)
+        elif is_blind_timeout:
             alerts.append(f"{self.text('blind_alert')} ({blind_sec:.0f}s)")
         if is_native_gap:
             alerts.append(f"{self.text('native_gap_alert')} ({gap_sec:.0f}s)")
