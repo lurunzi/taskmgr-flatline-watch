@@ -1,4 +1,5 @@
 """Tests for post-recovery navigation retries, backoff, and blind monitoring evidence."""
+import itertools
 import json
 import os
 import sys
@@ -158,7 +159,7 @@ class BlindNavigationTests(unittest.TestCase):
             # Transition to waiting
             monitor.blind_after_recovery = True
             monitor.next_navigation_retry_utc = '2026-10-26T16:00:00+00:00'
-            with patch.object(watch.time, 'monotonic', side_effect=[100.0, 150.0, 150.0]):
+            with patch.object(watch.time, 'monotonic', side_effect=itertools.count(100.0, 10.0)):
                 monitor.accept({'state': 'waiting'})
                 st2 = json.loads(status_path.read_text(encoding='utf-8'))
                 self.assertIsNotNone(st2['waiting_since'])

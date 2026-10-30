@@ -21,10 +21,10 @@ The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resol
 
 ## Native ranking anchor, discrepancy reporting, heartbeat repair, and daily monitoring (30 October 2026)
 
-Following N1's qualification pass (owner decision: 5 of 5 conforming, 0 outside flatlines across 57 hours) and subsequent roadmap deliverables (N2, A3, N4, J5):
+Following N1's qualification pass (owner decision: 6 of 6 conforming, 0 outside flatlines across 57+ hours) and subsequent roadmap deliverables (N2, A3, N4, J5):
 - **Native-anchored offline ranking (N2)**: Offline analysis now anchors the primary event ranking directly on the native aggregation error `0x8007139F` (`target_qpc`). A dedicated phase `pre_native` covers `[native_qpc - 2*freq, native_qpc]`, establishing the companion process ranking immediately preceding the internal data layer fault. A1 (pixel onset estimation) and A2 (batch cross-incident pixel ranking) are retired as no longer needed.
 - **Frozen-line discrepancy reporting (A3)**: Each observation and incident report now quantifies the discrepancy between the frozen total line height percentage (`(1.0 - tail_height / inner_height) * 100.0`) and the independent system CPU counter `system_cpu_percent`. Discrepancies (median and maximum during confirmation) are recorded in `observation.json`, `incident-analysis.json`, and rendered in bilingual reports to document divergence between Task Manager's frozen summary and actual machine utilization (e.g. 67.4% vs 100.0%, +32.6% on 24 October 16:06).
-- **Heartbeat repair and watchdog (N4)**: The event-name filter payload was fixed to match the exact 53-byte descriptor size (correcting Win32 error 87 that previously caused provider downgrade). A 10-second silence watchdog automatically detects heartbeat gaps when the target Task Manager is alive, re-enables Level 5 Verbose filtering, and distinguishes `heartbeat_stopped_during_freeze` (data model stopped cycling at onset) from `heartbeat_uncovered` (heartbeat missing or gap before onset) in reports. In addition, the consumer thread lifecycle, memory retention of the Win32 logfile structure, and lock-free provider re-enabling were resolved (eliminating an outage between 02:00 and 13:22 UTC), with automatic session recreation on thread termination.
+- **Heartbeat repair, watchdog, and first freeze result (N4)**: The event-name filter payload was fixed to match the exact 53-byte descriptor size (correcting Win32 error 87 that previously caused provider downgrade). A 10-second silence watchdog automatically detects heartbeat gaps when the target Task Manager is alive, re-enables Level 5 Verbose filtering, and distinguishes `heartbeat_stopped_during_freeze` (data model stopped cycling at onset) from `heartbeat_uncovered` (heartbeat missing or gap before onset) in reports. In addition, the consumer thread lifecycle, memory retention of the Win32 logfile structure, and lock-free provider re-enabling were resolved (eliminating an outage between 02:00 and 13:22 UTC), with automatic session recreation on thread termination. In `restart-20261030-140608-487205`, the first real N4 heartbeat result confirmed that Task Manager PID 62476 continued emitting `UpdateStarted/UpdateFinalized` pairs at ~1.0 s intervals throughout the freeze until recovery (`continued_during_freeze: True`, 53 events), proving the data model updates keep cycling and the freeze is confined to the aggregation/summary layer.
 - **Daily monitoring tracking (J5)**: `status.json` and `daily-monitoring.json` track daily effective monitoring hours (requiring Task Manager running on the CPU page, valid detector state, and unbroken native ETW coverage), blind duration, native gap duration, and heartbeat gap duration, retaining 30 days of history.
 
 ## Idle floor flatline corroboration and N1 evaluation (30 October 2026)
@@ -35,7 +35,7 @@ To eliminate false-positive freeze restarts caused by idle low load on empty or 
   1. The native ETW error signal `0x8007139F` from `TaskManagerDataLayer.dll` on the target Taskmgr PID, or
   2. Sustained system CPU utilization `>= 3.0 * (100.0 / inner_height)` (~6.52%).
 - **Suppression of uncorroborated idle flatlines**: Samples lacking both corroborating signals are classified as `idle_floor_uncorroborated` (`state: 'idle_floor_uncorroborated'`, `seconds: 0`, `alert: False`). Candidate progression and recovery are completely suppressed, allowing normal idle sitting without disruption.
-- **N1 signature progress**: 5 of 5 qualifying flatlines are conforming (100% conforming; 0 outside flatlines across 57 hours of recording). The 2 suspected false positives (27 Oct 18:15 and 29 Oct 17:11) are annotated as `indeterminate` idle false positives. Outside flatlines are automatically tracked in `n1-summary.json` if a pending native error exceeds 25 seconds without a corroborated flat chart.
+- **N1 signature progress**: 6 of 6 qualifying flatlines are conforming (100% conforming; 0 outside flatlines across 57+ hours of recording). The 2 suspected false positives (27 Oct 18:15 and 29 Oct 17:11) are annotated as `indeterminate` idle false positives. Outside flatlines are automatically tracked in `n1-summary.json` if a pending native error exceeds 25 seconds without a corroborated flat chart.
 - **Real-time ETW event timestamp correction**: Compensates for ETW buffer delivery latency (~1.3–1.5 seconds) by computing `delay_sec = max(0.0, (qpc() - EventHeader.TimeStamp) / freq)` and anchoring `timestamp_utc` and `timestamp_qpc` to the exact hardware QPC generation tick.
 
 ## Automatic startup and off-page CPU navigation (27 October 2026)
@@ -277,10 +277,10 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 ## 原生排行锚定、高度差异报告、心跳修复与日常监测（2026 年 10 月 30 日）
 
-随着 N1 特征判定通过（负责人决定：合格 5 次全部符合，57 小时记录期内平线外 0 次）以及路线图后续工作（N2、A3、N4、J5）落地：
+随着 N1 特征判定通过（负责人决定：合格 6 次全部符合，57+ 小时记录期内平线外 0 次）以及路线图后续工作（N2、A3、N4、J5）落地：
 - **原生错误锚定离线排行（N2）**：离线分析将事件主排行直接锚定在原生聚合错误 `0x8007139F` 的硬件时刻（`target_qpc`）。专属阶段 `pre_native` 覆盖原生错误前 2 秒 `[native_qpc - 2*freq, native_qpc]`，呈现数据层故障发生瞬间的伴随进程与线程创建。此前用于兜底的 A1（像素起点估算）与 A2（基于像素起点的跨事件批量排行）已正式撤销。
 - **冻结线高度与系统 CPU 差异报告（A3）**：每次观察与事件报告均定量计算冻结总线高度换算的百分比（`(1.0 - tail_height / inner_height) * 100.0`）与独立系统 CPU 计数器（`system_cpu_percent`）的差值。确认期间的中位数与最大差值记录于 `observation.json`、`incident-analysis.json` 并渲染至双语报告中，作为图线冻结脱离真实负载的强证据（例如 10 月 24 日 16:06 事件中图线 67.4% 对系统 CPU 100.0%，差值 +32.6%）。
-- **心跳修复与断流看门狗（N4）**：修复了事件名过滤器缓冲长度传递（修正此前因多传空字符导致 Win32 87 错误从而降级提供程序的缺陷，精确传入 53 字节）。加入 10 秒心跳无响应看门狗，在目标 Taskmgr 存活时自动重置 Verbose 级别过滤，并在分析报告中严格区分「冻结时数据模型循环停止」（`heartbeat_stopped_during_freeze`）与「心跳未覆盖」（`heartbeat_uncovered`）。此外修复了消费者线程生命周期、Win32 logfile 结构内存持有与免锁重新启用机制（消除了 02:00 至 13:22 UTC 期间的消费者断流），并在线程退出时自动重建会话。
+- **心跳修复、看门狗与首个冻结判定（N4）**：修复了事件名过滤器缓冲长度传递（修正此前因多传空字符导致 Win32 87 错误从而降级提供程序的缺陷，精确传入 53 字节）。加入 10 秒心跳无响应看门狗，在目标 Taskmgr 存活时自动重置 Verbose 级别过滤，并在分析报告中严格区分「冻结时数据模型循环停止」（`heartbeat_stopped_during_freeze`）与「心跳未覆盖」（`heartbeat_uncovered`）。此外修复了消费者线程生命周期、Win32 logfile 结构内存持有与免锁重新启用机制（消除了 02:00 至 13:22 UTC 期间的消费者断流），并在线程退出时自动重建会话。在 `restart-20261030-140608-487205` 中，首个真实 N4 结果证实 Task Manager（PID 62476）在原生错误至重启恢复期间，数据模型心跳持续约每秒一对正常触发（`continued_during_freeze: True`，53 次事件），证明冻结局限在聚合/摘要层，底层数据模型未停摆。
 - **日常监测指标留存（J5）**：`status.json` 与 `daily-monitoring.json` 开始按天累计有效监测小时数（同时满足在 CPU 页、检测器有效、原生覆盖正常）、失明时长、原生缺口时长与心跳缺口时长，保留最近 30 天历史数据。
 
 ## 闲置图底平线印证与 N1 进展（2026 年 10 月 30 日）
@@ -291,7 +291,7 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
   1. 当前目标 PID 上来自 `TaskManagerDataLayer.dll` 的原生 ETW 错误信号 `0x8007139F`；或
   2. 持续的系统 CPU 使用率 `>= 3.0 * (100.0 / inner_height)`（约 6.52%）。
 - **闲置未印证抑制**：两个印证条件均不具备的样本，直接归类为 `idle_floor_uncorroborated`（`state: 'idle_floor_uncorroborated'`, `seconds: 0`, `alert: False`），清空候选累计且不触发重启，允许正常低载闲置。
-- **N1 特征进展**：已记录合格平线 5 次中 5 次符合（符合率 100%；57 小时记录期内平线外 0 次）。两例疑似误报（10-27 18:15 与 10-29 17:11）已在 `n1-summary.json` 中批注为闲置图底误报。若待定原生错误超过 25 秒仍未出现印证平线，系统自动记入平线外统计。
+- **N1 特征进展**：已记录合格平线 6 次中 6 次符合（符合率 100%；57+ 小时记录期内平线外 0 次）。两例疑似误报（10-27 18:15 与 10-29 17:11）已在 `n1-summary.json` 中批注为闲置图底误报。若待定原生错误超过 25 秒仍未出现印证平线，系统自动记入平线外统计。
 - **实时 ETW 时间戳延迟修正**：针对 ETW 管道缓冲投递延迟（约 1.3–1.5 秒），通过 `delay_sec = max(0.0, (qpc() - EventHeader.TimeStamp) / freq)` 回算产生时刻，使 `timestamp_utc` 与 `timestamp_qpc` 精确锚定在硬件 QPC 事件生成瞬间。
 
 ## 开机自启动接管与离页自动切回（2026年10月27日）

@@ -475,8 +475,20 @@ class RealtimeConsumer:
             now_qpc = qpc()
             freq = frequency()
 
+            EPOCH_AS_FILETIME = 116444736000000000
+            HUNDREDS_OF_NANOSECONDS = 10000000
+
             hdr_ts = int(hdr.TimeStamp) if getattr(hdr, 'TimeStamp', 0) else 0
-            if hdr_ts > 0 and hdr_ts <= now_qpc:
+            if hdr_ts > EPOCH_AS_FILETIME:
+                # Real-time ETW delivers timestamps converted to system FILETIME (100ns since 1601-01-01 UTC)
+                event_sec = (hdr_ts - EPOCH_AS_FILETIME) / HUNDREDS_OF_NANOSECONDS
+                event_utc_dt = datetime.fromtimestamp(event_sec, tz=timezone.utc)
+                event_utc = event_utc_dt.isoformat()
+                now_utc_dt = datetime.now(timezone.utc)
+                delay_sec = max(0.0, (now_utc_dt - event_utc_dt).total_seconds())
+                event_qpc = now_qpc - int(delay_sec * freq)
+                event_mono = now_mono - delay_sec
+            elif 0 < hdr_ts <= now_qpc:
                 delay_sec = max(0.0, (now_qpc - hdr_ts) / freq)
                 event_qpc = hdr_ts
                 event_mono = now_mono - delay_sec

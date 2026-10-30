@@ -257,7 +257,7 @@ class J5DailyMonitoringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d)
             with patch('AutomaticWatch.OUTPUT', out):
-                monitor = Monitor(light_etw=False)
+                monitor = Monitor(light_etw=False, output=out)
                 monitor.daily_monitoring_file = out / 'daily-monitoring.json'
                 monitor.daily_monitoring_history = []
                 monitor.last_daily_update_mono = 100.0

@@ -169,8 +169,9 @@ class RealtimeConsumerResilienceTests(unittest.TestCase):
 
     def test_auto_recovery_rebuilds_failed_consumer_session(self):
         """AutomaticWatch watchdog detects failed realtime consumer and recreates the session."""
-        with patch('AutomaticWatch.OUTPUT', Path('.local')):
-            monitor = Monitor(light_etw=False)
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            monitor = Monitor(light_etw=False, output=d)
             monitor.light_etw = True
             fake_realtime = RealtimeConsumer(target_pid=1234, enabled=False)
             fake_realtime.state = {'state': 'failed', 'session': 'TaskmgrRealtime-Live', 'error': 'simulated failure'}

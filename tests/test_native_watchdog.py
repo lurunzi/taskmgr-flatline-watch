@@ -74,9 +74,11 @@ class NativeWatchdogTests(unittest.TestCase):
         self.guard = patch.object(watch.Monitor, 'watch_origin')
         self.guard.start()
         self.addCleanup(self.guard.stop)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
 
     def _create_monitor(self, target_pid=1234):
-        monitor = watch.Monitor(restart_only=True)
+        monitor = watch.Monitor(restart_only=True, output=self.temp_dir.name)
         monitor.light_etw = True
         fake_rec = MagicMock()
         fake_rec.status.return_value = {'state': 'running', 'session': 'TaskmgrCorrelation-test'}

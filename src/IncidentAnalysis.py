@@ -7,6 +7,23 @@ import statistics
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+import os
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
+_REAL_OUTPUT = Path('D:/TaskmgrFreezeCaptures').resolve()
+_REPO_LOCAL = (_ROOT / '.local').resolve()
+
+def assert_not_protected_test_path(path):
+    if os.environ.get('TASKMGR_WATCH_TEST') == '1' or 'unittest' in sys.modules:
+        try:
+            res = Path(path).resolve()
+            if res == _REAL_OUTPUT or _REAL_OUTPUT in res.parents:
+                raise RuntimeError(f"TEST ISOLATION VIOLATION: Test environment attempted to write to real evidence directory: {path}")
+            if res == _REPO_LOCAL or _REPO_LOCAL in res.parents:
+                raise RuntimeError(f"TEST ISOLATION VIOLATION: Test environment attempted to write to repository .local directory: {path}")
+        except (ValueError, OSError):
+            pass
 
 _spec = importlib.util.spec_from_file_location('legacy_process_decoder',
     Path(__file__).resolve().parents[1]/'tools/correlate-process-trace.py')
@@ -419,6 +436,7 @@ def extract_native_signature(native_events, events, header, observation, resolve
             'utc': target_utc,
             'taskmgr_pid': target_pid,
             'thread_id': target_tid,
+            'lead_seconds': lead_seconds,
             'lead_seconds_before_first_candidate': lead_seconds,
             'call_chain': call_chain,
             'call_chain_event_count': len(call_chain),
@@ -517,6 +535,8 @@ def extract_native_signature(native_events, events, header, observation, resolve
         'hresult': None,
         'qpc': None,
         'utc': None,
+        'lead_seconds': None,
+        'lead_seconds_before_first_candidate': None,
         'call_chain': [],
         'call_chain_event_count': 0,
         'activity_before': None,
@@ -555,6 +575,7 @@ def record_outside_flatline(summary_dir, native_error, reason='chart_not_flat_fo
     summary['outside_flatlines'].append(entry)
     summary['outside_flatlines_count'] = len(summary['outside_flatlines'])
 
+    assert_not_protected_test_path(summary_path)
     try:
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     except Exception:
@@ -623,6 +644,7 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
         else:
             summary['status'] = 'evaluating'
 
+    assert_not_protected_test_path(summary_path)
     try:
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     except Exception:
@@ -809,6 +831,7 @@ def analyze(folder, output=None):
     hb_path = folder/'heartbeat.json'
     result['heartbeat'] = analyze_heartbeat(hb_path, observation, markers, native_sig, freq) if hb_path.exists() else None
 
+    assert_not_protected_test_path(output / 'incident-analysis.json')
     output.mkdir(parents=True,exist_ok=True)
     (output/'incident-analysis.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (output/'incident-analysis.md').write_text(render(result),encoding='utf-8')

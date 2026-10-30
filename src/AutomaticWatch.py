@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import struct
+import sys
 import threading
 import time
 from collections import deque
@@ -26,9 +27,38 @@ from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS,
 from IncidentAnalysis import record_outside_flatline
 
 ROOT = Path(__file__).resolve().parents[1]
+REAL_OUTPUT = Path('D:/TaskmgrFreezeCaptures').resolve()
+REPO_LOCAL = (ROOT / '.local').resolve()
 OUTPUT = Path('D:/TaskmgrFreezeCaptures')
 PROCDUMP = ROOT / '.local/procdump/procdump64.exe'
 VERIFY_REQUEST = ROOT / '.local/verify.request'
+
+_TEST_TEMP_OUTPUT = None
+
+def is_test_environment():
+    if os.environ.get('TASKMGR_WATCH_TEST') == '1':
+        return True
+    if 'unittest' in sys.modules:
+        return True
+    return False
+
+def get_test_temp_output():
+    global _TEST_TEMP_OUTPUT
+    if _TEST_TEMP_OUTPUT is None or not Path(_TEST_TEMP_OUTPUT).exists():
+        import tempfile
+        _TEST_TEMP_OUTPUT = tempfile.mkdtemp(prefix='taskmgr-watch-test-')
+    return Path(_TEST_TEMP_OUTPUT)
+
+def assert_not_protected_test_path(path):
+    if is_test_environment():
+        try:
+            res = Path(path).resolve()
+            if res == REAL_OUTPUT or REAL_OUTPUT in res.parents:
+                raise RuntimeError(f"TEST ISOLATION VIOLATION: Test environment attempted to write to real evidence directory: {path}")
+            if res == REPO_LOCAL or REPO_LOCAL in res.parents:
+                raise RuntimeError(f"TEST ISOLATION VIOLATION: Test environment attempted to write to repository .local directory: {path}")
+        except (ValueError, OSError):
+            pass
 RETRY_LIMIT = 3
 RETRY_INTERVAL = 30
 CAPTURE_COOLDOWN = 600
@@ -141,6 +171,7 @@ def timestamp():
     return datetime.now().astimezone().isoformat()
 
 def write_json(path, value):
+    assert_not_protected_test_path(path)
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding='utf-8')
     temp.replace(path)
@@ -194,9 +225,10 @@ def require_taskmgr(pid):
     finally:
         kernel.CloseHandle(handle)
 
-def storage_available():
-    used = sum(p.stat().st_size for p in OUTPUT.glob('*/*.dmp'))
-    return shutil.disk_usage(OUTPUT).free >= 10*1024**3 and used <= 50*1024**3
+def storage_available(output_dir=None):
+    target = output_dir or OUTPUT
+    used = sum(p.stat().st_size for p in target.glob('*/*.dmp'))
+    return shutil.disk_usage(target).free >= 10*1024**3 and used <= 50*1024**3
 
 def write_dump(pid, destination):
     """Dump a PSS clone without terminating the target."""
@@ -301,16 +333,26 @@ def inspect_target_dll(baseline_path=None, dll_path=None):
 
 class Monitor:
     def __init__(self, query_trace=False, restart_only=False, light_etw=False,
-                 etw_budget=TRACE_BUDGET):
+                 etw_budget=TRACE_BUDGET, output=None):
         # Lightweight ETW is separate from the origin debugger/dump monitor.
         self.restart_only = bool(restart_only or light_etw)
         self.light_etw = light_etw
-        OUTPUT.mkdir(parents=True, exist_ok=True)
-        self.target_dll = inspect_target_dll(OUTPUT/'target-dll-baseline.json')
+        if output is not None:
+            self.output = Path(output)
+        elif os.environ.get('TASKMGR_WATCH_OUTPUT'):
+            self.output = Path(os.environ['TASKMGR_WATCH_OUTPUT'])
+        elif OUTPUT != REAL_OUTPUT:
+            self.output = Path(OUTPUT)
+        elif is_test_environment():
+            self.output = get_test_temp_output()
+        else:
+            self.output = OUTPUT
+        self.output.mkdir(parents=True, exist_ok=True)
+        self.target_dll = inspect_target_dll(self.output/'target-dll-baseline.json')
         self.detector = FlatlineDetector(30)
         self.frames = deque(maxlen=61 if light_etw else 31)
         self.observations = Observations()
-        self.recorder = RollingRecorder(OUTPUT, trace_budget=etw_budget) if light_etw else None
+        self.recorder = RollingRecorder(self.output, trace_budget=etw_budget) if light_etw else None
         self.offline = OfflineProcessor() if light_etw else None
         self.realtime = RealtimeConsumer() if light_etw else None
         if self.realtime:
@@ -327,7 +369,7 @@ class Monitor:
         self.dump_thread = None
         self.last_capture = 0
         self.last_capture_target = None
-        prior = [p for p in OUTPUT.glob('*/event.json') if not p.parent.name.startswith('verification-')]
+        prior = [p for p in self.output.glob('*/event.json') if not p.parent.name.startswith('verification-')]
         if prior:
             age = max(0,time.time()-max(p.stat().st_mtime for p in prior))
             if age < 600:
@@ -378,12 +420,12 @@ class Monitor:
         self.heartbeat_gap_retry_count = 0
         self.cumulative_heartbeat_gap_seconds = 0.0
         self.last_known_heartbeat_count = 0
-        self.daily_monitoring_file = OUTPUT / 'daily-monitoring.json'
+        self.daily_monitoring_file = self.output / 'daily-monitoring.json'
         self.daily_monitoring_history = self._load_daily_monitoring()
         self.last_daily_update_mono = time.monotonic()
         self.current_monitored_pid = None
         self.target_pid_start_monotonic = None
-        self.origin = OriginWatch(PROCDUMP, OUTPUT, validate_full_dump, write_json, query_trace)
+        self.origin = OriginWatch(PROCDUMP, self.output, validate_full_dump, write_json, query_trace)
         self.last_origin_scan = 0
         self.origin_error = None
         if prior:
@@ -391,7 +433,7 @@ class Monitor:
             saved=json.loads(latest.read_text(encoding='utf-8'))
             if saved.get('status')=='complete' and not saved.get('recovery'):
                 self.pending_recovery=(latest.parent,saved)
-        history=list(OUTPUT.glob('*/event.json'))
+        history=list(self.output.glob('*/event.json'))
         if history:
             latest=max(history,key=lambda p:p.stat().st_mtime)
             saved=json.loads(latest.read_text(encoding='utf-8'))
@@ -445,7 +487,7 @@ class Monitor:
             blind_after = False
             next_retry = None
         n1_tally = None
-        n1_file = OUTPUT/'n1-summary.json'
+        n1_file = self.output/'n1-summary.json'
         if n1_file.exists():
             try:
                 n1_data = json.loads(n1_file.read_text(encoding='utf-8'))
@@ -502,7 +544,7 @@ class Monitor:
         auto_open_text = auto_open_text_zh
 
         self.state = {'state':state, 'timestamp':timestamp(), 'watcher_pid':os.getpid(),
-                      'output':str(OUTPUT), 'last_event':self.last_event,
+                      'output':str(self.output), 'last_event':self.last_event,
                       'dump_running':bool(self.dump_thread and self.dump_thread.is_alive()),
                       'capture_result':self.capture_result, 'recovery':self.recovery_result,
                       'origin_monitoring':sorted(self.origin.sessions), 'origin_error':self.origin_error,
@@ -546,7 +588,7 @@ class Monitor:
                       },
                       **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
-            write_json(OUTPUT/'status.json', self.state)
+            write_json(self.output/'status.json', self.state)
             self.last_status_write = time.monotonic()
 
     def get_taskmgr_pids(self):
@@ -961,7 +1003,7 @@ class Monitor:
                     self.realtime.clear_native_error()
                     self.observations.record_uncorroborated_native_error(native_error, 'chart_not_flat_for_10s')
                     try:
-                        record_outside_flatline(OUTPUT, native_error, 'chart_not_flat_for_10s')
+                        record_outside_flatline(self.output, native_error, 'chart_not_flat_for_10s')
                         today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
                         for entry in self.daily_monitoring_history:
                             if entry.get('date') == today_date:
@@ -1004,7 +1046,7 @@ class Monitor:
             self.publish('storage_limit')
             return
         prefix = 'verification-' if verification else ''
-        folder = OUTPUT/(prefix+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+        folder = self.output/(prefix+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
         folder.mkdir()
         if self.realtime:
             try:
@@ -1040,7 +1082,7 @@ class Monitor:
         self.publish('capturing',taskmgr_pid=sample['pid'])
 
     def restart_now(self, sample, target, trigger_kind='visual', native_error=None, corroboration_seconds=None):
-        folder = OUTPUT/('restart-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+        folder = self.output/('restart-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
         folder.mkdir()
         if self.realtime:
             try:

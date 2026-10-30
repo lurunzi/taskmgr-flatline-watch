@@ -286,6 +286,79 @@ class IdleFloorRegressionTests(unittest.TestCase):
             self.assertEqual(err['timestamp_utc'], '2026-10-30T01:00:00+00:00')
             self.assertAlmostEqual(err['timestamp_monotonic'], 50.0 - 1.35, places=3)
 
+    def test_protected_test_paths_raise_isolation_violation(self):
+        import AutomaticWatch as AW
+        # In test environment, writes to production evidence or repo .local must be rejected
+        with self.assertRaises(RuntimeError) as ctx1:
+            AW.assert_not_protected_test_path(Path('D:/TaskmgrFreezeCaptures/status.json'))
+        self.assertIn('TEST ISOLATION VIOLATION', str(ctx1.exception))
+
+        with self.assertRaises(RuntimeError) as ctx2:
+            AW.assert_not_protected_test_path(AW.REPO_LOCAL / 'status.json')
+        self.assertIn('TEST ISOLATION VIOLATION', str(ctx2.exception))
+
+        with self.assertRaises(RuntimeError) as ctx3:
+            AW.write_json(Path('D:/TaskmgrFreezeCaptures/target-dll-baseline.json'), {'polluted': True})
+        self.assertIn('TEST ISOLATION VIOLATION', str(ctx3.exception))
+
+    def test_realtime_consumer_filetime_parsing_aligns_utc(self):
+        import ctypes
+        from datetime import timedelta
+        import RealtimeTrace as RT
+
+        target_dt = datetime(2026, 10, 30, 14, 5, 41, 881880, tzinfo=timezone.utc)
+        epoch_1601 = datetime(1601, 1, 1, tzinfo=timezone.utc)
+        ft_us = int((target_dt - epoch_1601).total_seconds() * 1_000_000)
+        filetime_100ns = ft_us * 10
+
+        consumer = RT.RealtimeConsumer(target_pid=62476)
+        consumer.enabled = False
+
+        payload = (b'prefix_' + RT.SIGNATURE_HRESULT_BYTES +
+                   b'_mid_' + RT.SIGNATURE_MODULE_BYTES + b'_suffix')
+        raw_buf = ctypes.create_string_buffer(payload)
+
+        class Header:
+            ProviderId = RT.parse_guid(RT.TASKMGR_GUID)
+            ProcessId = 62476
+            ThreadId = 39412
+            TimeStamp = filetime_100ns
+
+        class Record:
+            EventHeader = Header()
+            UserData = ctypes.addressof(raw_buf)
+            UserDataLength = len(payload)
+
+        rec = Record()
+        consumer._on_event(rec)
+
+        err = consumer.poll_native_error()
+        self.assertIsNotNone(err)
+        # Direct FILETIME conversion accurately aligns UTC without delivery lag
+        self.assertEqual(err['timestamp_utc'], '2026-10-30T14:05:41.881880+00:00')
+
+    def test_incident_analysis_lead_seconds_field_and_utc_alignment(self):
+        # Test using the actual 14:06 incident if available on disk
+        incident_path = Path('D:/TaskmgrFreezeCaptures/restart-20261030-140608-487205')
+        if not incident_path.exists():
+            self.skipTest('Incident folder not found on disk')
+
+        obs = json.loads((incident_path / 'observation.json').read_text(encoding='utf-8'))
+        event = json.loads((incident_path / 'event.json').read_text(encoding='utf-8'))
+
+        with tempfile.TemporaryDirectory() as d:
+            out_dir = Path(d)
+            # Run analyze into a temporary directory
+            res = IA.analyze(incident_path, output=out_dir)
+            native_sig = res['native_signature']
+            self.assertIsNotNone(native_sig)
+            self.assertIn('lead_seconds', native_sig)
+            lead_sec = native_sig['lead_seconds']
+            self.assertIsNotNone(lead_sec)
+            self.assertGreaterEqual(lead_sec, 14.0)
+            self.assertLessEqual(lead_sec, 16.0)
+            self.assertEqual(lead_sec, native_sig['lead_seconds_before_first_candidate'])
+
 
 if __name__ == '__main__':
     unittest.main()
