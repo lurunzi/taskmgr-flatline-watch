@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-27",
+  "date": "2026-10-30",
   "purpose": "Boot auto-launch Task Manager and navigate off-page instances back to CPU logical processors (A10).",
   "generator": {
     "name": "Archify",
@@ -11,20 +11,20 @@
   "quality_profile": "showcase",
   "correction_rounds": 1,
   "corrections": [
-    "Boot auto-launch on desktop ready with SW_SHOWNOACTIVATE, 2 min waiting off-page navigation with A8 backoff, and 10 min user closure cooldown."
+    "Boot auto-launch on desktop ready with SW_SHOWNOACTIVATE, 2 min waiting off-page navigation with A8 backoff, 10 min user closure cooldown, and idle floor corroboration with native 0x8007139F or visible CPU (A11)."
   ],
   "diagrams": [
     {
       "language": "en",
       "specification": {
         "file": "overview.en.workflow.json",
-        "sha256": "404cd655a05f5d46fa1aefc8a660290c4ce99d7c249abe5d2ad870f1fd90236c",
-        "bytes": 5490
+        "sha256": "3ca23e2243e9d01485997c6fbe364c027f470e6cea1e8bc21ab3fdd14e982860",
+        "bytes": 5599
       },
       "artifact": {
         "file": "overview.en.html",
-        "sha256": "8f17e45352ccf254fb6b9f0c4a80cd1666e56d7bb40e748f236086d98269bbbc",
-        "bytes": 813690,
+        "sha256": "a061695c5365317beb0f75b2b56fb594bf59c3a1e485d1460abdbebcb35f756d",
+        "bytes": 813838,
         "committed": false
       },
       "validation": {
@@ -41,16 +41,16 @@
       "exports": [
         {
           "file": "overview.en.light.png",
-          "sha256": "c72962fd0f45a19b7fcae1d1c05cce6a88fe877b44747263278263ff41432bae",
-          "bytes": 591060,
+          "sha256": "c8be54114108381159a4ad380f8f1f634b5e33a32be5cae7044ce331d72e9d94",
+          "bytes": 592458,
           "theme": "light",
           "pixels": "4828x2608",
           "canonical": true
         },
         {
           "file": "overview.en.dark.png",
-          "sha256": "ec1ec4e388805da8da4b844273ce1e32bcfc0e796970a1a3ed484f07108d1a2a",
-          "bytes": 604546,
+          "sha256": "59d91624ceae541884a7849de265d51fac392d1ff34bf304407441ff37d0ae57",
+          "bytes": 605707,
           "theme": "dark",
           "pixels": "4828x2608",
           "canonical": true
@@ -61,13 +61,13 @@
       "language": "zh",
       "specification": {
         "file": "overview.zh.workflow.json",
-        "sha256": "66e8b98adf90d251365f00a18dc3b27651b881bd7b15a28b73147b49b54aa693",
-        "bytes": 5572
+        "sha256": "134d167904cbb68135c2ceb14b1b9865e846c0db182afc54d54ecdca0ad0428d",
+        "bytes": 5697
       },
       "artifact": {
         "file": "overview.zh.html",
-        "sha256": "adf99232e259828cc1bdab5b682a66eb90dfd2fd92df27ccb633f51bef3012b8",
-        "bytes": 813429,
+        "sha256": "ce725a7d6c52543f2f7cff39c3acb9c98dbd3a4a89cb643cab692bd46ca4bb7c",
+        "bytes": 813620,
         "committed": false
       },
       "validation": {
@@ -84,16 +84,16 @@
       "exports": [
         {
           "file": "overview.zh.light.png",
-          "sha256": "23426e954d655089c3bf6549b02f515eb7ac0f78190cd113e62baa5b283c818b",
-          "bytes": 612250,
+          "sha256": "1a25df697d4a7254a0e2647c2c1cdcdaed772f663421c2e223beff1398aec9ec",
+          "bytes": 616413,
           "theme": "light",
           "pixels": "4488x2608",
           "canonical": true
         },
         {
           "file": "overview.zh.dark.png",
-          "sha256": "1303ced3455619259bba9ba3a0a0b23d0161c80b14a12f5714e77905edfc9929",
-          "bytes": 622816,
+          "sha256": "04dfb57d4bfe0f7341156a41bf5cc477a0df43960d05dd1744cbeffd001e599a",
+          "bytes": 626939,
           "theme": "dark",
           "pixels": "4488x2608",
           "canonical": true

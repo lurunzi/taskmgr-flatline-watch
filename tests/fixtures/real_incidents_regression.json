@@ -1,0 +1,126 @@
+{
+  "incidents": {
+    "restart-20261027-181505-106754": {
+      "description": "False positive: empty chart on idle low load (~2.6% CPU) without native 0x8007139F",
+      "is_false_positive": true,
+      "detector_kind": "empty_aggregate",
+      "tail_height": 46.0,
+      "native_corroborated": false,
+      "system_cpu_samples": [
+        2.274,
+        2.046,
+        4.536,
+        2.488,
+        4.542,
+        3.65,
+        2.213,
+        3.61,
+        2.779,
+        2.79
+      ],
+      "expected_state": "idle_floor_uncorroborated"
+    },
+    "restart-20261029-171121-203731": {
+      "description": "False positive: empty chart on idle low load (~2.8% CPU) without native 0x8007139F",
+      "is_false_positive": true,
+      "detector_kind": "empty_aggregate",
+      "tail_height": 46.0,
+      "native_corroborated": false,
+      "system_cpu_samples": [
+        2.918,
+        2.467,
+        3.968,
+        2.344,
+        2.447,
+        2.539,
+        2.008,
+        2.838,
+        4.625,
+        2.8
+      ],
+      "expected_state": "idle_floor_uncorroborated"
+    },
+    "restart-20261026-164452-116086": {
+      "description": "True freeze: 0x8007139F logged, tail_height 43.0, CPU peaks to 8.7%",
+      "is_false_positive": false,
+      "detector_kind": "flat_curve",
+      "tail_height": 43.0,
+      "native_corroborated": true,
+      "system_cpu_samples": [
+        2.575,
+        5.156,
+        3.546,
+        2.774,
+        1.952,
+        4.319,
+        5.443,
+        8.742,
+        5.961,
+        7.172
+      ],
+      "expected_state": "suspect"
+    },
+    "restart-20261028-015010-677396": {
+      "description": "True freeze: 0x8007139F logged, tail_height 36.0, CPU ~21-24%",
+      "is_false_positive": false,
+      "detector_kind": "flat_curve",
+      "tail_height": 36.0,
+      "native_corroborated": true,
+      "system_cpu_samples": [
+        24.731,
+        21.09,
+        20.596,
+        24.639,
+        21.665
+      ],
+      "expected_state": "suspect"
+    },
+    "restart-20261028-015122-707452": {
+      "description": "True freeze: mid-level curve flatline at tail_height 28.0, CPU ~23-24%",
+      "is_false_positive": false,
+      "detector_kind": "flat_curve",
+      "tail_height": 28.0,
+      "native_corroborated": false,
+      "system_cpu_samples": [
+        23.401,
+        23.668,
+        24.903,
+        23.61,
+        23.817
+      ],
+      "expected_state": "suspect"
+    },
+    "restart-20261028-020507-905926": {
+      "description": "True freeze: 0x8007139F logged, tail_height 43.0, CPU ~20-22%",
+      "is_false_positive": false,
+      "detector_kind": "flat_curve",
+      "tail_height": 43.0,
+      "native_corroborated": true,
+      "system_cpu_samples": [
+        20.753,
+        19.613,
+        21.535,
+        20.898,
+        21.701
+      ],
+      "expected_state": "suspect"
+    },
+    "restart-20261028-194748-689068": {
+      "description": "True freeze: 0x8007139F logged, tail_height 43.0, CPU ~7.5-8.7%",
+      "is_false_positive": false,
+      "detector_kind": "flat_curve",
+      "tail_height": 43.0,
+      "native_corroborated": true,
+      "system_cpu_samples": [
+        9.074,
+        6.739,
+        7.513,
+        8.339,
+        5.624,
+        8.788,
+        7.565
+      ],
+      "expected_state": "suspect"
+    }
+  }
+}

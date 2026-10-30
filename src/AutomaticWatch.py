@@ -23,6 +23,7 @@ from ProcessTrace import qpc
 from RollingProcessTrace import RollingRecorder, TRACE_BUDGET
 from RealtimeTrace import RealtimeConsumer, re_enable_session_provider
 from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS, mark_recovery
+from IncidentAnalysis import record_outside_flatline
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path('D:/TaskmgrFreezeCaptures')
@@ -443,6 +444,7 @@ class Monitor:
                     'conforming_count': n1_data.get('conforming_count', 0),
                     'non_conforming_count': n1_data.get('non_conforming_count', 0),
                     'indeterminate_count': n1_data.get('indeterminate_count', 0),
+                    'outside_flatlines_count': n1_data.get('outside_flatlines_count', 0),
                     'status': n1_data.get('status', 'evaluating')
                 }
             except Exception:
@@ -453,6 +455,7 @@ class Monitor:
                 'conforming_count': 1,
                 'non_conforming_count': 0,
                 'indeterminate_count': 1,
+                'outside_flatlines_count': 0,
                 'status': 'evaluating'
             }
         if self.current_provider_gap:
@@ -738,8 +741,16 @@ class Monitor:
         now = time.monotonic()
         if self.observations.last_time is not None and not 0 < now-self.observations.last_time <= 6:
             self.reset_observations('sample_clock_gap', {'seconds':now-self.observations.last_time})
+        has_native = False
+        if self.realtime:
+            ne = self.realtime.poll_native_error()
+            if (ne and ne.get('taskmgr_pid') == sample['pid'] and
+                str(ne.get('hresult', '')).upper() in ('0X8007139F', '2147947423', '-2147019873') and
+                ne.get('module') == 'TaskManagerDataLayer.dll'):
+                has_native = True
         result = self.detector.observe(now, sample['total'], sample['cores'],
-                                       system_cpu_percent=sample.get('system_cpu_percent'))
+                                       system_cpu_percent=sample.get('system_cpu_percent'),
+                                       native_corroborated=has_native)
         frame = {'timestamp':timestamp(), 'qpc':qpc(), 'monotonic':now, 'result':result, 'images':{}}
         for key in ('total','cores'):
             ok, encoded = cv2.imencode('.png',sample[key])
@@ -772,6 +783,10 @@ class Monitor:
                 elif dt >= 25.0:
                     self.realtime.clear_native_error()
                     self.observations.record_uncorroborated_native_error(native_error, 'chart_not_flat_for_10s')
+                    try:
+                        record_outside_flatline(OUTPUT, native_error, 'chart_not_flat_for_10s')
+                    except Exception:
+                        pass
 
         if result['state'] == 'suspect' and (result['alert'] or self.capture_result in ('dump_failed','recovered',None)):
             native_error = self.realtime.clear_native_error() if self.realtime else None

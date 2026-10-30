@@ -133,7 +133,7 @@
       "col": 2,
       "type": "security",
       "label": "Keep observing",
-      "sublabel": "static page: no trigger",
+      "sublabel": "static or uncorroborated idle",
       "width": 150
     },
     {
@@ -240,6 +240,7 @@
       "items": [
         "Full logical grid: 80% of widths within one adjacent pixel pair",
         "Boot auto-launch & off-page restore: SW_SHOWNOACTIVATE; 2 min off-page A8 backoff",
+        "Idle floor corroboration: empty or <= 2 px charts require 0x8007139F or >= 3 px visible CPU",
         "Fast recovery & watchdog: 0x8007139F / 10 s; 15 s silence re-enables; gaps mark N2 indeterminate",
         "Visual fallback: 30 s stale total curve confirms unassisted freeze",
         "Dual circular ETW: Kernel-Process + Taskmgr Error (128 MB)",

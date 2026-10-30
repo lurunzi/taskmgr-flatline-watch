@@ -94,9 +94,31 @@ class DetectionTests(unittest.TestCase):
             self.assertEqual(results[-1]['detector_kind'],'empty_aggregate')
 
     def test_empty_aggregate_requires_independent_current_activity(self):
-        for cpu in (None,0,.49,1.99,float('nan'),101):
+        for cpu in (None,float('nan'),101):
             results = self.empty_sequence(cpu=cpu)
             self.assertTrue(all(r['state']=='invalid' and not r['alert'] for r in results))
+        for cpu in (0,.49,1.99,4.5):
+            results = self.empty_sequence(cpu=cpu)
+            self.assertTrue(all(r['state']=='idle_floor_uncorroborated' and not r['alert'] for r in results))
+
+    def test_floor_flat_curve_requires_corroboration(self):
+        detector = FlatlineDetector()
+        # graph(46) produces height 44.0 on 46px inner height (within bottom 2 pixels)
+        results = [detector.observe(t, graph(46), graph(15+t%8, wave=True), 2.5) for t in range(0, 42, 2)]
+        self.assertTrue(all(r['state'] == 'idle_floor_uncorroborated' and not r['alert'] for r in results))
+
+    def test_floor_flat_curve_with_native_signal_alerts(self):
+        detector = FlatlineDetector()
+        results = [detector.observe(t, graph(46), graph(15+t%8, wave=True), 2.5, native_corroborated=True) for t in range(0, 42, 2)]
+        self.assertEqual([i*2 for i,r in enumerate(results) if r['alert']], [30])
+        self.assertEqual(results[-1]['detector_kind'], 'flat_curve')
+
+    def test_floor_flat_curve_with_visible_system_cpu_alerts(self):
+        detector = FlatlineDetector()
+        # 8% CPU > 6.52% visible threshold
+        results = [detector.observe(t, graph(46), graph(15+t%8, wave=True), 8.0) for t in range(0, 42, 2)]
+        self.assertEqual([i*2 for i,r in enumerate(results) if r['alert']], [30])
+        self.assertEqual(results[-1]['detector_kind'], 'flat_curve')
 
     def test_empty_aggregate_with_static_cores_does_not_trigger(self):
         self.assertFalse(any(r['alert'] for r in self.empty_sequence(moving=False)))

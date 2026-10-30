@@ -56,40 +56,49 @@ class FlatlineDetector:
         self.recovery_since = None
         self.kind = None
 
-    def observe(self, now, aggregate, cores, system_cpu_percent=None):
+    def observe(self, now, aggregate, cores, system_cpu_percent=None, native_corroborated=False):
         if self.last_time is not None and (now <= self.last_time or now-self.last_time > 6):
             self.reset()
         previous_time = self.last_time
         self.last_time = now
         tail = curve_tail(aggregate)
-        core = blue_mask(cores)
-        # Zero plots may have no blue pixels. Only admit them when a painted
-        # frame and independent, current system CPU activity corroborate them.
-        empty = tail is None and empty_chart(aggregate)
-        if empty and system_cpu_percent is not None and np.isfinite(system_cpu_percent) and 2 <= system_cpu_percent <= 100:
-            tail = (float(aggregate.shape[0]-4), 0.0)
-        if tail is None or core.mean() < .005:
+        core = blue_mask(cores) if cores is not None else None
+
+        if core is None or core.mean() < .005:
             self.reset()
             return {'state': 'invalid', 'seconds': 0, 'alert': False,
-                    'reason': 'empty_unconfirmed' if empty else 'unrecognised_chart',
+                    'reason': 'unrecognised_chart',
                     'system_cpu_percent': system_cpu_percent}
-        kind = 'empty_aggregate' if empty else 'flat_curve'
-        if self.kind is not None and kind != self.kind:
+
+        inner_height = float(max(1, aggregate.shape[0] - 4)) if aggregate is not None and aggregate.shape[0] >= 12 else 46.0
+        # Independent activity derivation: 100% CPU occupies inner_height pixels (46 px on standard 50 px chart).
+        # 1-2 pixels (~2.2%-4.3%) are easily masked by the baseline border, antialiasing, or integer rounding.
+        # At least 3 vertical pixels (3 * 100 / inner_height, ~6.52% on 46 px) are required for guaranteed visibility.
+        visible_cpu_threshold = 3.0 * (100.0 / inner_height)
+
+        empty = tail is None and empty_chart(aggregate)
+        if tail is None and not empty:
             self.reset()
-            self.last_time = now
-            previous_time = None
-        self.kind = kind
+            return {'state': 'invalid', 'seconds': 0, 'alert': False,
+                    'reason': 'unrecognised_chart',
+                    'system_cpu_percent': system_cpu_percent}
+
+        if empty:
+            kind = 'empty_aggregate'
+            height = inner_height
+            spread = 0.0
+            tail = (height, spread)
+            is_floor = True
+        else:
+            kind = 'flat_curve'
+            height, spread = tail
+            is_floor = (height >= inner_height - 2.0)
+
         change = 0.0
         if self.last_core is not None and self.last_core.shape == core.shape:
             change = float(np.mean(self.last_core != core))
         self.last_core = core.copy()
-        if change > .003 and previous_time is not None:
-            self.changes.append(now)
-        while self.changes and self.changes[0] < now-self.seconds:
-            self.changes.popleft()
-        height, spread = tail
-        # A one-pixel change is real activity on the small CPU thumbnail.
-        # Admitting it turns normal low-load waves into a freeze candidate.
+
         flat = spread == 0.0
         same_level = self.anchor is None or height == self.anchor
         if not flat or not same_level:
@@ -100,6 +109,45 @@ class FlatlineDetector:
             if now-self.recovery_since >= 10:
                 self.latched = False
             return {'state': 'normal', 'seconds': 0, 'alert': False, 'core_change': change}
+
+        # Floor-level flatlines (empty or sitting within bottom 2 pixels) require independent corroboration:
+        # either native 0x8007139F on target PID, or sustained system CPU high enough to be visible (>= 3 px).
+        if is_floor:
+            has_visible_cpu = (system_cpu_percent is not None and
+                               np.isfinite(system_cpu_percent) and
+                               visible_cpu_threshold <= system_cpu_percent <= 100.0)
+            is_corroborated = bool(native_corroborated) or has_visible_cpu
+            if not is_corroborated:
+                self.since = None
+                self.anchor = None
+                self.recovery_since = None
+                self.kind = kind
+                if system_cpu_percent is None or not np.isfinite(system_cpu_percent) or not (0.0 <= system_cpu_percent <= 100.0):
+                    self.reset()
+                    return {'state': 'invalid', 'seconds': 0, 'alert': False,
+                            'reason': 'empty_unconfirmed' if empty else 'unrecognised_chart',
+                            'system_cpu_percent': system_cpu_percent}
+                return {
+                    'state': 'idle_floor_uncorroborated',
+                    'seconds': 0,
+                    'alert': False,
+                    'reason': 'idle_floor_uncorroborated',
+                    'detector_kind': kind,
+                    'system_cpu_percent': system_cpu_percent,
+                    'core_change': change,
+                    'tail_spread': spread,
+                    'tail_height': height,
+                }
+
+        if self.kind is not None and kind != self.kind:
+            self.reset()
+            self.last_time = now
+            previous_time = None
+        self.kind = kind
+        if change > .003 and previous_time is not None:
+            self.changes.append(now)
+        while self.changes and self.changes[0] < now-self.seconds:
+            self.changes.popleft()
         self.recovery_since = None
         if self.since is None:
             self.since, self.anchor = now, height

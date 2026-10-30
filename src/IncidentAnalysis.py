@@ -274,6 +274,14 @@ def extract_native_signature(native_events, events, header, observation, resolve
             except Exception:
                 pass
 
+    obs_ne = observation.get('native_event')
+    if isinstance(obs_ne, dict) and obs_ne.get('timestamp_qpc') and obs_ne.get('timestamp_utc'):
+        try:
+            anchor_utc = datetime.fromisoformat(obs_ne['timestamp_utc'])
+            anchor_qpc = int(obs_ne['timestamp_qpc'])
+        except Exception:
+            pass
+
     matching = []
     for ev in native_events:
         mod = ev.get('module', '')
@@ -516,7 +524,7 @@ def extract_native_signature(native_events, events, header, observation, resolve
     }
 
 
-def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None):
+def record_outside_flatline(summary_dir, native_error, reason='chart_not_flat_for_10s'):
     summary_path = Path(summary_dir)/'n1-summary.json'
     summary = {}
     if summary_path.exists():
@@ -529,14 +537,56 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
     summary.setdefault('conforming_count', 0)
     summary.setdefault('non_conforming_count', 0)
     summary.setdefault('indeterminate_count', 0)
+    summary.setdefault('outside_flatlines_count', 0)
+    summary.setdefault('outside_flatlines', [])
+    summary.setdefault('rule', 'Pass if in first 10 qualifying flatlines >=9 conform (0x8007139F from TaskManagerDataLayer.dll <= first_candidate) and outside flatlines <=1/day; fail if >=3 missing')
+    summary.setdefault('status', 'evaluating')
+    summary.setdefault('history', [])
+
+    entry = {
+        'timestamp_utc': (native_error.get('timestamp_utc') if isinstance(native_error, dict) else None) or datetime.now(timezone.utc).isoformat(),
+        'qpc': native_error.get('timestamp_qpc') if isinstance(native_error, dict) else None,
+        'taskmgr_pid': native_error.get('taskmgr_pid') if isinstance(native_error, dict) else None,
+        'thread_id': native_error.get('thread_id') if isinstance(native_error, dict) else None,
+        'hresult': native_error.get('hresult') if isinstance(native_error, dict) else None,
+        'module': native_error.get('module') if isinstance(native_error, dict) else None,
+        'reason': reason
+    }
+    summary['outside_flatlines'].append(entry)
+    summary['outside_flatlines_count'] = len(summary['outside_flatlines'])
+
+    try:
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    except Exception:
+        pass
+    return summary
+
+
+def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None, note=None):
+    summary_path = Path(summary_dir)/'n1-summary.json'
+    summary = {}
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+
+    summary.setdefault('qualifying_count', 0)
+    summary.setdefault('conforming_count', 0)
+    summary.setdefault('non_conforming_count', 0)
+    summary.setdefault('indeterminate_count', 0)
+    summary.setdefault('outside_flatlines_count', 0)
+    summary.setdefault('outside_flatlines', [])
     summary.setdefault('rule', 'Pass if in first 10 qualifying flatlines >=9 conform (0x8007139F from TaskManagerDataLayer.dll <= first_candidate) and outside flatlines <=1/day; fail if >=3 missing')
     summary.setdefault('status', 'evaluating')
     summary.setdefault('history', [])
 
     existing_idx = None
+    existing_entry = None
     for idx, h in enumerate(summary['history']):
         if h.get('incident') == incident_name:
             existing_idx = idx
+            existing_entry = h
             break
 
     verdict = native_sig.get('verdict', 'indeterminate')
@@ -550,6 +600,10 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
         'qpc': native_sig.get('qpc'),
         'lead_seconds': native_sig.get('lead_seconds_before_first_candidate')
     }
+    if note is not None:
+        entry['note'] = note
+    elif existing_entry and 'note' in existing_entry:
+        entry['note'] = existing_entry['note']
 
     if existing_idx is not None:
         summary['history'][existing_idx] = entry

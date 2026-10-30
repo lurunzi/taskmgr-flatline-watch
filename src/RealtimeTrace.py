@@ -16,7 +16,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from ProcessTrace import qpc, frequency, session_exists
@@ -453,7 +453,24 @@ class RealtimeConsumer:
             now_mono = time.monotonic()
             now_utc = datetime.now(timezone.utc).isoformat()
             now_qpc = qpc()
-            self.record_provider_event(now_qpc, now_utc, now_mono)
+            freq = frequency()
+
+            hdr_ts = int(hdr.TimeStamp) if getattr(hdr, 'TimeStamp', 0) else 0
+            if hdr_ts > 0 and hdr_ts <= now_qpc:
+                delay_sec = max(0.0, (now_qpc - hdr_ts) / freq)
+                event_qpc = hdr_ts
+                event_mono = now_mono - delay_sec
+                try:
+                    event_utc = (datetime.fromisoformat(now_utc) - timedelta(seconds=delay_sec)).isoformat()
+                except Exception:
+                    event_utc = now_utc
+            else:
+                delay_sec = 0.0
+                event_qpc = now_qpc
+                event_mono = now_mono
+                event_utc = now_utc
+
+            self.record_provider_event(event_qpc, event_utc, event_mono)
 
             u_len = record.UserDataLength
             if not u_len or not record.UserData:
@@ -468,9 +485,10 @@ class RealtimeConsumer:
                     'module': 'TaskManagerDataLayer.dll',
                     'taskmgr_pid': pid,
                     'thread_id': hdr.ThreadId,
-                    'timestamp_utc': now_utc,
-                    'timestamp_qpc': now_qpc,
-                    'timestamp_monotonic': now_mono,
+                    'timestamp_utc': event_utc,
+                    'timestamp_qpc': event_qpc,
+                    'timestamp_monotonic': event_mono,
+                    'delivery_delay_seconds': round(delay_sec, 3),
                 }
                 with self.lock:
                     if self.pending_native_error is None:
@@ -490,8 +508,8 @@ class RealtimeConsumer:
                     idx3 = raw.find(b'\x00', idx2 + 9)
                     cid = raw[idx2 + 9:idx3].decode('utf-8', errors='ignore') if idx3 > idx2 + 9 else ''
                     hb_entry = {
-                        'qpc': now_qpc,
-                        'utc': now_utc,
+                        'qpc': event_qpc,
+                        'utc': event_utc,
                         'pid': pid,
                         'tid': hdr.ThreadId,
                         'layer': layer,
