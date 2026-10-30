@@ -1,6 +1,8 @@
 """Visual observation markers and post-recovery offline work."""
 import ctypes
 import json
+import math
+import statistics
 import subprocess
 import sys
 import threading
@@ -100,11 +102,60 @@ class JobObject:
             self.handle = None
 
 
+def compute_frozen_line_discrepancy(items, inner_height=46.0):
+    """Computes frozen line percentage vs system_cpu_percent discrepancy (A3).
+
+    items can be a list of frame dicts (with 'result') or sample dicts.
+    """
+    if not items:
+        return None
+    tail_heights = []
+    cpu_values = []
+    for item in items:
+        res = item.get('result', item) if isinstance(item, dict) else {}
+        state = res.get('state')
+        if state in ('candidate', 'suspect', 'no_motion') or 'tail_height' in res:
+            th = res.get('tail_height')
+            if th is not None:
+                try:
+                    tail_heights.append(float(th))
+                except (ValueError, TypeError):
+                    pass
+            cpu = res.get('system_cpu_percent')
+            if cpu is not None:
+                try:
+                    cpu_f = float(cpu)
+                    if not (math.isnan(cpu_f) or math.isinf(cpu_f)) and 0.0 <= cpu_f <= 100.0:
+                        cpu_values.append(cpu_f)
+                except (ValueError, TypeError):
+                    pass
+
+    if not tail_heights or not cpu_values:
+        return None
+
+    med_tail = float(statistics.median(tail_heights))
+    ih = float(inner_height) if inner_height and inner_height > 0 else 46.0
+    frozen_pct = round(max(0.0, min(100.0, (1.0 - (med_tail / ih)) * 100.0)), 1)
+    cpu_med = round(float(statistics.median(cpu_values)), 1)
+    cpu_max = round(float(max(cpu_values)), 1)
+
+    return {
+        'tail_height_px': round(med_tail, 1),
+        'inner_height_px': round(ih, 1),
+        'frozen_line_percent': frozen_pct,
+        'system_cpu_percent_median': cpu_med,
+        'system_cpu_percent_max': cpu_max,
+        'discrepancy_median': round(cpu_med - frozen_pct, 1),
+        'discrepancy_max': round(cpu_max - frozen_pct, 1)
+    }
+
+
 class Observations:
     def __init__(self):
         self.breaks = deque(maxlen=32)
         self.blind_intervals = deque(maxlen=16)
         self.native_coverage_gaps = deque(maxlen=16)
+        self.heartbeat_coverage_gaps = deque(maxlen=16)
         self.uncorroborated_native_errors = deque(maxlen=16)
         self.previous_normal = None
         self.break_count = 0
@@ -117,6 +168,10 @@ class Observations:
     def record_native_coverage_gap(self, gap):
         if gap:
             self.native_coverage_gaps.append(gap)
+
+    def record_heartbeat_coverage_gap(self, gap):
+        if gap:
+            self.heartbeat_coverage_gaps.append(gap)
 
     def record_uncorroborated_native_error(self, event, reason='not_flat_for_10s'):
         if event:
@@ -156,13 +211,16 @@ class Observations:
 
     def record(self, frames, taskmgr_pid, watcher_pid, current_blind=None,
                trigger_kind='visual', native_error=None, corroboration_seconds=None,
-               current_native_gap=None):
+               current_native_gap=None, current_heartbeat_gap=None):
         intervals = list(self.blind_intervals)
         if current_blind:
             intervals.append(current_blind)
         gaps = list(self.native_coverage_gaps)
         if current_native_gap:
             gaps.append(current_native_gap)
+        hb_gaps = list(self.heartbeat_coverage_gaps)
+        if current_heartbeat_gap:
+            hb_gaps.append(current_heartbeat_gap)
         rec = {'schema_version': 2, 'qpc_frequency': frequency(),
                 'taskmgr_pid': taskmgr_pid, 'watcher_pid': watcher_pid,
                 'clock_basis': 'watcher sample receipt; not native fault timing',
@@ -172,6 +230,7 @@ class Observations:
                                'limit':'Disconnected normal is context only, never a control or native fault boundary.'},
                 'blind_intervals': intervals,
                 'native_coverage_gaps': gaps,
+                'heartbeat_coverage_gaps': hb_gaps,
                 'uncorroborated_native_events': list(self.uncorroborated_native_errors),
                 'markers': {'last_normal': self.last_normal, 'first_candidate': self.first_candidate,
                             'confirmed': self.confirmed, 'recovery_started': None, 'recovery_finished': None},
@@ -184,6 +243,9 @@ class Observations:
             rec['native_event'] = native_error
         if corroboration_seconds is not None:
             rec['visual_corroboration_seconds'] = round(corroboration_seconds, 1)
+        discrepancy = compute_frozen_line_discrepancy(frames)
+        if discrepancy:
+            rec['frozen_line_discrepancy'] = discrepancy
         return rec
 
 

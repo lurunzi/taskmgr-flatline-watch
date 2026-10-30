@@ -309,11 +309,13 @@ class RealtimeConsumer:
         self.last_error = None
         self.pending_native_error = None
         self.heartbeat_events = deque(maxlen=3600)
+        self.last_heartbeat_mono = None
         self.last_provider_event_utc = None
         self.last_provider_event_qpc = None
         self.last_provider_event_mono = None
         self.provider_event_count = 0
         self._filter_buf = None
+        self._filter_data_len = 0
         self.state = {'state': 'stopped' if self.enabled else 'disabled', 'session': self.name}
         self._callback_ref = None
 
@@ -323,6 +325,7 @@ class RealtimeConsumer:
                 self.target_pid = pid
                 self.pending_native_error = None
                 self.heartbeat_events.clear()
+                self.last_heartbeat_mono = None
                 self.provider_event_count = 0
                 if pid is not None:
                     now_mono = time.monotonic()
@@ -333,6 +336,11 @@ class RealtimeConsumer:
                     self.last_provider_event_mono = None
                     self.last_provider_event_utc = None
                     self.last_provider_event_qpc = None
+        if pid is not None and self.active and self.session_handle.value != 0:
+            try:
+                self.re_enable_provider()
+            except Exception:
+                pass
 
     def record_provider_event(self, qpc_val=None, utc_str=None, mono_val=None):
         with self.lock:
@@ -347,10 +355,10 @@ class RealtimeConsumer:
             if not self.enabled or self.session_handle.value == 0:
                 return 0
             provider_guid = parse_guid(TASKMGR_GUID)
-            if self._filter_buf:
+            if self._filter_buf and self._filter_data_len:
                 filter_desc = EVENT_FILTER_DESCRIPTOR()
                 filter_desc.Ptr = ctypes.cast(self._filter_buf, ctypes.c_void_p).value
-                filter_desc.Size = len(self._filter_buf)
+                filter_desc.Size = self._filter_data_len
                 filter_desc.Type = EVENT_FILTER_TYPE_EVENT_NAME
 
                 params = ENABLE_TRACE_PARAMETERS()
@@ -393,6 +401,7 @@ class RealtimeConsumer:
             name_bytes = b'CurrentUpdateCycle\x00FallbackError\x00'
             header_bytes = struct.pack('<QQBBH', 0, 0, 5, 1, 2)
             filter_data = header_bytes + name_bytes
+            self._filter_data_len = len(filter_data)
             self._filter_buf = ctypes.create_string_buffer(filter_data)
 
             filter_desc = EVENT_FILTER_DESCRIPTOR()
@@ -519,6 +528,7 @@ class RealtimeConsumer:
                     }
                     with self.lock:
                         self.heartbeat_events.append(hb_entry)
+                        self.last_heartbeat_mono = event_mono
                 except Exception:
                     pass
         except Exception:
@@ -583,6 +593,7 @@ class RealtimeConsumer:
             res['target_pid'] = self.target_pid
             res['heartbeat_count'] = len(self.heartbeat_events)
             res['last_heartbeat_utc'] = self.heartbeat_events[-1]['utc'] if self.heartbeat_events else None
+            res['last_heartbeat_mono'] = self.last_heartbeat_mono
             res['provider_event_count'] = self.provider_event_count
             res['last_provider_event_utc'] = self.last_provider_event_utc
             res['last_provider_event_qpc'] = self.last_provider_event_qpc

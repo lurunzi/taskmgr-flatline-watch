@@ -615,12 +615,13 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
     summary['indeterminate_count'] = sum(1 for h in summary['history'] if h.get('verdict') == 'indeterminate')
     summary['qualifying_count'] = summary['conforming_count'] + summary['non_conforming_count']
 
-    if summary['conforming_count'] >= 9:
-        summary['status'] = 'passed'
-    elif summary['non_conforming_count'] >= 3:
-        summary['status'] = 'failed'
-    else:
-        summary['status'] = 'evaluating'
+    if summary.get('status') != 'passed_by_owner_decision':
+        if summary['conforming_count'] >= 9:
+            summary['status'] = 'passed'
+        elif summary['non_conforming_count'] >= 3:
+            summary['status'] = 'failed'
+        else:
+            summary['status'] = 'evaluating'
 
     try:
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -744,6 +745,16 @@ def analyze(folder, output=None):
                       normal_exposure_seconds=(control[1]-control[0])/freq if control else None)
     else:
         resolve = watcher = None
+    native_sig = extract_native_signature(
+        header.get('native_events', []),
+        events, header, observation, resolve, freq,
+        coverage_begin, coverage_end, quality=quality, folder=folder
+    )
+    result['native_signature'] = native_sig
+    result['trigger_kind'] = observation.get('trigger_kind', 'visual')
+    if observation.get('visual_corroboration_seconds') is not None:
+        result['visual_corroboration_seconds'] = observation['visual_corroboration_seconds']
+
     for name, phase_bounds, left, right in (
             ('before_first',[last,first] if last is not None else None,False,False),
             ('after_first',[first,confirmed],last is not None,True)):
@@ -760,19 +771,40 @@ def analyze(folder, output=None):
                               assessment=('PRE-FIRST OBSERVATION CANDIDATE; not proven cause' if name=='before_first'
                                           else 'POST-FIRST OBSERVATION ACTIVITY; not an onset attribution'))
         result['phases'][name] = phase
-    result['top'] = result['phases']['before_first']['top']
     result['quality']['before_first_usable'] = result['phases']['before_first']['ranking_usable']
     result['quality']['after_first_usable'] = result['phases']['after_first']['ranking_usable']
 
-    native_sig = extract_native_signature(
-        header.get('native_events', []),
-        events, header, observation, resolve, freq,
-        coverage_begin, coverage_end, quality=quality, folder=folder
-    )
-    result['native_signature'] = native_sig
-    result['trigger_kind'] = observation.get('trigger_kind', 'visual')
-    if observation.get('visual_corroboration_seconds') is not None:
-        result['visual_corroboration_seconds'] = observation['visual_corroboration_seconds']
+    # N2 second part: When native signature is recorded, anchor pre-onset ranking on the native error
+    if native_sig.get('recorded') and native_sig.get('qpc') is not None and not errors:
+        native_qpc = native_sig['qpc']
+        pre_native_bounds = [native_qpc - int(2.0 * freq), native_qpc]
+        phase_errors = list(errors)
+        if pre_native_bounds[0] < coverage_begin:
+            phase_errors.append('pre-native window partially before trace coverage')
+        pre_native_control = None
+        if not phase_errors and last is not None:
+            pre_native_control = normal_window(samples, last, pre_native_bounds[1] - pre_native_bounds[0])
+            if pre_native_control and not (coverage_begin <= pre_native_control[0] < pre_native_control[1] <= coverage_end):
+                pre_native_control = None
+        phase_pre_native = phase_summary(
+            events, pre_native_bounds, pre_native_control, resolve, watcher, freq,
+            include_start=False, include_end=True, errors=phase_errors,
+            assessment='PRE-NATIVE-ERROR CANDIDATE; not proven cause'
+        )
+        result['phases']['pre_native'] = phase_pre_native
+        result['top'] = phase_pre_native['top']
+        result['top_scope'] = 'pre_native'
+        result['quality']['pre_native_usable'] = phase_pre_native['ranking_usable']
+    else:
+        result['top'] = result['phases']['before_first']['top']
+        result['top_scope'] = 'before_first'
+
+    # A3: Discrepancy between frozen line height and system CPU
+    discrepancy = observation.get('frozen_line_discrepancy')
+    if discrepancy is None:
+        from IncidentWatch import compute_frozen_line_discrepancy
+        discrepancy = compute_frozen_line_discrepancy(observation.get('samples', []))
+    result['frozen_line_discrepancy'] = discrepancy
 
     hb_path = folder/'heartbeat.json'
     result['heartbeat'] = analyze_heartbeat(hb_path, observation, markers, native_sig, freq) if hb_path.exists() else None
@@ -866,15 +898,15 @@ def native_signature_text(sig, zh):
 def analyze_heartbeat(heartbeat_path, observation, markers, native_sig, freq):
     """Analyze Task Manager CurrentUpdateCycle heartbeat events (N4)."""
     if not heartbeat_path or not Path(heartbeat_path).exists():
-        return {'recorded': False, 'reason': 'no heartbeat file found in incident folder'}
+        return {'recorded': False, 'classification': 'heartbeat_uncovered', 'reason': 'no heartbeat file found in incident folder'}
     try:
         data = json.loads(Path(heartbeat_path).read_text(encoding='utf-8'))
     except Exception as exc:
-        return {'recorded': False, 'reason': f'heartbeat file corrupted: {exc}'}
+        return {'recorded': False, 'classification': 'heartbeat_uncovered', 'reason': f'heartbeat file corrupted: {exc}'}
 
     events = data.get('events', [])
     if not events:
-        return {'recorded': False, 'reason': 'heartbeat event list is empty'}
+        return {'recorded': False, 'classification': 'heartbeat_uncovered', 'reason': 'heartbeat event list is empty'}
 
     first = markers.get('first_candidate', {}).get('qpc') if isinstance(markers.get('first_candidate'), dict) else None
     confirmed = markers.get('confirmed', {}).get('qpc') if isinstance(markers.get('confirmed'), dict) else None
@@ -903,11 +935,39 @@ def analyze_heartbeat(heartbeat_path, observation, markers, native_sig, freq):
         continued_during_freeze = len(updates_after_onset) > 0
 
     last_update = updates_before_onset[-1] if updates_before_onset else (started[-1] if started else None)
+
+    # Distinguish heartbeat_stopped_during_freeze vs heartbeat_uncovered
+    hb_gaps = observation.get('heartbeat_coverage_gaps', []) if observation else []
+    onset_in_gap = False
+    if onset_qpc:
+        for g in hb_gaps:
+            g_start = g.get('start_qpc')
+            g_end = g.get('end_qpc')
+            if g_start is not None:
+                g_limit = (g_end + 10 * freq) if g_end is not None else float('inf')
+                if g_start <= onset_qpc <= g_limit:
+                    onset_in_gap = True
+                    break
+
+    ref_onset = native_qpc if native_qpc else onset_qpc
+    gap_threshold = 10.0 if native_qpc else 35.0
+    gap_from_last = ((ref_onset - last_update['qpc']) / freq) if (last_update and ref_onset and last_update.get('qpc')) else None
+
+    if onset_in_gap or (gap_from_last is not None and gap_from_last > gap_threshold) or (not updates_before_onset and not continued_during_freeze):
+        classification = 'heartbeat_uncovered'
+        reason_uncovered = f'heartbeat delivery gap before onset (~{round(gap_from_last, 1)} s)' if gap_from_last is not None else 'onset inside heartbeat coverage gap'
+    elif continued_during_freeze:
+        classification = 'heartbeat_continued_during_freeze'
+        reason_uncovered = None
+    else:
+        classification = 'heartbeat_stopped_during_freeze'
+        reason_uncovered = None
+
     first_missing_qpc = None
     lead_seconds_before_first_candidate = None
     timing_relative_to_native_error_seconds = None
 
-    if last_update and not continued_during_freeze and onset_qpc:
+    if last_update and classification == 'heartbeat_stopped_during_freeze' and onset_qpc:
         first_missing_qpc = last_update['qpc'] + int(med_interval * freq)
         if first:
             lead_seconds_before_first_candidate = round((first - first_missing_qpc) / freq, 3)
@@ -916,6 +976,8 @@ def analyze_heartbeat(heartbeat_path, observation, markers, native_sig, freq):
 
     return {
         'recorded': True,
+        'classification': classification,
+        'uncovered_reason': reason_uncovered,
         'total_events': len(events),
         'update_started_count': len(started),
         'update_finalized_count': len(finalized),
@@ -941,16 +1003,25 @@ def heartbeat_text(hb, zh):
     lines = [f'## {title}', '']
     if not hb.get('recorded'):
         reason = hb.get('reason', 'not recorded')
-        reason_zh = '未记录到心跳事件' if ('empty' in reason or 'not found' in reason) else reason
+        reason_zh = '心跳未覆盖（无事件）' if ('empty' in reason or 'not found' in reason) else reason
         lines += [(f'未记录到数据层心跳（原因：{reason_zh}）。' if zh else f'Heartbeat not recorded (reason: {reason}).'),
                   ('注：数据层心跳仅作离线诊断评估记录，不作为恢复判据。' if zh else
                    'Note: Heartbeat is recorded for offline diagnostic evaluation only; not a recovery criterion.'),
                   '']
         return '\n'.join(lines) + '\n'
 
-    continued = hb.get('continued_during_freeze')
-    status_en = 'Continued during freeze' if continued else 'Stopped before freeze onset'
-    status_zh = '冻结期间持续循环' if continued else '在冻结起点前停止循环'
+    classification = hb.get('classification')
+    if classification == 'heartbeat_uncovered':
+        reason = hb.get('uncovered_reason', 'delivery gap before freeze onset')
+        status_en = f'Heartbeat uncovered ({reason})'
+        status_zh = f'心跳未覆盖（{reason}）'
+    elif classification == 'heartbeat_continued_during_freeze':
+        status_en = 'Continued during freeze'
+        status_zh = '冻结期间持续循环'
+    else:
+        status_en = 'Stopped before freeze onset (heartbeat stopped during freeze)'
+        status_zh = '在冻结起点前停止循环（冻结时心跳停止）'
+
     intervals = hb.get('interval_seconds', {})
 
     lines += [
@@ -960,12 +1031,12 @@ def heartbeat_text(hb, zh):
          f"Cycle interval: median {intervals.get('median')} s (range: {intervals.get('min')}–{intervals.get('max')} s, samples: {intervals.get('samples')}).")
     ]
 
-    if not continued and hb.get('lead_seconds_before_first_candidate') is not None:
+    if classification == 'heartbeat_stopped_during_freeze' and hb.get('lead_seconds_before_first_candidate') is not None:
         lines.append(
             f"首次缺失周期提前量：相对首次平线候选约 {hb.get('lead_seconds_before_first_candidate')} 秒。" if zh else
             f"First missing cycle lead time: ~{hb.get('lead_seconds_before_first_candidate')} s before first flat observation."
         )
-    if not continued and hb.get('timing_relative_to_native_error_seconds') is not None:
+    if classification == 'heartbeat_stopped_during_freeze' and hb.get('timing_relative_to_native_error_seconds') is not None:
         diff = hb.get('timing_relative_to_native_error_seconds')
         order_zh = f"原生错误后 {diff} 秒" if diff >= 0 else f"原生错误前 {abs(diff)} 秒"
         order_en = f"{diff} s after native error" if diff >= 0 else f"{abs(diff)} s before native error"
@@ -982,15 +1053,47 @@ def heartbeat_text(hb, zh):
     return '\n'.join(lines) + '\n'
 
 
+def discrepancy_text(disc, zh):
+    if not disc:
+        return ''
+    title = '冻结线高度与系统 CPU 偏差（A3）' if zh else 'Frozen line discrepancy (A3)'
+    lines = [f'## {title}', '']
+    th = disc.get('tail_height_px', 'unknown')
+    ih = disc.get('inner_height_px', 46.0)
+    pct = disc.get('frozen_line_percent', 'unknown')
+    cpu_med = disc.get('system_cpu_percent_median', 'unknown')
+    cpu_max = disc.get('system_cpu_percent_max', 'unknown')
+    d_med = disc.get('discrepancy_median', 'unknown')
+    d_max = disc.get('discrepancy_max', 'unknown')
+
+    d_med_sign = f"+{d_med}" if isinstance(d_med, (int, float)) and d_med > 0 else f"{d_med}"
+    d_max_sign = f"+{d_max}" if isinstance(d_max, (int, float)) and d_max > 0 else f"{d_max}"
+
+    lines += [
+        (f"- 冻结线高度：{th} 像素（占有效图高 {ih} 像素的 {pct}%）。" if zh else
+         f"- Frozen line height: {th} px ({pct}% of {ih} px inner height)."),
+        (f"- 系统 CPU 计数器：中位数 {cpu_med}%，最大值 {cpu_max}%。" if zh else
+         f"- System CPU counter: median {cpu_med}%, max {cpu_max}%."),
+        (f"- 偏差（计数器 - 冻结线）：中位数 {d_med_sign}%，最大值 {d_max_sign}%。" if zh else
+         f"- Discrepancy (counter - line): median {d_med_sign}%, max {d_max_sign}%."),
+        ''
+    ]
+    return '\n'.join(lines) + '\n'
+
+
 def render(result):
     def cell(value):
         return str(value or 'unknown').replace('|','\\|').replace('\n',' ').replace('\r',' ')
     def phase_text(name, zh):
         p = result['phases'][name]
-        before = name=='before_first'
-        title = (('首次平线前：转变窗口' if before else '首次平线后：确认期间伴随活动') if zh else
-                 ('Before first flat observation: transition window' if before else
-                  'After first flat observation: confirmation-period activity'))
+        if name == 'pre_native':
+            title = ('原生错误前：2 秒转变窗口与对照' if zh else
+                     'Before native error: 2-second transition window and control')
+        else:
+            before = name=='before_first'
+            title = (('首次平线前：转变窗口' if before else '首次平线后：确认期间伴随活动') if zh else
+                     ('Before first flat observation: transition window' if before else
+                      'After first flat observation: confirmation-period activity'))
         lines = [f'## {title}', '']
         if not p['ranking_usable']:
             lines += [('不可用；不输出具名排行：' if zh else 'Unavailable; named ranking suppressed: ')+
@@ -1054,6 +1157,15 @@ def render(result):
                 'Missing identities and controls remain unknown. JSON schema 2 top contains before-first rows only; overall event_counts still cover both phases. '
                 'Full boundaries, instance identities and controls are in incident-analysis.json. No Taskmgr query statuses, buffer-byte contributions or causal chain are measured.\n')
         native_sec = native_signature_text(result.get('native_signature'), zh)
+        disc_sec = discrepancy_text(result.get('frozen_line_discrepancy'), zh)
         hb_sec = heartbeat_text(result.get('heartbeat'), zh)
-        blocks.append(intro+native_sec+hb_sec+phase_text('before_first',zh)+phase_text('after_first',zh)+tail)
+
+        phase_blocks = []
+        if 'pre_native' in result.get('phases', {}):
+            phase_blocks.append(phase_text('pre_native', zh))
+        phase_blocks.append(phase_text('before_first', zh))
+        phase_blocks.append(phase_text('after_first', zh))
+        phases_str = ''.join(phase_blocks)
+
+        blocks.append(intro+native_sec+disc_sec+hb_sec+phases_str+tail)
     return 'The English version governs.\n\n'+ '\n---\n\n'.join(blocks)

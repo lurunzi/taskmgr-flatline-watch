@@ -11,7 +11,7 @@ import struct
 import threading
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
@@ -38,6 +38,8 @@ MAX_BLIND_RETRIES_PER_HOUR = 4
 USER_CLOSED_COOLDOWN_SECONDS = 600  # 10 min wait after user closes Taskmgr to avoid focus fighting
 NATIVE_GAP_THRESHOLD_SECONDS = 15.0
 NATIVE_GAP_BACKOFF_SCHEDULE = (5, 10, 20, 30, 60)
+HEARTBEAT_GAP_THRESHOLD_SECONDS = 10.0
+HEARTBEAT_GAP_BACKOFF_SCHEDULE = (10, 30, 60, 120)
 
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
@@ -371,6 +373,14 @@ class Monitor:
         self.provider_gap_retry_count = 0
         self.cumulative_provider_gap_seconds = 0.0
         self.last_known_event_count = 0
+        self.current_heartbeat_gap = None
+        self.last_heartbeat_re_enable_monotonic = 0.0
+        self.heartbeat_gap_retry_count = 0
+        self.cumulative_heartbeat_gap_seconds = 0.0
+        self.last_known_heartbeat_count = 0
+        self.daily_monitoring_file = OUTPUT / 'daily-monitoring.json'
+        self.daily_monitoring_history = self._load_daily_monitoring()
+        self.last_daily_update_mono = time.monotonic()
         self.current_monitored_pid = None
         self.target_pid_start_monotonic = None
         self.origin = OriginWatch(PROCDUMP, OUTPUT, validate_full_dump, write_json, query_trace)
@@ -468,6 +478,25 @@ class Monitor:
             native_coverage = 'ok'
             gap_started = None
             cumulative_gap = round(self.cumulative_provider_gap_seconds, 1)
+
+        if self.current_heartbeat_gap:
+            hb_gap_seconds = round(time.monotonic() - self.current_heartbeat_gap['start_monotonic'], 1)
+            heartbeat_coverage = 'gap'
+            hb_gap_started = self.current_heartbeat_gap['start_utc']
+            cumulative_hb_gap = round(self.cumulative_heartbeat_gap_seconds + hb_gap_seconds, 1)
+        else:
+            hb_gap_seconds = 0
+            heartbeat_coverage = 'ok'
+            hb_gap_started = None
+            cumulative_hb_gap = round(self.cumulative_heartbeat_gap_seconds, 1)
+
+        today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        today_eff_hours = 0.0
+        for entry in self.daily_monitoring_history:
+            if entry.get('date') == today_date:
+                today_eff_hours = entry.get('effective_monitoring_hours', 0.0)
+                break
+
         auto_open_text_zh = self.next_auto_open_text_zh if not self.get_taskmgr_pids() else None
         auto_open_text_en = self.next_auto_open_text_en if not self.get_taskmgr_pids() else None
         auto_open_text = auto_open_text_zh
@@ -492,6 +521,12 @@ class Monitor:
                       'native_coverage_gap_started':gap_started,
                       'native_coverage_gap_seconds':gap_seconds,
                       'native_coverage_cumulative_gap_seconds':cumulative_gap,
+                      'heartbeat_coverage':heartbeat_coverage,
+                      'heartbeat_gap_started':hb_gap_started,
+                      'heartbeat_gap_seconds':hb_gap_seconds,
+                      'heartbeat_cumulative_gap_seconds':cumulative_hb_gap,
+                      'daily_monitoring_history':list(self.daily_monitoring_history),
+                      'today_effective_monitoring_hours':today_eff_hours,
                       'mode':'restart_only' if self.restart_only else 'capture',
                       'auto_open': {
                           'count': self.auto_open_count,
@@ -612,6 +647,129 @@ class Monitor:
                     self.re_enable_native_providers()
                     self.last_provider_re_enable_monotonic = now
 
+    def check_heartbeat_coverage(self, now):
+        if not self.realtime:
+            return
+        target_pid = self.realtime.target_pid or self.state.get('taskmgr_pid')
+        if not target_pid or not self.is_pid_alive(target_pid):
+            if self.current_heartbeat_gap:
+                self.current_heartbeat_gap = None
+            return
+
+        rt_status = self.realtime.status()
+        cur_hb_count = rt_status.get('heartbeat_count', 0)
+        last_mono = rt_status.get('last_heartbeat_mono')
+        last_utc = rt_status.get('last_heartbeat_utc')
+
+        if cur_hb_count > self.last_known_heartbeat_count:
+            self.last_known_heartbeat_count = cur_hb_count
+            if self.current_heartbeat_gap:
+                gap = dict(self.current_heartbeat_gap)
+                gap['end_utc'] = last_utc or timestamp()
+                gap['end_qpc'] = qpc()
+                duration = round(now - gap.pop('start_monotonic'), 1)
+                gap['duration_seconds'] = duration
+                self.cumulative_heartbeat_gap_seconds += duration
+                self.observations.record_heartbeat_coverage_gap(gap)
+                self.current_heartbeat_gap = None
+                self.heartbeat_gap_retry_count = 0
+
+        ref_mono = last_mono if last_mono is not None else self.target_pid_start_monotonic
+        if ref_mono is not None and (now - ref_mono >= HEARTBEAT_GAP_THRESHOLD_SECONDS):
+            if self.current_heartbeat_gap is None:
+                self.current_heartbeat_gap = {
+                    'start_utc': last_utc or timestamp(),
+                    'start_qpc': qpc(),
+                    'start_monotonic': ref_mono,
+                    'gap_detected_utc': timestamp(),
+                    'gap_detected_qpc': qpc(),
+                    'taskmgr_pid': target_pid,
+                    'reason': 'no_heartbeat_for_10s'
+                }
+                self.heartbeat_gap_retry_count = 0
+                try:
+                    self.realtime.re_enable_provider()
+                except Exception:
+                    pass
+                self.last_heartbeat_re_enable_monotonic = now
+            else:
+                delay = HEARTBEAT_GAP_BACKOFF_SCHEDULE[min(self.heartbeat_gap_retry_count, len(HEARTBEAT_GAP_BACKOFF_SCHEDULE)-1)]
+                if now - self.last_heartbeat_re_enable_monotonic >= delay:
+                    self.heartbeat_gap_retry_count += 1
+                    try:
+                        self.realtime.re_enable_provider()
+                    except Exception:
+                        pass
+                    self.last_heartbeat_re_enable_monotonic = now
+
+    def _load_daily_monitoring(self):
+        if hasattr(self, 'daily_monitoring_file') and self.daily_monitoring_file.exists():
+            try:
+                data = json.loads(self.daily_monitoring_file.read_text(encoding='utf-8'))
+                if isinstance(data, list):
+                    return data
+            except Exception:
+                pass
+        return []
+
+    def _save_daily_monitoring(self):
+        try:
+            write_json(self.daily_monitoring_file, self.daily_monitoring_history)
+        except Exception:
+            pass
+
+    def update_daily_monitoring(self, now):
+        dt = now - self.last_daily_update_mono
+        self.last_daily_update_mono = now
+        if not (0.0 < dt <= 5.0):
+            return
+
+        today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        today_entry = None
+        for entry in self.daily_monitoring_history:
+            if entry.get('date') == today_date:
+                today_entry = entry
+                break
+
+        if today_entry is None:
+            today_entry = {
+                'date': today_date,
+                'effective_monitoring_hours': 0.0,
+                'effective_monitoring_seconds': 0.0,
+                'blind_seconds': 0.0,
+                'native_gap_seconds': 0.0,
+                'heartbeat_gap_seconds': 0.0,
+                'flatlines_confirmed': 0,
+                'native_0x8007139f_count': 0
+            }
+            self.daily_monitoring_history.append(today_entry)
+
+        cur_state = self.state.get('state')
+        has_taskmgr = bool(self.state.get('taskmgr_pid'))
+        is_cpu_page = has_taskmgr and cur_state not in ('blind', 'waiting')
+        detector_valid = (cur_state != 'invalid')
+        native_ok = (self.current_provider_gap is None)
+
+        if is_cpu_page and detector_valid and native_ok:
+            today_entry['effective_monitoring_seconds'] = round(today_entry.get('effective_monitoring_seconds', 0.0) + dt, 1)
+            today_entry['effective_monitoring_hours'] = round(today_entry['effective_monitoring_seconds'] / 3600.0, 2)
+
+        if cur_state in ('blind', 'waiting'):
+            today_entry['blind_seconds'] = round(today_entry.get('blind_seconds', 0.0) + dt, 1)
+
+        if self.current_provider_gap is not None:
+            today_entry['native_gap_seconds'] = round(today_entry.get('native_gap_seconds', 0.0) + dt, 1)
+
+        if self.current_heartbeat_gap is not None:
+            today_entry['heartbeat_gap_seconds'] = round(today_entry.get('heartbeat_gap_seconds', 0.0) + dt, 1)
+
+        if len(self.daily_monitoring_history) > 30:
+            self.daily_monitoring_history = self.daily_monitoring_history[-30:]
+
+        if getattr(self, '_last_daily_save', 0) == 0 or now - self._last_daily_save >= 30:
+            self._save_daily_monitoring()
+            self._last_daily_save = now
+
     def tick(self):
         now = time.monotonic()
         if not self.enabled:
@@ -626,6 +784,8 @@ class Monitor:
                 except Exception:
                     pass
             self.check_native_coverage(now)
+            self.check_heartbeat_coverage(now)
+            self.update_daily_monitoring(now)
             if self.pending_navigation:
                 folder,saved=self.pending_navigation
                 self.pending_navigation=None
@@ -785,6 +945,12 @@ class Monitor:
                     self.observations.record_uncorroborated_native_error(native_error, 'chart_not_flat_for_10s')
                     try:
                         record_outside_flatline(OUTPUT, native_error, 'chart_not_flat_for_10s')
+                        today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+                        for entry in self.daily_monitoring_history:
+                            if entry.get('date') == today_date:
+                                entry['native_0x8007139f_count'] = entry.get('native_0x8007139f_count', 0) + 1
+                                break
+                        self._save_daily_monitoring()
                     except Exception:
                         pass
 
@@ -890,7 +1056,8 @@ class Monitor:
                                                current_blind=self.current_blind_interval,
                                                trigger_kind=trigger_kind, native_error=native_error,
                                                corroboration_seconds=corroboration_seconds,
-                                               current_native_gap=self.current_provider_gap) if self.recorder else None
+                                               current_native_gap=self.current_provider_gap,
+                                               current_heartbeat_gap=self.current_heartbeat_gap) if self.recorder else None
         self.dump_thread = threading.Thread(target=self.restart_with_trace,
                                             args=(folder,record,frames,observation),daemon=False)
         self.dump_thread.start()

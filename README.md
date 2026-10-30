@@ -19,6 +19,14 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Native ranking anchor, discrepancy reporting, heartbeat repair, and daily monitoring (30 October 2026)
+
+Following N1's qualification pass (owner decision: 5 of 5 conforming, 0 outside flatlines across 57 hours) and subsequent roadmap deliverables (N2, A3, N4, J5):
+- **Native-anchored offline ranking (N2)**: Offline analysis now anchors the primary event ranking directly on the native aggregation error `0x8007139F` (`target_qpc`). A dedicated phase `pre_native` covers `[native_qpc - 2*freq, native_qpc]`, establishing the companion process ranking immediately preceding the internal data layer fault. A1 (pixel onset estimation) and A2 (batch cross-incident pixel ranking) are retired as no longer needed.
+- **Frozen-line discrepancy reporting (A3)**: Each observation and incident report now quantifies the discrepancy between the frozen total line height percentage (`(1.0 - tail_height / inner_height) * 100.0`) and the independent system CPU counter `system_cpu_percent`. Discrepancies (median and maximum during confirmation) are recorded in `observation.json`, `incident-analysis.json`, and rendered in bilingual reports to document divergence between Task Manager's frozen summary and actual machine utilization (e.g. 67.4% vs 100.0%, +32.6% on 24 October 16:06).
+- **Heartbeat repair and watchdog (N4)**: The event-name filter payload was fixed to match the exact 53-byte descriptor size (correcting Win32 error 87 that previously caused provider downgrade). A 10-second silence watchdog automatically detects heartbeat gaps when the target Task Manager is alive, re-enables Level 5 Verbose filtering, and distinguishes `heartbeat_stopped_during_freeze` (data model stopped cycling at onset) from `heartbeat_uncovered` (heartbeat missing or gap before onset) in reports.
+- **Daily monitoring tracking (J5)**: `status.json` and `daily-monitoring.json` track daily effective monitoring hours (requiring Task Manager running on the CPU page, valid detector state, and unbroken native ETW coverage), blind duration, native gap duration, and heartbeat gap duration, retaining 30 days of history.
+
 ## Idle floor flatline corroboration and N1 evaluation (30 October 2026)
 
 To eliminate false-positive freeze restarts caused by idle low load on empty or baseline charts (A11):
@@ -265,6 +273,14 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 原生排行锚定、高度差异报告、心跳修复与日常监测（2026 年 10 月 30 日）
+
+随着 N1 特征判定通过（负责人决定：合格 5 次全部符合，57 小时记录期内平线外 0 次）以及路线图后续工作（N2、A3、N4、J5）落地：
+- **原生错误锚定离线排行（N2）**：离线分析将事件主排行直接锚定在原生聚合错误 `0x8007139F` 的硬件时刻（`target_qpc`）。专属阶段 `pre_native` 覆盖原生错误前 2 秒 `[native_qpc - 2*freq, native_qpc]`，呈现数据层故障发生瞬间的伴随进程与线程创建。此前用于兜底的 A1（像素起点估算）与 A2（基于像素起点的跨事件批量排行）已正式撤销。
+- **冻结线高度与系统 CPU 差异报告（A3）**：每次观察与事件报告均定量计算冻结总线高度换算的百分比（`(1.0 - tail_height / inner_height) * 100.0`）与独立系统 CPU 计数器（`system_cpu_percent`）的差值。确认期间的中位数与最大差值记录于 `observation.json`、`incident-analysis.json` 并渲染至双语报告中，作为图线冻结脱离真实负载的强证据（例如 10 月 24 日 16:06 事件中图线 67.4% 对系统 CPU 100.0%，差值 +32.6%）。
+- **心跳修复与断流看门狗（N4）**：修复了事件名过滤器缓冲长度传递（修正此前因多传空字符导致 Win32 87 错误从而降级提供程序的缺陷，精确传入 53 字节）。加入 10 秒心跳无响应看门狗，在目标 Taskmgr 存活时自动重置 Verbose 级别过滤，并在分析报告中严格区分「冻结时数据模型循环停止」（`heartbeat_stopped_during_freeze`）与「心跳未覆盖」（`heartbeat_uncovered`）。
+- **日常监测指标留存（J5）**：`status.json` 与 `daily-monitoring.json` 开始按天累计有效监测小时数（同时满足在 CPU 页、检测器有效、原生覆盖正常）、失明时长、原生缺口时长与心跳缺口时长，保留最近 30 天历史数据。
 
 ## 闲置图底平线印证与 N1 进展（2026 年 10 月 30 日）
 
