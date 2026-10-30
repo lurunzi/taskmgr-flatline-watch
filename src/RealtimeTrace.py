@@ -314,33 +314,33 @@ class RealtimeConsumer:
         self.last_provider_event_qpc = None
         self.last_provider_event_mono = None
         self.provider_event_count = 0
+        self.callback_error_count = 0
+        self.last_callback_mono = None
+        self.last_callback_utc = None
         self._filter_buf = None
         self._filter_data_len = 0
         self.state = {'state': 'stopped' if self.enabled else 'disabled', 'session': self.name}
         self._callback_ref = None
+        self._logfile = None
 
     def set_target_pid(self, pid):
         with self.lock:
-            if self.target_pid != pid:
-                self.target_pid = pid
-                self.pending_native_error = None
-                self.heartbeat_events.clear()
-                self.last_heartbeat_mono = None
-                self.provider_event_count = 0
-                if pid is not None:
-                    now_mono = time.monotonic()
-                    self.last_provider_event_mono = now_mono
-                    self.last_provider_event_utc = datetime.now(timezone.utc).isoformat()
-                    self.last_provider_event_qpc = qpc()
-                else:
-                    self.last_provider_event_mono = None
-                    self.last_provider_event_utc = None
-                    self.last_provider_event_qpc = None
-        if pid is not None and self.active and self.session_handle.value != 0:
-            try:
-                self.re_enable_provider()
-            except Exception:
-                pass
+            if self.target_pid == pid:
+                return
+            self.target_pid = pid
+            self.pending_native_error = None
+            self.heartbeat_events.clear()
+            self.last_heartbeat_mono = None
+            self.provider_event_count = 0
+            if pid is not None:
+                now_mono = time.monotonic()
+                self.last_provider_event_mono = now_mono
+                self.last_provider_event_utc = datetime.now(timezone.utc).isoformat()
+                self.last_provider_event_qpc = qpc()
+            else:
+                self.last_provider_event_mono = None
+                self.last_provider_event_utc = None
+                self.last_provider_event_qpc = None
 
     def record_provider_event(self, qpc_val=None, utc_str=None, mono_val=None):
         with self.lock:
@@ -350,28 +350,36 @@ class RealtimeConsumer:
             self.provider_event_count += 1
 
     def re_enable_provider(self):
-        """Idempotently re-enables Microsoft.Windows.Taskmgr on this real-time session."""
+        """Idempotently re-enables Microsoft.Windows.Taskmgr on this real-time session.
+
+        CRITICAL: Never holds self.lock across advapi32.EnableTraceEx2.
+        """
         with self.lock:
             if not self.enabled or self.session_handle.value == 0:
                 return 0
-            provider_guid = parse_guid(TASKMGR_GUID)
-            if self._filter_buf and self._filter_data_len:
-                filter_desc = EVENT_FILTER_DESCRIPTOR()
-                filter_desc.Ptr = ctypes.cast(self._filter_buf, ctypes.c_void_p).value
-                filter_desc.Size = self._filter_data_len
-                filter_desc.Type = EVENT_FILTER_TYPE_EVENT_NAME
+            handle_val = self.session_handle.value
+            filter_buf = self._filter_buf
+            filter_len = self._filter_data_len
 
-                params = ENABLE_TRACE_PARAMETERS()
-                params.Version = 2
-                params.EnableFilterDesc = ctypes.pointer(filter_desc)
-                params.FilterDescCount = 1
+        provider_guid = parse_guid(TASKMGR_GUID)
+        handle = ctypes.c_uint64(handle_val)
+        if filter_buf and filter_len:
+            filter_desc = EVENT_FILTER_DESCRIPTOR()
+            filter_desc.Ptr = ctypes.cast(filter_buf, ctypes.c_void_p).value
+            filter_desc.Size = filter_len
+            filter_desc.Type = EVENT_FILTER_TYPE_EVENT_NAME
 
-                st = advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 5, 0, 0, 0, ctypes.byref(params))
-                if st != 0:
-                    st = advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
-                return st
-            else:
-                return advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
+            params = ENABLE_TRACE_PARAMETERS()
+            params.Version = 2
+            params.EnableFilterDesc = ctypes.pointer(filter_desc)
+            params.FilterDescCount = 1
+
+            st = advapi32.EnableTraceEx2(handle, ctypes.byref(provider_guid), 1, 5, 0, 0, 0, ctypes.byref(params))
+            if st != 0:
+                st = advapi32.EnableTraceEx2(handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
+            return st
+        else:
+            return advapi32.EnableTraceEx2(handle, ctypes.byref(provider_guid), 1, 2, 0, 0, 0, None)
 
     def start(self):
         with self.lock:
@@ -426,12 +434,12 @@ class RealtimeConsumer:
 
             self._callback_ref = PEVENT_RECORD_CALLBACK(self._on_event)
 
-            logfile = EVENT_TRACE_LOGFILEW()
-            logfile.LoggerName = self.name
-            logfile.mode_union.ProcessTraceMode = 0x00000100 | 0x10000000  # REAL_TIME | EVENT_RECORD
-            logfile.callback_union.EventRecordCallback = self._callback_ref
+            self._logfile = EVENT_TRACE_LOGFILEW()
+            self._logfile.LoggerName = self.name
+            self._logfile.mode_union.ProcessTraceMode = 0x00000100 | 0x10000000  # REAL_TIME | EVENT_RECORD
+            self._logfile.callback_union.EventRecordCallback = self._callback_ref
 
-            hConsumer = advapi32.OpenTraceW(ctypes.byref(logfile))
+            hConsumer = advapi32.OpenTraceW(ctypes.byref(self._logfile))
             if hConsumer == 0 or hConsumer == 0xFFFFFFFFFFFFFFFF:
                 self.stop()
                 self.last_error = 'OpenTraceW failed'
@@ -446,6 +454,9 @@ class RealtimeConsumer:
 
     def _on_event(self, record_ptr):
         try:
+            with self.lock:
+                self.last_callback_mono = time.monotonic()
+                self.last_callback_utc = datetime.now(timezone.utc).isoformat()
             record = record_ptr.contents if hasattr(record_ptr, 'contents') else record_ptr
             hdr = record.EventHeader
             pid = hdr.ProcessId
@@ -532,14 +543,27 @@ class RealtimeConsumer:
                 except Exception:
                     pass
         except Exception:
-            pass
+            with self.lock:
+                self.callback_error_count += 1
 
     def _run_consumer(self):
+        st = None
         try:
             handle_arr = (ctypes.c_uint64 * 1)(self.consumer_handle.value)
-            advapi32.ProcessTrace(handle_arr, 1, None, None)
-        except Exception:
-            pass
+            st = advapi32.ProcessTrace(handle_arr, 1, None, None)
+        except Exception as e:
+            st = str(e)
+        finally:
+            with self.lock:
+                if self.active:
+                    self.active = False
+                    self.last_error = f'ProcessTrace exited: {st}'
+                    self.state = {
+                        'state': 'failed',
+                        'session': self.name,
+                        'error': self.last_error,
+                        'exit_code': st if isinstance(st, int) else None
+                    }
 
     def poll_native_error(self):
         """Return pending native error if any; does not clear it."""
@@ -556,11 +580,20 @@ class RealtimeConsumer:
         with self.lock:
             return list(self.heartbeat_events)
 
+    def restart(self):
+        """Cleanly stops and restarts the real-time consumer session."""
+        target_pid = self.target_pid
+        self.stop()
+        self.start()
+        if target_pid:
+            self.set_target_pid(target_pid)
+
     def stop(self, timeout=3.0):
         with self.lock:
             if not self.enabled:
                 return
-            if not self.active and self.session_handle.value == 0:
+            if not self.active and self.session_handle.value == 0 and self.consumer_handle.value == 0:
+                self.state = {'state': 'stopped', 'session': self.name}
                 return
             self.active = False
             buf_size = ctypes.sizeof(EVENT_TRACE_PROPERTIES) + 1024
@@ -580,6 +613,7 @@ class RealtimeConsumer:
                 except Exception:
                     pass
                 self.consumer_handle = ctypes.c_uint64(0)
+            self._logfile = None
             self.state = {'state': 'stopped', 'session': self.name}
 
         if self.thread and self.thread.is_alive():
@@ -588,7 +622,17 @@ class RealtimeConsumer:
 
     def status(self):
         with self.lock:
+            thread_alive = bool(self.thread and self.thread.is_alive())
+            if self.active and not thread_alive:
+                self.active = False
+                self.state['state'] = 'failed'
+                self.state['error'] = self.last_error or 'consumer thread died unexpectedly'
+
             res = dict(self.state)
+            res['thread_alive'] = thread_alive
+            res['last_callback_utc'] = self.last_callback_utc
+            res['last_callback_mono'] = self.last_callback_mono
+            res['callback_error_count'] = self.callback_error_count
             res['has_pending_error'] = bool(self.pending_native_error)
             res['target_pid'] = self.target_pid
             res['heartbeat_count'] = len(self.heartbeat_events)

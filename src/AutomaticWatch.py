@@ -576,7 +576,10 @@ class Monitor:
     def re_enable_native_providers(self):
         if self.realtime:
             try:
-                self.realtime.re_enable_provider()
+                if self.realtime.status().get('state') in ('failed', 'error', 'stopped'):
+                    self.realtime.restart()
+                else:
+                    self.realtime.re_enable_provider()
             except Exception:
                 pass
         corr_session = None
@@ -607,6 +610,12 @@ class Monitor:
             return
 
         rt_status = self.realtime.status()
+        if rt_status.get('state') in ('failed', 'error'):
+            try:
+                self.realtime.restart()
+                rt_status = self.realtime.status()
+            except Exception:
+                pass
         cur_event_count = rt_status.get('provider_event_count', 0)
         last_mono = rt_status.get('last_provider_event_mono')
         last_utc = rt_status.get('last_provider_event_utc')
@@ -657,6 +666,12 @@ class Monitor:
             return
 
         rt_status = self.realtime.status()
+        if rt_status.get('state') in ('failed', 'error'):
+            try:
+                self.realtime.restart()
+                rt_status = self.realtime.status()
+            except Exception:
+                pass
         cur_hb_count = rt_status.get('heartbeat_count', 0)
         last_mono = rt_status.get('last_heartbeat_mono')
         last_utc = rt_status.get('last_heartbeat_utc')
@@ -778,11 +793,13 @@ class Monitor:
         try:
             if self.recorder and self.recorder.status()['state']=='stopped':
                 self.recorder.start()
-            if self.realtime and self.realtime.status()['state']=='stopped' and self.light_etw:
-                try:
-                    self.realtime.start()
-                except Exception:
-                    pass
+            if self.realtime and self.light_etw:
+                rt_state = self.realtime.status().get('state')
+                if rt_state in ('stopped', 'failed', 'error'):
+                    try:
+                        self.realtime.restart()
+                    except Exception:
+                        pass
             self.check_native_coverage(now)
             self.check_heartbeat_coverage(now)
             self.update_daily_monitoring(now)
