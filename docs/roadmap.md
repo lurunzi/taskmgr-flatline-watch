@@ -49,6 +49,28 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
    - About 4.4 GiB of the 40 GiB ETW budget is used, and incident folders since 19 October average about 54 MB. At five incidents a day, recording will block in roughly four months unless a retention decision is made; evidence is never deleted automatically.
    - On 26 October at 21:28 provider events vanished across all sessions, leaving a flatline incident uncovered (corrected to indeterminate). While initially suspected to be an ETW session count limit from leaked realtime sessions, a controlled experiment refuted this hypothesis up to 12 sessions. A 15-second native coverage watchdog with idempotent EnableTraceEx2 re-enabling, backoff retries, status reporting, and N2 provider_gap integration now mitigates provider dropouts automatically.
 
+## Adjustment list (30 October 2026)
+
+Derived from the recordings of 26–30 October. "Queued" items are handed to the implementing session and close with their own commits; "Owner" items need the owner.
+
+| # | Adjustment | Reason from the recordings | Status |
+|---|---|---|---|
+| J1 | Use the native `0x8007139F` signal as the freeze marker and onset; retire the pixel-based onset work (A1, A2) and anchor the offline ranking on the native error | 5 of 5 qualifying freezes carried it 9–29 s before the visual candidate; none outside freezes in about 57 h; N1 passed by owner decision | Queued |
+| J2 | Repair the N4 heartbeat and add a heartbeat-gap watchdog; reports must separate "stopped during the freeze" from "not recorded" | No heartbeat reached the buffer after 27 October 18:56, so none of the 5 real freezes has usable heartbeat data | Queued |
+| J3 | Require corroboration for empty or floor-level total charts | Two restarts at 2–4.6% system CPU had no native signal and were most likely idle false positives | Done (A11, `5ac8b48`) |
+| J4 | Restate definition of done item 2 in native terms: at least 14 days and a stated number of effective monitoring hours with no `0x8007139F` and no confirmed flatline | The native signal is more exact than the visual predicate and also covers flatlines the detector cannot see | New |
+| J5 | Report effective monitoring hours, blind time and native coverage gaps per day in `status.json` | J4 and every rate in this roadmap need a denominator; the watcher was blind for 22 h on 25–26 October and about 4 h after the reboot on 27 October | New |
+| J6 | Keep the native coverage watchdog; treat the cause of the 26 October 21:22 dropout as unknown | The session-count hypothesis was refuted by experiment (A9) | Done (A9); cause open |
+| J7 | Retire the manual probe `TaskmgrWilProbe` on 6 November 2026 if the watcher's own native records and outside-flatline count agree with it until then | The watcher now records the provider itself and counts errors outside flatlines; the probe's 4.3 GB on D: is outside the ETW storage budget | New |
+| J8 | Confirm with public symbols that `ProcessDataSource2.cpp:821` is inside `QueryProcessInformation` before A6 cites it as the rejected third call | About six `0x8007000E` reports an hour without a freeze match the defect but the mapping is unverified | New |
+| J9 | Once 10 conforming freezes exist, publish one cross-incident table of process and thread starts in the 2 s before the native error against same-trace controls, with the stated limits | 3 of 5 showed clear bursts, 1 was during sustained heavy creation and 1 had no control; A2's pixel window is no longer needed | New |
+| J10 | Report the frozen-line height against `system_cpu_percent` (A3) | On 24 October 16:06 the line read about 67% while the counter read 100% | Queued |
+| J11 | Keep live query tracing parked (A7) | Both function defects are confirmed by execution and the conflict is observed natively in every freeze; the remaining upstream link needs a debugger that changes timing and separate authorisation | Queued (record decision) |
+| J12 | Post the A6 material, with the native signal, call chain and the logman command | The draft is ready locally and has not been published | Owner |
+| J13 | When the DLL hash changes, run the controlled execution of the new `QueryProcessInformation`, then start the J4 observation period | Definition of done item 1; the hash is recorded automatically (A4) | Waiting for Microsoft |
+
+ETW storage: 6.0 of 40 GiB used; incident folders since 20 October average about 67 MB, so the budget lasts several months at the current rate.
+
 ## Next actions, in order
 
 | # | Action | Done when | Cost and risk |
@@ -122,6 +144,28 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
    - 300 秒限时针对整次重试尝试，其中的解码和压缩仍限 90 秒，所以重试帮不了慢解码。退出码只要不是 0 或 2 就会重试，包括必然重复的失败。
    - 40 GiB 的 ETW 预算已用约 4.4 GiB，10 月 19 日以来每个事件目录平均约 54 MB。按每天五次估算，约四个月后记录会被阻止，需要事先决定保留策略；证据不会被自动删除。
    - 10 月 26 日 21:28 曾发生提供程序事件在所有会话中同时断流、导致平线未覆盖的情况（已更正为无法判定）。起初推测为实时会话泄漏超出 ETW 会话数上限导致，但实机受控实验证实 12 会话内无断流（上限推测未证实）。现已加入 15 秒原生覆盖看门狗，通过幂等 EnableTraceEx2 重启用、退避重试、状态导出以及 N2 provider_gap 联动，自动检测并缓解断流。
+
+## 调整清单（2026-10-30）
+
+依据 10 月 26–30 日的记录整理。"已排队"项已交给实施会话，随各自提交关闭；"负责人"项需要负责人处理。
+
+| # | 调整 | 记录给出的理由 | 状态 |
+|---|---|---|---|
+| J1 | 以原生 `0x8007139F` 作为冻结标志和起点；撤销基于像素的起点工作（A1、A2），离线排行以原生错误为起点 | 5 次合格冻结全部出现，比视觉候选早 9–29 秒；约 57 小时内平线之外 0 次；N1 由负责人决定通过 | 已排队 |
+| J2 | 修复 N4 心跳并加心跳缺失看门狗；报告区分"冻结时停止"与"没有录到" | 10 月 27 日 18:56 之后没有心跳进入缓冲，5 次真冻结都没有可用心跳 | 已排队 |
+| J3 | 总图空白或贴底时要求独立印证 | 两次重启发生在系统 CPU 2–4.6%、没有原生信号，极可能是闲置误报 | 已完成（A11，`5ac8b48`） |
+| J4 | 用原生信号重述完成标准第 2 条：至少 14 天、达到写明的有效监测小时数，期间没有 `0x8007139F` 也没有确认的平线 | 原生信号比视觉判据更准确，也能覆盖检测器看不到的平线 | 新增 |
+| J5 | 在 `status.json` 中按天报告有效监测小时、失明时长和原生覆盖缺口 | J4 和本路线图里的所有频率都需要分母；10 月 25–26 日失明 22 小时，10 月 27 日重启后约 4 小时 | 新增 |
+| J6 | 保留原生覆盖看门狗；10 月 26 日 21:22 断流的原因按未知处理 | 会话数假设已被实验否定（A9） | 已完成（A9）；原因未明 |
+| J7 | 若到 2026 年 11 月 6 日监测器自身的原生记录和平线外计数一直与探测会话一致，就停用手动探测会话 `TaskmgrWilProbe` | 监测器已自行记录该提供程序并统计平线外错误；探测会话在 D 盘占 4.3 GB，不在 ETW 存储预算内 | 新增 |
+| J8 | 在 A6 引用"第三次调用被拒"之前，用公共符号确认 `ProcessDataSource2.cpp:821` 位于 `QueryProcessInformation` 内 | 约每小时六次、不伴随冻结的 `0x8007000E` 与该缺陷吻合，但对应关系未核实 | 新增 |
+| J9 | 符合的冻结达到 10 次后，发布一张跨事件表：原生错误前 2 秒的进程和线程启动对同一 trace 的对照，并写明局限 | 5 次中 3 次有明显突增，1 次处在持续大量创建期间，1 次没有对照；A2 的像素窗口已不需要 | 新增 |
+| J10 | 报告冻结线高度与 `system_cpu_percent` 的差值（A3） | 10 月 24 日 16:06 那次冻结线约 67%，计数器为 100% | 已排队 |
+| J11 | 现场查询追踪维持搁置（A7） | 两个函数缺陷已由执行确认，冲突在每次冻结中都以原生事件观察到；剩下的上游一环需要会改变时序的调试器和单独授权 | 已排队（记录决定） |
+| J12 | 发布 A6 材料，包含原生信号、调用链和 logman 命令 | 草稿已在本机备好，尚未发布 | 负责人 |
+| J13 | DLL 哈希变化时，先对新版 `QueryProcessInformation` 做受控执行，再开始 J4 的观察期 | 完成标准第 1 条；哈希已自动记录（A4） | 等待微软 |
+
+ETW 存储：40 GiB 已用 6.0 GiB；10 月 20 日以来每个事件目录平均约 67 MB，按当前速度可用数月。
 
 ## 下一步行动（按顺序）
 
