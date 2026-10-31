@@ -485,7 +485,7 @@ class OfflineProcessor:
                 status_name = 'failed'
                 if reason == 'unspecified':
                     reason = f'process-incident failed with exit code {child.returncode}'
-                retryable = (stage == 'decode' and reason == 'decoder time limit exceeded')
+                retryable = (stage == 'decode' and reason in ('decoder time limit exceeded', 'decoder output byte limit exceeded'))
 
             result.update(status=status_name, exit_code=child.returncode,
                           stage=stage, reason=reason,

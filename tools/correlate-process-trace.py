@@ -30,7 +30,22 @@ def ticks(text):
 
 
 def decode(path, thread_window=None):
-    source = gzip.open(path,'rb') if str(path).endswith('.gz') else open(path,'rb')
+    path_str = str(path)
+    if path_str.endswith('.json.gz') or path_str.endswith('.json'):
+        raw = gzip.decompress(Path(path).read_bytes()).decode('utf-8') if path_str.endswith('.gz') else Path(path).read_text(encoding='utf-8')
+        payload = json.loads(raw)
+        header = payload.get('header', {})
+        errors = payload.get('errors', [])
+        all_events = payload.get('events', [])
+        events = []
+        for e in all_events:
+            kind = e.get('kind')
+            keep = (kind in ('process_start', 'process_stop') or thread_window is None or
+                    thread_window[0] <= e['qpc'] <= thread_window[1])
+            if keep:
+                events.append(e)
+        return events, header, errors
+    source = gzip.open(path,'rb') if path_str.endswith('.gz') else open(path,'rb')
     try:
         return _decode_stream(source, thread_window)
     finally:

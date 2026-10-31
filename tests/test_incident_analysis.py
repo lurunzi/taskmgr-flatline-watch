@@ -180,5 +180,32 @@ class AnalysisTests(unittest.TestCase):
                 self.assertFalse(result['quality']['ranking_usable'])
                 self.assertTrue(all(not p['ranking_usable'] for p in result['phases'].values()))
 
+    def test_n1_summary_deduplicates_reanalysis_and_provenance(self):
+        with tempfile.TemporaryDirectory() as d:
+            summary_dir = Path(d)
+            native1 = {'verdict': 'conforming', 'recorded': True, 'hresult': '0x8007139f', 'qpc': 100}
+            A.update_n1_summary(summary_dir, 'restart-20261030-140608-487205', native1, note='original note')
+
+            s = json.loads((summary_dir/'n1-summary.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(s['history']), 1)
+            self.assertEqual(s['qualifying_count'], 1)
+            self.assertEqual(s['conforming_count'], 1)
+
+            # Reanalysis into derived folder name with provenance
+            native2 = {'verdict': 'conforming', 'recorded': True, 'hresult': '0x8007139f', 'qpc': 100, 'lead_seconds_before_first_candidate': 14.5}
+            reanalysis_dir = summary_dir / 'restart-20261030-140608-487205-reanalysis'
+            reanalysis_dir.mkdir()
+            (reanalysis_dir / 'provenance.json').write_text(json.dumps({'source': str(summary_dir / 'restart-20261030-140608-487205')}), encoding='utf-8')
+
+            A.update_n1_summary(summary_dir, reanalysis_dir.name, native2, incident_folder=reanalysis_dir)
+
+            s2 = json.loads((summary_dir/'n1-summary.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(s2['history']), 1, "Reanalysis must not append a duplicate entry")
+            self.assertEqual(s2['history'][0]['incident'], 'restart-20261030-140608-487205')
+            self.assertEqual(s2['history'][0]['lead_seconds'], 14.5)
+            self.assertEqual(s2['history'][0]['note'], 'original note', "Original note must be preserved")
+            self.assertEqual(s2['qualifying_count'], 1)
+            self.assertEqual(s2['conforming_count'], 1)
+
 
 if __name__=='__main__':unittest.main()

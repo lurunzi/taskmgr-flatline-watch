@@ -74,5 +74,52 @@ class DecodeStorageTests(unittest.TestCase):
             p=Path(d)/'events.xml.gz';p.write_bytes(gzip.compress(self.xml())[:-12])
             with self.assertRaises((EOFError,OSError)):D.decode(p,thread_window=(200,250))
 
+    def test_json_decode_keeps_thread_window_and_header(self):
+        with tempfile.TemporaryDirectory() as d:
+            header = {'PerfFreq': 1000, 'raw_start': 100, 'native_events': [{'hresult': '0x8007139f'}]}
+            evts = [
+                {'qpc': 110, 'kind': 'thread_start', 'pid': 42, 'tid': 1},
+                {'qpc': 150, 'kind': 'process_start', 'pid': 42, 'tid': 1, 'parent_pid': 7, 'image': 'child.exe'},
+                {'qpc': 220, 'kind': 'thread_start', 'pid': 42, 'tid': 2},
+                {'qpc': 300, 'kind': 'process_stop', 'pid': 42, 'tid': 1, 'image': 'child.exe'}
+            ]
+            data = json.dumps({'header': header, 'events': evts, 'errors': []})
+            p = Path(d)/'events.json.gz'
+            p.write_bytes(gzip.compress(data.encode('utf-8')))
+            events, hdr, errs = D.decode(p, thread_window=(200, 250))
+            self.assertEqual([(e['kind'], e['qpc']) for e in events],
+                             [('process_start', 150), ('thread_start', 220), ('process_stop', 300)])
+            self.assertEqual(hdr['raw_start'], 100)
+            self.assertEqual(hdr['native_events'][0]['hresult'], '0x8007139f')
+            self.assertEqual(errs, [])
+
+    def test_direct_decode_success_creates_events_json_gz(self):
+        with tempfile.TemporaryDirectory() as d:
+            session = P.Session(d)
+            raw = session.folder/'process.etl'
+            raw.write_bytes(b'simulated etl content')
+            fake_header = {'PerfFreq': 1000, 'raw_start': 100, 'native_events': []}
+            fake_events = [{'qpc': 150, 'kind': 'process_start', 'pid': 42, 'tid': 1}]
+            with patch.object(P, 'decode_etl_file', return_value=(fake_header, fake_events, [])):
+                session.decode(compact=True)
+            out_file = session.folder/'events.json.gz'
+            self.assertTrue(out_file.exists())
+            self.assertEqual(session.record['decode'], 'complete')
+            self.assertEqual(session.record['decode_file'], 'events.json.gz')
+            self.assertEqual(session.record['decode_exit'], 0)
+            payload = json.loads(gzip.decompress(out_file.read_bytes()))
+            self.assertEqual(payload['header']['PerfFreq'], 1000)
+            self.assertEqual(len(payload['events']), 1)
+
+    def test_direct_decode_bound_exceeded_raises_runtime_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            session = P.Session(d)
+            raw = session.folder/'process.etl'
+            raw.write_bytes(b'simulated etl content')
+            with patch.object(P, 'decode_etl_file', side_effect=RuntimeError('ETW decoder bound exceeded; ETL retained')):
+                with self.assertRaisesRegex(RuntimeError, 'bound exceeded'):
+                    session.decode(compact=True)
+            self.assertEqual(session.record['decode'], 'incomplete: decoder time/output bound')
+
 
 if __name__=='__main__':unittest.main()

@@ -24,7 +24,7 @@ if __name__ == '__main__':
             parser.error('output must be a separate new directory')
         destination.mkdir(parents=True,exist_ok=False)
         (destination/'process-trace').mkdir()
-        names = ['observation.json','trace-capture.json','event.json',
+        names = ['observation.json','trace-capture.json','event.json','heartbeat.json',
                  'process-trace/session.json','process-trace/baseline.json',
                  'process-trace/end-baseline.json','process-trace/process.etl',
                  'process-trace/providers.guid']

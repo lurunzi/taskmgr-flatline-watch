@@ -19,6 +19,17 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Direct ETW trace decoding, N1 de-duplication, and 7th conforming flatline (31 October 2026)
+
+To resolve offline analysis decoding failures on large circular traces, prevent duplicate counting across re-analysis runs, and incorporate the 31 October 19:39 incident into the N1 tally:
+- **Direct Win32 ETW reader and byte limit resolution**: In 128 MB circular ETW sessions, Task Manager frequently emits tens of thousands of verbose or fallback events (e.g. ~24,000 error events, mostly `applications.cpp:12414` noise). The inbox `tracerpt.exe` tool expanded a 134 MB `process.etl` to over 1.09 GB of localized XML text, exceeding the 1024 MB decoder output limit (`decoder output byte limit exceeded`) and failing offline incident analysis during the decode stage. `ProcessTrace.py` now implements a high-performance in-process ETW reader via Win32 `advapi32.OpenTraceW` and `ProcessTrace` with `PROCESS_TRACE_MODE_RAW_TIMESTAMP` (`0x00001000`). The reader streams binary event records directly, performs in-flight filtering to retain only `Microsoft-Windows-Kernel-Process` (EIDs 1, 2, 3, 4) and `Microsoft.Windows.Taskmgr` `FallbackError` (`0x8007139F` from `TaskManagerDataLayer.dll`), and emits a compact `events.json.gz` (7.4 MB gzipped vs >1 GB XML) in ~3.6 seconds (down from >17 seconds failure). Direct decode is bounded by `DIRECT_DECODE_EVENT_LIMIT = 2_000_000` events and `DIRECT_DECODE_JSON_LIMIT = 512 MiB`. Both `correlate-process-trace.py` and `IncidentAnalysis.py` now support `.json.gz` / `.json` alongside legacy `.xml.gz` / `.xml`.
+- **N1 tally de-duplication and canonical naming**: When incidents are re-analysed or retried into new target directories (e.g. `--output <incident>-reanalysis` or `-retry`), `canonical_incident_name()` normalizes the incident name by inspecting `provenance.json` sources and stripping re-analysis suffixes. `update_n1_summary()` matches existing entries by canonical identity and updates them in place, preserving existing notes and preventing re-analyses from inflating flatline counts. Prior duplicate `restart-20261030-140608-487205-reanalysis` in `D:\TaskmgrFreezeCaptures\n1-summary.json` was corrected after backing up the original to `D:\TaskmgrFreezeCaptures\n1-summary.before-dedupe-20261031-224142.json` (SHA-256 `0334348c9a566ca555f5d169f18ab119d7fbe0418aeb7a6527d5dad85fc05697`).
+- **31 October 19:39 incident backfill (7th conforming flatline)**: Incident `restart-20261031-193909-000213` was backfilled into `D:\TaskmgrFreezeCaptures\restart-20261031-193909-000213-reanalysis` using direct decode in 6.766s total (`decode: 3.641s`, `analyze: 3.125s`). Analysis confirmed:
+  - Native signature: Conforming `0x8007139F` on target PID 26488 with a 14.332 s lead time before the first flat candidate (`call_chain_event_count: 5`, `trigger_kind: native_fast`).
+  - Heartbeat continuity (N4): Heartbeat continued throughout the freeze (`classification: heartbeat_continued_during_freeze`, 3600 events, 1800 pairs).
+  - Frozen line discrepancy (A3): Total chart froze at 41.3% height (`tail_height_px: 27.0`, `inner_height_px: 46.0`) against an actual system CPU median of 34.8% (max 48.0%), with a -6.5% median and +6.7% max discrepancy during confirmation.
+- **N1 tally status**: Live tally in `n1-summary.json` and `status.json` now stands at 7 of 7 qualifying flatlines conforming (100% conforming; 0 outside flatlines across 57+ hours of recording) across 11 unique incidents (7 conforming, 4 indeterminate).
+
 ## Controlled query defect verification (31 October 2026)
 
 To implement Goal 1 and J14 of the [roadmap](docs/roadmap.md), `tools/verify-query-fix.py` provides an isolated controlled-execution harness that verifies Microsoft's `TaskManagerDataLayer.dll` query machine code (`QueryProcessInformation`) against the two confirmed query defects:
@@ -306,6 +317,17 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 原生 ETW 跟踪直接解码、N1 计数去重与第 7 次符合平线（2026 年 10 月 31 日）
+
+为解决大容量循环跟踪上的离线解码失败、防止重复分析导致计数虚高，并将 10 月 31 日 19:39 事件回填入 N1 统计：
+- **Win32 ETW 直接读取器与解码字节超限解决**：在 128 MB 循环 ETW 会话中，Task Manager 频繁记录上万条详细或回退错误事件（例如约 24,000 条错误事件，绝大部分为 `applications.cpp:12414` 噪声）。系统自带的 `tracerpt.exe` 将 134 MB 的 `process.etl` 膨胀为超过 1.09 GB 的本地化 XML 文本，超出 1024 MB 限制（`decoder output byte limit exceeded`），导致离线分析在解码阶段失败。`ProcessTrace.py` 现通过 Win32 `advapi32.OpenTraceW` 与 `ProcessTrace`（启用 `PROCESS_TRACE_MODE_RAW_TIMESTAMP = 0x00001000`）实现进程内直接读取。读取器直接流式解析二进制事件记录，实时筛选仅保留 `Microsoft-Windows-Kernel-Process`（EID 1, 2, 3, 4）与 `Microsoft.Windows.Taskmgr` 的 `FallbackError`（来自 `TaskManagerDataLayer.dll` 的 `0x8007139F`，剔除大量重复的 `0x8000FFFF` 噪声），并在约 3.6 秒内生成紧凑的 `events.json.gz`（gzip 压缩后 7.4 MB，对比 >1 GB XML），彻底替代耗时超 17 秒后崩溃的原流程。直接解码受限于 `DIRECT_DECODE_EVENT_LIMIT = 2_000_000` 个事件与 `DIRECT_DECODE_JSON_LIMIT = 512 MiB`。`correlate-process-trace.py` 与 `IncidentAnalysis.py` 现均同时支持 `.json.gz` / `.json` 与原有的 `.xml.gz` / `.xml`。
+- **N1 计数规范化与去重**：当事件被重新分析或重试到新输出目录（如 `--output <incident>-reanalysis` 或 `-retry`）时，`canonical_incident_name()` 结合 `provenance.json` 来源核查并去除重分析后缀，对事件目录名进行规范化。`update_n1_summary()` 按规范化名称原地更新已有记录，保留原附注并防止重复分析被计为新的独立平线。`D:\TaskmgrFreezeCaptures\n1-summary.json` 中此前因重分析产生的重复项 `restart-20261030-140608-487205-reanalysis` 已在备份原文件至 `D:\TaskmgrFreezeCaptures\n1-summary.before-dedupe-20261031-224142.json`（SHA-256 `0334348c9a566ca555f5d169f18ab119d7fbe0418aeb7a6527d5dad85fc05697`）后完成更正。
+- **10 月 31 日 19:39 事件回填（第 7 次符合平线）**：使用直接解码器将 `restart-20261031-193909-000213` 重新分析至 `D:\TaskmgrFreezeCaptures\restart-20261031-193909-000213-reanalysis`，耗时 6.766 秒（`decode: 3.641s`，`analyze: 3.125s`）。分析确认：
+  - 原生特征：目标 PID 26488 确认原生 `0x8007139F` 错误，领先首次平线候选 14.332 秒（5 节点调用链，`trigger_kind: native_fast`）。
+  - 心跳持续（N4）：心跳在冻结期间全程持续（`classification: heartbeat_continued_during_freeze`，3600 个事件，1800 对）。
+  - 冻结线差值（A3）：总图冻结在 41.3% 高度（`tail_height_px: 27.0`，`inner_height_px: 46.0`），而系统独立 CPU 采样中位数为 34.8%（最大 48.0%），确认期内差值中位数 -6.5%、最大 +6.7%。
+- **N1 统计现状**：`n1-summary.json` 与 `status.json` 中的最新统计现为 7 次合格平线中 7 次符合（符合率 100%；57+ 小时记录期内平线外 0 次），共覆盖 11 次独立事件（7 次符合，4 次无法判定）。
 
 ## 查询缺陷受控执行验证（2026 年 10 月 31 日）
 

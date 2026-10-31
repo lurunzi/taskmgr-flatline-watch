@@ -3,6 +3,7 @@ import collections
 import gzip
 import importlib.util
 import json
+import re
 import statistics
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
@@ -191,7 +192,12 @@ NS = {'e': 'http://schemas.microsoft.com/win/2004/08/events/event'}
 
 
 def parse_native_events_from_xml(path):
-    source = gzip.open(path, 'rb') if str(path).endswith('.gz') else open(path, 'rb')
+    path_str = str(path)
+    if path_str.endswith('.json.gz') or path_str.endswith('.json'):
+        raw = gzip.decompress(Path(path).read_bytes()).decode('utf-8') if path_str.endswith('.gz') else Path(path).read_text(encoding='utf-8')
+        payload = json.loads(raw)
+        return payload.get('header', {}).get('native_events', [])
+    source = gzip.open(path, 'rb') if path_str.endswith('.gz') else open(path, 'rb')
     native = []
     try:
         iterator = ET.iterparse(source, events=('start', 'end'))
@@ -258,9 +264,9 @@ def extract_native_signature(native_events, events, header, observation, resolve
         for c in candidates_dirs:
             if not c.exists():
                 continue
-            for pattern in ('*wil*.xml*', '*native*.xml*', 'events.xml*'):
+            for pattern in ('*wil*.xml*', '*native*.xml*', 'events.xml*', 'events.json*'):
                 for p in c.glob(pattern):
-                    if p.name in ('events.xml', 'events.xml.gz') and c in (folder_p, folder_p/'process-trace'):
+                    if p.name in ('events.xml', 'events.xml.gz', 'events.json', 'events.json.gz') and c in (folder_p, folder_p/'process-trace'):
                         continue  # already parsed by correlate
                     try:
                         parsed = parse_native_events_from_xml(p)
@@ -583,7 +589,31 @@ def record_outside_flatline(summary_dir, native_error, reason='chart_not_flat_fo
     return summary
 
 
-def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None, note=None):
+def canonical_incident_name(incident_name, summary_dir=None, folder=None):
+    """Resolve the canonical base incident identity for de-duplicating reanalyses."""
+    if folder is not None:
+        p_path = Path(folder) / 'provenance.json'
+        if p_path.exists():
+            try:
+                src = json.loads(p_path.read_text(encoding='utf-8')).get('source')
+                if src:
+                    return canonical_incident_name(Path(src).name, summary_dir)
+            except Exception:
+                pass
+    if summary_dir is not None:
+        p_path = Path(summary_dir) / incident_name / 'provenance.json'
+        if p_path.exists():
+            try:
+                src = json.loads(p_path.read_text(encoding='utf-8')).get('source')
+                if src:
+                    return canonical_incident_name(Path(src).name, summary_dir)
+            except Exception:
+                pass
+    cleaned = re.sub(r'(-reanalysis.*|-retry\d*|-analysis-retry.*|\.reanalysis.*)$', '', str(incident_name))
+    return cleaned or incident_name
+
+
+def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None, note=None, incident_folder=None):
     summary_path = Path(summary_dir)/'n1-summary.json'
     summary = {}
     if summary_path.exists():
@@ -602,17 +632,20 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
     summary.setdefault('status', 'evaluating')
     summary.setdefault('history', [])
 
+    c_name = canonical_incident_name(incident_name, summary_dir, folder=incident_folder)
+
     existing_idx = None
     existing_entry = None
     for idx, h in enumerate(summary['history']):
-        if h.get('incident') == incident_name:
+        h_name = h.get('incident', '')
+        if h_name == c_name or canonical_incident_name(h_name, summary_dir) == c_name:
             existing_idx = idx
             existing_entry = h
             break
 
     verdict = native_sig.get('verdict', 'indeterminate')
     entry = {
-        'incident': incident_name,
+        'incident': c_name,
         'timestamp_utc': timestamp_utc or datetime.now(timezone.utc).isoformat(),
         'verdict': verdict,
         'recorded': native_sig.get('recorded', False),
@@ -630,6 +663,26 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
         summary['history'][existing_idx] = entry
     else:
         summary['history'].append(entry)
+
+    # De-duplicate any prior duplicate entries across history
+    deduped_history = []
+    seen = {}
+    for h in summary['history']:
+        h_canon = canonical_incident_name(h.get('incident', ''), summary_dir)
+        if h_canon in seen:
+            prev_idx = seen[h_canon]
+            prev = deduped_history[prev_idx]
+            if h.get('verdict') == 'conforming' or prev.get('verdict') != 'conforming':
+                if 'note' in prev and 'note' not in h:
+                    h['note'] = prev['note']
+                h['incident'] = h_canon
+                deduped_history[prev_idx] = h
+        else:
+            h_copy = dict(h)
+            h_copy['incident'] = h_canon
+            seen[h_canon] = len(deduped_history)
+            deduped_history.append(h_copy)
+    summary['history'] = deduped_history
 
     summary['conforming_count'] = sum(1 for h in summary['history'] if h.get('verdict') == 'conforming')
     summary['non_conforming_count'] = sum(1 for h in summary['history'] if h.get('verdict') == 'non_conforming')
@@ -669,7 +722,7 @@ def analyze(folder, output=None):
     min_clock = (min(clocks_to_keep) - 130 * session.get('qpc_frequency', 10_000_000)) if clocks_to_keep else None
     window = (min_clock, max(clocks_to_keep)) if clocks_to_keep else None
     decoded_file = session.get('decode_file') or 'events.xml'
-    if decoded_file not in ('events.xml','events.xml.gz'):
+    if decoded_file not in ('events.xml', 'events.xml.gz', 'events.json.gz', 'events.json'):
         raise ValueError('unsupported decoded trace path')
     events, header, decode_errors = _decoder.decode(trace/decoded_file,thread_window=window)
     overwritten = 'circular trace may have overwritten earlier buffers' in decode_errors
@@ -837,7 +890,7 @@ def analyze(folder, output=None):
     (output/'incident-analysis.md').write_text(render(result),encoding='utf-8')
 
     try:
-        update_n1_summary(output.parent, folder.name, native_sig, observation.get('timestamp'))
+        update_n1_summary(output.parent, folder.name, native_sig, observation.get('timestamp'), incident_folder=folder)
     except Exception:
         pass
 
