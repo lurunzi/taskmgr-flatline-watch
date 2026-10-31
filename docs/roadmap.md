@@ -12,11 +12,48 @@ Reviewed 25 October 2026. This page states what "done" means, where each workstr
 
 ## Goal and definition of done
 
-The problem is the Task Manager total CPU chart freezing as a flat line while the logical-processor charts keep moving. It is resolved when all of the following hold:
+The problem is the Task Manager total CPU chart freezing as a flat line while the logical-processor charts keep moving. It is resolved when goals 1, 2 and 3 are met in order. The goals follow the owner's text of 31 October 2026; items marked [Added] are evidence checks added to it.
 
-1. `TaskManagerDataLayer.dll` changes, and controlled execution of the new `QueryProcessInformation` shows both defects fixed: an exhausted query is no longer published as success, and a successful third call is no longer rejected as `E_OUTOFMEMORY`. The run covers second-call success, third-call success, three failures and error propagation, and records the exact binary tested. Static comparison alone only selects the file for this test.
-2. With the watcher running in its normal mode, at least 14 days of ordinary use, with a stated number of effective monitoring hours, produce no confirmed flatline. Hours when Task Manager is closed, off the CPU page or the detector is invalid do not count. Restated in native terms (J4, 30 October 2026): at least 14 days of ordinary use, with a stated number of effective monitoring hours, produce no `0x8007139F` native error and no confirmed flatline. Hours when Task Manager is closed, off the CPU page, the detector is invalid, or native provider event delivery has a gap do not count.
-3. The decision to disable the watcher's autostart is taken manually. The tools and evidence are kept.
+### Goal 1: binary fix confirmed by controlled execution
+
+- **Definition.** After a Microsoft update, show at machine-code level that both known query defects in `TaskManagerDataLayer.dll` are fixed.
+- **Precondition.** Windows Update replaces the file and the watcher records a SHA-256 change (J13).
+- **Method.** An isolated test process loads the new DLL, locates `ProcessDataGenerator::QueryProcessInformation` by public symbols (as in J8, not by pinned RVAs), and drives its machine code through a mocked `NtQuerySystemInformation`. No running Task Manager is touched.
+- **Acceptance (all required).**
+  1. Exhaustion is no longer success: with three consecutive `0xC0000004` returns, the function returns an error HRESULT, never `S_OK`, and publishes no buffer (for example, none ending in `PID 0 / CreateTime 0`).
+  2. A third-call success is no longer "out of memory": with `0xC0000004`, `0xC0000004`, then `0x00000000`, the function returns `S_OK` with a valid snapshot, never `E_OUTOFMEMORY` (`0x8007000E`).
+  3. Baseline and error propagation: a second-call success returns `S_OK`; `0xC0000022` (access denied) on the second call propagates as `0x80070005`.
+  4. [Added] Negative control: the same harness, run against the current 9549 file (SHA-256 `0cc75ace…3867`), fails criteria 1 and 2. This proves the harness detects the defects.
+  5. [Added] Supporting real-kernel run: under generated process churn, no exhausted query on the new file returns `S_OK` and no third-call success returns `E_OUTOFMEMORY`.
+- **Output.** A structured JSON receipt with the new DLL's SHA-256 and file version, the resolved function RVA and symbol source, each case's return code and buffer checks, and the negative-control result.
+- **Status.** Waiting for Microsoft; the file is still 9549. [Added] The harness exists only outside the repository (`.local/work-inbox/20261021-native-9549/`). It must first move into `tools/` with tests and the negative control (J14).
+- If a new file fails goal 1, attach the receipt to the Feedback Hub report and do not start goal 2.
+
+### Goal 2: 14 days of ordinary use with no native error and no flatline
+
+- **Definition.** Under real daily load, the fixed Task Manager no longer freezes the total CPU chart and no longer hits the aggregation conflict.
+- **Precondition.** Goal 1 has passed, and the watcher runs in its normal monitoring and recovery mode.
+- **Counting basis (J4, J5).**
+  - At least 14 calendar days.
+  - Only effective monitoring time counts: Task Manager running on Performance > CPU, the detector valid, and no ETW provider coverage gap. Blind and off-page time is deducted automatically through `daily-monitoring.json`.
+  - [Added] At least 150 effective hours. This machine used to freeze several times a day; even at one freeze per 24 effective hours, the chance of 150 hours without one is about 0.2%.
+  - [Added] The period must include ordinary heavy use: at least 20 two-second windows with 50 or more process starts. 3 of the 5 freezes with usable controls followed such bursts.
+  - [Added] Counting depends on the J5 accounting fix of 31 October, because the counter currently under-counts.
+- **Acceptance (all required).**
+  1. Zero native aggregation errors: within effective time, `Microsoft.Windows.Taskmgr` records exactly 0 `0x8007139F` errors from `TaskManagerDataLayer.dll`.
+  2. Zero confirmed flatlines: within effective time, exactly 0 total-chart flatlines are confirmed and recovered. Idle floor-level charts are excluded by the A11 rule.
+  3. [Added; reported, not required] `0x8007000E` at `ProcessDataSource2.cpp:821` occurs about six times an hour on 9549. If the third-call defect is fixed, it should fall to about 0.
+- **Status.** Starts only after goal 1 passes.
+
+### Goal 3: controlled retirement of the watcher
+
+- **Definition.** Once the fix is confirmed, remove the automatic mitigation and keep everything as an archive.
+- **Precondition.** Goals 1 and 2 have both passed.
+- **Acceptance (all required).**
+  1. Owner decision: the owner personally disables autostart with `Autostart.cmd off` or `Uninstall-Autostart.ps1`, removing the `TaskmgrFlatlineWatch` task. The code never disables itself.
+  2. Clean exit: `Stop.ps1` stops the watcher and the single-instance mutex is released. No analysis child process remains, and no ETW session from this project remains: `TaskmgrCorrelation-*`, `TaskmgrRealtime-Live`, and [Added] `TaskmgrWilProbe` if J7 has not already stopped it.
+  3. Permanent retention: everything in `D:\TaskmgrFreezeCaptures` (dumps, ETW traces, incident reports) is sealed and never cleaned automatically. The repository, `tools/` and the controlled-verification harness stay unchanged as regression tools for future Windows releases.
+- **Status.** Standing by.
 
 If flatlines continue on a fixed DLL, the visual failure has another cause and the causal workstream reopens. Baseline: 120 recovery folders from 4 to 25 October 2026, 0–12 per day. The DLL in use is still the 9549 file (SHA-256 `0cc75ace…3867`, written 13 October 2026).
 
@@ -68,6 +105,7 @@ Derived from the recordings of 26–30 October. "Queued" items are handed to the
 | J11 | Keep live query tracing parked (A7) | Both function defects are confirmed by execution and the conflict is observed natively in every freeze; the remaining upstream link needs a debugger that changes timing and separate authorisation | Done (30 October 2026; recorded decision) |
 | J12 | Post the A6 material, with the native signal, call chain and the logman command | The draft is ready locally and has not been published | Owner |
 | J13 | When the DLL hash changes, run the controlled execution of the new `QueryProcessInformation`, then start the J4 observation period | Definition of done item 1; the hash is recorded automatically (A4) | Waiting for Microsoft |
+| J14 | Move the controlled-execution harness into `tools/` with tests, make it resolve the function by public symbols, and run the 9549 negative control now | Goal 1 depends on a harness that today exists only in `.local/` and is pinned to one build | New |
 
 ETW storage: 6.0 of 40 GiB used; incident folders since 20 October average about 67 MB, so the budget lasts several months at the current rate.
 
@@ -108,11 +146,48 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 
 ## 目标与完成标准
 
-问题是任务管理器的 CPU 总图冻结成一条水平线，而各逻辑处理器图仍在变化。以下三条同时满足才算解决：
+问题是任务管理器的 CPU 总图冻结成一条水平线，而各逻辑处理器图仍在变化。按顺序达成目标一、二、三才算解决。目标依据负责人 2026 年 10 月 31 日给出的原文；标有【补充】的条目是对照证据补加的检查项。
 
-1. `TaskManagerDataLayer.dll` 发生变化，且对新版 `QueryProcessInformation` 的受控执行显示两个缺陷都已修复：重试耗尽的查询不再按成功发布，第三次调用成功也不再被当作 `E_OUTOFMEMORY` 拒绝。测试覆盖第二次成功、第三次成功、三次失败和错误传播，并记录实际测试的二进制文件。静态比对只用于挑选要测的文件。
-2. 监测器按正常模式运行，日常使用至少 14 天、并达到事先写明的有效监测小时数，没有确认的平线。任务管理器关闭、不在 CPU 页面或检测器无效的时段不计入。以原生口径重述（J4，2026-10-30）：日常使用至少 14 天、并达到事先写明的有效监测小时数，期间没有 `0x8007139F` 原生错误也没有确认的平线。任务管理器关闭、不在 CPU 页面、检测器无效或原生提供程序事件存在缺口的时段不计入。
-3. 关闭监测器自启动由人手动决定，工具和证据保留。
+### 目标一：二进制缺陷修复确认（受控执行验证）
+
+- **目标定义**：在微软推送更新后，证实 `TaskManagerDataLayer.dll` 中的两个已知查询缺陷均已在机器码层面彻底修复。
+- **前置条件**：系统通过 Windows Update 更新该文件，监测器检测到 SHA-256 变更（J13）。
+- **执行方式**：在独立测试进程中载入新 DLL，按 J8 的做法用公共符号定位 `ProcessDataGenerator::QueryProcessInformation`（不用固定 RVA），再通过 mock 的 `NtQuerySystemInformation` 驱动其机器码执行。不触碰正在运行的任务管理器。
+- **验收准则（全部满足）**：
+  1. 重试耗尽不再误判成功：连续 3 次返回 `0xC0000004` 时，函数必须返回错误 HRESULT，严禁返回 `S_OK`，也不得交付任何缓冲区（例如以 `PID 0 / CreateTime 0` 结尾的未完成缓冲区）。
+  2. 第三次成功不再误判内存不足：第 1、2 次返回 `0xC0000004`、第 3 次返回 `0x00000000` 时，必须返回 `S_OK` 并交付有效快照，严禁返回 `E_OUTOFMEMORY`（`0x8007000E`）。
+  3. 基线与错误透传正常：第 2 次成功时正常返回 `S_OK`；第 2 次遇到访问被拒绝（`0xC0000022`）时准确向上传播 `0x80070005`。
+  4. 【补充】反向对照：同一测试用于当前的 9549 文件（SHA-256 `0cc75ace…3867`）时，必须在准则 1、2 上不通过，以此证明测试能抓出缺陷。
+  5. 【补充】真实内核辅助验证：在人为制造的进程快速增减负载下，新文件不出现"耗尽却返回 `S_OK`"，也不出现"第三次成功却返回 `E_OUTOFMEMORY`"。
+- **产出物**：结构化 JSON 测试回执，包含新 DLL 的 SHA-256 和文件版本、解析出的函数 RVA 与符号来源、各用例的返回码与缓冲区校验，以及反向对照结果。
+- **当前状态**：等待微软更新（目前仍为 9549 版本）。【补充】受控执行脚本目前只在仓库之外（`.local/work-inbox/20261021-native-9549/`），必须先收进 `tools/`，并配上测试和反向对照（J14）。
+- 若新文件未通过目标一，把回执附到反馈中心报告，不启动目标二。
+
+### 目标二：日常稳定运行验证（14 天零原生错误与零平线）
+
+- **目标定义**：在实际日常负载下，验证修复后的任务管理器不再发生 CPU 总图冻结，也不再出现底层聚合冲突。
+- **前置条件**：目标一已验证通过，且监测器处于正常的监控与守护模式。
+- **统计口径（J4、J5）**：
+  - 累计日历天数不少于 14 天。
+  - 仅计入有效监测时长，即同时满足以下条件的时段：任务管理器在运行、停留在"性能 → CPU"页、检测器正常、ETW 提供程序没有覆盖缺口。失明与离页时段由 `daily-monitoring.json` 自动扣除。
+  - 【补充】有效监测时长不少于 150 小时。本机过去每天会冻结多次；即使按每 24 个有效小时冻结一次估算，150 小时内一次都不发生的概率也只有约 0.2%。
+  - 【补充】期间必须包含日常高负载使用：至少 20 个"2 秒内进程启动不少于 50 次"的窗口。在有可用对照的 5 次冻结中，有 3 次发生在这类突增之后。
+  - 【补充】统计依赖 10 月 31 日交接的 J5 统计修复，当前计数偏低。
+- **验收准则（全部满足）**：
+  1. 零原生聚合错误：有效监测期内，`Microsoft.Windows.Taskmgr` 记录到的、来自 `TaskManagerDataLayer.dll` 的 `0x8007139F` 总数严格等于 0。
+  2. 零确认平线：有效监测期内，经确认并恢复的 CPU 总图平线次数严格等于 0；闲置贴底的低负载图按 A11 规则排除，不算误报。
+  3. 【补充，只报告不作硬性要求】`ProcessDataSource2.cpp:821` 的 `0x8007000E` 在 9549 上约每小时出现六次；若第三次调用缺陷已修复，应降到约 0。
+- **当前状态**：待目标一达成后正式开始计时。
+
+### 目标三：监测工具受控退役（手动停用与证据归档）
+
+- **目标定义**：确认问题彻底根治后，安全撤去自动化缓解措施，转为纯历史归档状态。
+- **前置条件**：目标一与目标二均已验收通过。
+- **验收准则（全部满足）**：
+  1. 人工决策确认：由负责人本人执行关闭（`Autostart.cmd off` 或 `Uninstall-Autostart.ps1`），注销 `TaskmgrFlatlineWatch` 自启动任务；代码严禁自动静默停用。
+  2. 进程优雅退出：调用 `Stop.ps1` 安全退出监测器，确认互斥量已释放；不残留分析子进程，也不残留本项目的 ETW 会话，包括 `TaskmgrCorrelation-*`、`TaskmgrRealtime-Live`，以及【补充】J7 尚未停用时的 `TaskmgrWilProbe`。
+  3. 工具与证据永久保留：`D:\TaskmgrFreezeCaptures` 内的全部历史转储、ETW trace 和事故分析报告完整封存，不被自动清理；仓库代码、`tools/` 与受控验证脚本保持原样，以备今后 Windows 大版本更新时作为回归测试工具。
+- **当前状态**：待命。
 
 如果换了已修复的 DLL 仍出现平线，说明视觉故障另有原因，因果工作线重新打开。基线：2026 年 10 月 4 日至 25 日共 120 个恢复目录，每天 0–12 次。当前使用的仍是 9549 版本文件（SHA-256 `0cc75ace…3867`，写入时间 2026 年 10 月 13 日）。
 
@@ -164,6 +239,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | J11 | 现场查询追踪维持搁置（A7） | 两个函数缺陷已由执行确认，冲突在每次冻结中都以原生事件观察到；剩下的上游一环需要会改变时序的调试器和单独授权 | 已完成（2026-10-30；记录决定） |
 | J12 | 发布 A6 材料，包含原生信号、调用链和 logman 命令 | 草稿已在本机备好，尚未发布 | 负责人 |
 | J13 | DLL 哈希变化时，先对新版 `QueryProcessInformation` 做受控执行，再开始 J4 的观察期 | 完成标准第 1 条；哈希已自动记录（A4） | 等待微软 |
+| J14 | 把受控执行脚本收进 `tools/` 并配上测试，改为按公共符号定位函数，现在就对 9549 做反向对照 | 目标一依赖的脚本目前只在 `.local/`，且绑定单一版本 | 新增 |
 
 ETW 存储：40 GiB 已用 6.0 GiB；10 月 20 日以来每个事件目录平均约 67 MB，按当前速度可用数月。
 
