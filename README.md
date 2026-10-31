@@ -19,6 +19,31 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Controlled query defect verification (31 October 2026)
+
+To implement Goal 1 and J14 of the [roadmap](docs/roadmap.md), `tools/verify-query-fix.py` provides an isolated controlled-execution harness that verifies Microsoft's `TaskManagerDataLayer.dll` query machine code (`QueryProcessInformation`) against the two confirmed query defects:
+- **Public symbol resolution**: Resolves `ProcessDataGenerator::QueryProcessInformation` and `std::vector<unsigned char>::_Tidy` directly via Microsoft public symbol servers using `cdb.exe`. If symbols cannot be resolved, execution halts explicitly without falling back to pinned RVAs.
+- **Dynamic PE import patching**: Automatically parses the target PE import directory to locate the IAT slot for `ntdll.dll!NtQuerySystemInformation`. The slot is temporarily redirected within an isolated child process to synthetic mock handlers and restored immediately upon test completion.
+- **Goal 1 criteria evaluation**: Executes the four controlled query test cases:
+  1. *Exhaustion*: Three consecutive `0xC0000004` (STATUS_INFO_LENGTH_MISMATCH) returns. On a fixed binary, must return an error HRESULT and publish no buffer.
+  2. *Third-call success*: Two length mismatches followed by success on the third call. On a fixed binary, must return `S_OK` with a valid buffer, never `E_OUTOFMEMORY` (`0x8007000E`).
+  3. *Baseline & error propagation*: Second-call success returns `S_OK`; access denied (`0xC0000022`) on call 2 propagates as `0x80070005`.
+  4. *Negative control on 9549*: Executed against the live 9549 binary (`10.0.26100.9549`, SHA-256 `0cc75ace…3867`), confirming both defects reproduce as expected (criteria 1 and 2 fail, criterion 3 passes; 100% match with 2026-10-21 reference; receipt saved at `D:\TaskmgrFreezeCaptures\fix-verification\negative-control-9549-20261031-220249\`).
+- **No live interference**: The harness runs in an isolated child process without attaching debuggers or touching running Task Manager instances. Supported by unit tests in `tests/test_verify_query_fix.py`.
+
+Usage:
+
+```powershell
+# Run controlled execution against target DLL (default: C:\Windows\System32\TaskManagerDataLayer.dll)
+.\.venv\Scripts\python.exe tools\verify-query-fix.py
+
+# Specify custom DLL, symbol path, or output directory
+.\.venv\Scripts\python.exe tools\verify-query-fix.py --dll <path-to-dll> --output <output-dir>
+
+# Optional live kernel execution under process churn (5 seconds)
+.\.venv\Scripts\python.exe tools\verify-query-fix.py --real-kernel --churn-seconds 5
+```
+
 ## Test isolation, monotonic heartbeat tracking, and daily wall-clock accounting (31 October 2026)
 
 To harden test reliability and resolve false telemetry anomalies during extended monitoring:
@@ -281,6 +306,31 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 查询缺陷受控执行验证（2026 年 10 月 31 日）
+
+为落实[路线图](docs/roadmap.md#zh)目标一与 J14，`tools/verify-query-fix.py` 提供了独立的受控执行验证工具，在机器码层面直接验证 `TaskManagerDataLayer.dll` 中的两个已知查询缺陷（`QueryProcessInformation`）：
+- **微软公共符号解析**：通过 `cdb.exe` 动态从微软公共符号服务器解析 `ProcessDataGenerator::QueryProcessInformation` 与 `std::vector<unsigned char>::_Tidy` 的入口地址。符号无法解析时直接报错中止，绝不回退至写死的固定 RVA。
+- **PE 导入表动态定位**：自动解析目标二进制的 PE 导入表，定位 `ntdll.dll!NtQuerySystemInformation` 的 IAT 槽位。在隔离子进程中临时重定向至合成 mock 回调并在测试结束后立即恢复内存保护与原值。
+- **目标一验收准则判定**：受控执行 4 个目标一测试用例：
+  1. *重试耗尽*：连续 3 次返回 `0xC0000004`（STATUS_INFO_LENGTH_MISMATCH）。已修复的二进制必须返回错误 HRESULT，且不得发布有效或幽灵缓冲区。
+  2. *第三次成功*：前 2 次不匹配、第 3 次成功。已修复的二进制必须返回 `S_OK` 并交付有效快照，严禁返回 `E_OUTOFMEMORY`（`0x8007000E`）。
+  3. *基线与错误透传*：第 2 次成功返回 `S_OK`；第 2 次遇到访问被拒绝（`0xC0000022`）透传为 `0x80070005`。
+  4. *9549 反向对照*：已对当前 9549 版本（`10.0.26100.9549`，SHA-256 `0cc75ace…3867`）实测确认，准则 1、2 均不通过（耗尽返回 `S_OK` 且发布幽灵记录；第三次成功返回 `0x8007000E`），准则 3 通过，与 2026-10-21 基准结果 100% 吻合，回执归档于 `D:\TaskmgrFreezeCaptures\fix-verification\negative-control-9549-20261031-220249\`。
+- **零实机干扰**：全流程在独立工作进程中运行，不附加调试器，绝不触碰正在运行的真实任务管理器实例。配套单元测试由 `tests/test_verify_query_fix.py` 覆盖。
+
+使用方法：
+
+```powershell
+# 对目标 DLL 执行受控验证（默认：C:\Windows\System32\TaskManagerDataLayer.dll）
+.\.venv\Scripts\python.exe tools\verify-query-fix.py
+
+# 指定 DLL 路径、符号路径或输出目录
+.\.venv\Scripts\python.exe tools\verify-query-fix.py --dll <path-to-dll> --output <output-dir>
+
+# 可选：在真实进程增减负载下运行 5 秒实时内核观测
+.\.venv\Scripts\python.exe tools\verify-query-fix.py --real-kernel --churn-seconds 5
+```
 
 ## 测试环境隔离、单调心跳计数与每日全时长统计（2026 年 10 月 31 日）
 

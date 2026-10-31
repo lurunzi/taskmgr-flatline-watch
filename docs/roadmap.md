@@ -26,7 +26,7 @@ The problem is the Task Manager total CPU chart freezing as a flat line while th
   4. [Added] Negative control: the same harness, run against the current 9549 file (SHA-256 `0cc75ace…3867`), fails criteria 1 and 2. This proves the harness detects the defects.
   5. [Added] Supporting real-kernel run: under generated process churn, no exhausted query on the new file returns `S_OK` and no third-call success returns `E_OUTOFMEMORY`.
 - **Output.** A structured JSON receipt with the new DLL's SHA-256 and file version, the resolved function RVA and symbol source, each case's return code and buffer checks, and the negative-control result.
-- **Status.** Waiting for Microsoft; the file is still 9549. [Added] The harness exists only outside the repository (`.local/work-inbox/20261021-native-9549/`). It must first move into `tools/` with tests and the negative control (J14).
+- **Status.** Waiting for Microsoft; the file is still 9549. [Added] The controlled-execution harness is in repository at `tools/verify-query-fix.py` with test coverage (239 tests passing). Negative control executed against 9549 confirmed both known defects (criteria 1 and 2 failed, criterion 3 passed; 100% match with 2026-10-21 reference; receipt archived at `D:\TaskmgrFreezeCaptures\fix-verification\negative-control-9549-20261031-220249\`).
 - If a new file fails goal 1, attach the receipt to the Feedback Hub report and do not start goal 2.
 
 ### Goal 2: 14 days of ordinary use with no native error and no flatline
@@ -105,7 +105,7 @@ Derived from the recordings of 26–30 October. "Queued" items are handed to the
 | J11 | Keep live query tracing parked (A7) | Both function defects are confirmed by execution and the conflict is observed natively in every freeze; the remaining upstream link needs a debugger that changes timing and separate authorisation | Done (30 October 2026; recorded decision) |
 | J12 | Post the A6 material, with the native signal, call chain and the logman command | The draft is ready locally and has not been published | Owner |
 | J13 | When the DLL hash changes, run the controlled execution of the new `QueryProcessInformation`, then start the J4 observation period | Definition of done item 1; the hash is recorded automatically (A4) | Waiting for Microsoft |
-| J14 | Move the controlled-execution harness into `tools/` with tests, make it resolve the function by public symbols, and run the 9549 negative control now | Goal 1 depends on a harness that today exists only in `.local/` and is pinned to one build | New |
+| J14 | Move the controlled-execution harness into `tools/` with tests, make it resolve the function by public symbols, and run the 9549 negative control now | Goal 1 depends on a harness that today exists only in `.local/` and is pinned to one build | Done (31 October 2026) |
 
 ETW storage: 6.0 of 40 GiB used; incident folders since 20 October average about 67 MB, so the budget lasts several months at the current rate.
 
@@ -160,7 +160,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
   4. 【补充】反向对照：同一测试用于当前的 9549 文件（SHA-256 `0cc75ace…3867`）时，必须在准则 1、2 上不通过，以此证明测试能抓出缺陷。
   5. 【补充】真实内核辅助验证：在人为制造的进程快速增减负载下，新文件不出现"耗尽却返回 `S_OK`"，也不出现"第三次成功却返回 `E_OUTOFMEMORY`"。
 - **产出物**：结构化 JSON 测试回执，包含新 DLL 的 SHA-256 和文件版本、解析出的函数 RVA 与符号来源、各用例的返回码与缓冲区校验，以及反向对照结果。
-- **当前状态**：等待微软更新（目前仍为 9549 版本）。【补充】受控执行脚本目前只在仓库之外（`.local/work-inbox/20261021-native-9549/`），必须先收进 `tools/`，并配上测试和反向对照（J14）。
+- **当前状态**：等待微软更新（目前仍为 9549 版本）。【补充】受控执行脚本已收进仓库 `tools/verify-query-fix.py` 并配齐单元测试（239 项测试通过）。已对当前 9549 二进制完成反向对照，证实两个已知缺陷均复现（准则 1、2 不通过，准则 3 通过；与 2026-10-21 基准 100% 吻合；回执存放在 `D:\TaskmgrFreezeCaptures\fix-verification\negative-control-9549-20261031-220249\`）。
 - 若新文件未通过目标一，把回执附到反馈中心报告，不启动目标二。
 
 ### 目标二：日常稳定运行验证（14 天零原生错误与零平线）
@@ -239,7 +239,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | J11 | 现场查询追踪维持搁置（A7） | 两个函数缺陷已由执行确认，冲突在每次冻结中都以原生事件观察到；剩下的上游一环需要会改变时序的调试器和单独授权 | 已完成（2026-10-30；记录决定） |
 | J12 | 发布 A6 材料，包含原生信号、调用链和 logman 命令 | 草稿已在本机备好，尚未发布 | 负责人 |
 | J13 | DLL 哈希变化时，先对新版 `QueryProcessInformation` 做受控执行，再开始 J4 的观察期 | 完成标准第 1 条；哈希已自动记录（A4） | 等待微软 |
-| J14 | 把受控执行脚本收进 `tools/` 并配上测试，改为按公共符号定位函数，现在就对 9549 做反向对照 | 目标一依赖的脚本目前只在 `.local/`，且绑定单一版本 | 新增 |
+| J14 | 把受控执行脚本收进 `tools/` 并配上测试，改为按公共符号定位函数，现在就对 9549 做反向对照 | 目标一依赖的脚本目前只在 `.local/`，且绑定单一版本 | 已完成（2026-10-31） |
 
 ETW 存储：40 GiB 已用 6.0 GiB；10 月 20 日以来每个事件目录平均约 67 MB，按当前速度可用数月。
 
