@@ -2,11 +2,15 @@
 import ctypes as c
 import os
 import subprocess
+import sys
 import time
 from ctypes import wintypes as w
 from pathlib import Path
 
 from NativeCapture import u, class_name, signature, locate, enumerate_windows
+
+def is_test_environment():
+    return os.environ.get('TASKMGR_WATCH_TEST') == '1' or 'unittest' in sys.modules
 
 def main_window(pid):
     for hwnd in enumerate_windows():
@@ -29,11 +33,14 @@ def save_navigation_failure_window(pid, folder):
             import cv2
             img = capture(hwnd)
             cv2.imwrite(str(dest), img)
-    except Exception:
-        pass
+    except Exception as exc:
+        if "TEST ISOLATION VIOLATION" in str(exc):
+            raise
 
 def launch_taskmgr(folder=None):
     """Launch Task Manager without activating it, wait for UI, and navigate to CPU page."""
+    if is_test_environment():
+        raise RuntimeError("TEST ISOLATION VIOLATION: Test environment attempted to launch real Taskmgr")
     expected = Path(os.environ['SystemRoot']) / 'System32/Taskmgr.exe'
     startup = subprocess.STARTUPINFO()
     startup.dwFlags = subprocess.STARTF_USESHOWWINDOW
@@ -58,6 +65,8 @@ def launch_taskmgr(folder=None):
     return result
 
 def restore_cpu_page(pid, folder=None):
+    if is_test_environment():
+        raise RuntimeError("TEST ISOLATION VIOLATION: Test environment attempted to navigate real Taskmgr")
     script=Path(__file__).resolve().parents[1]/'tools/Restore-CpuPage.ps1'
     result={'navigation':[]}
     for attempt in range(2):
@@ -87,6 +96,8 @@ def restore_cpu_page(pid, folder=None):
     return result
 
 def restart_taskmgr(pid, hwnd, folder=None):
+    if is_test_environment():
+        raise RuntimeError("TEST ISOLATION VIOLATION: Test environment attempted to restart real Taskmgr")
     k=c.WinDLL('kernel32',use_last_error=True)
     signature(k,'OpenProcess',[w.DWORD,w.BOOL,w.DWORD],w.HANDLE)
     signature(k,'CloseHandle',[w.HANDLE],w.BOOL)

@@ -92,6 +92,80 @@ class N4HeartbeatAndWatchdogTests(unittest.TestCase):
         self.assertEqual(monitor.state['heartbeat_coverage'], 'ok')
         self.assertEqual(monitor.state['heartbeat_gap_seconds'], 0.0)
 
+    def test_heartbeat_buffer_capped_at_3600_does_not_falsely_open_gap(self):
+        """When heartbeat deque reaches 3600 maxlen, incoming heartbeats maintain coverage ok."""
+        os.environ['TASKMGR_WATCH_TEST'] = '1'
+        monitor = Monitor(light_etw=False)
+        monitor.enabled = True
+        monitor.state = {'state': 'normal', 'taskmgr_pid': 1234}
+        monitor.is_pid_alive = MagicMock(return_value=True)
+
+        mock_rt = MagicMock()
+        mock_rt.target_pid = 1234
+        # Buffer full at 3600, total monotonic counter at 3600
+        mock_rt.status.return_value = {
+            'heartbeat_count': 3600,
+            'total_heartbeat_count': 3600,
+            'last_heartbeat_mono': 100.0,
+            'last_heartbeat_utc': '2026-10-31T01:00:00+00:00'
+        }
+        monitor.realtime = mock_rt
+        monitor.target_pid_start_monotonic = 100.0
+
+        monitor.check_heartbeat_coverage(now=101.0)
+        self.assertIsNone(monitor.current_heartbeat_gap)
+
+        # 15 seconds later, heartbeats keep arriving: deque length stays 3600, total count reaches 3615
+        mock_rt.status.return_value = {
+            'heartbeat_count': 3600,
+            'total_heartbeat_count': 3615,
+            'last_heartbeat_mono': 114.8,
+            'last_heartbeat_utc': '2026-10-31T01:00:15+00:00'
+        }
+        monitor.check_heartbeat_coverage(now=115.0)
+        # Must NOT falsely open a gap
+        self.assertIsNone(monitor.current_heartbeat_gap)
+        monitor.publish('normal')
+        self.assertEqual(monitor.state['heartbeat_coverage'], 'ok')
+        self.assertEqual(monitor.state['heartbeat_gap_seconds'], 0.0)
+
+    def test_heartbeat_buffer_full_closes_existing_gap(self):
+        """When buffer is already at maxlen 3600, a new heartbeat closes an open gap."""
+        os.environ['TASKMGR_WATCH_TEST'] = '1'
+        monitor = Monitor(light_etw=False)
+        monitor.enabled = True
+        monitor.state = {'state': 'normal', 'taskmgr_pid': 1234}
+        monitor.is_pid_alive = MagicMock(return_value=True)
+
+        mock_rt = MagicMock()
+        mock_rt.target_pid = 1234
+        # Stale heartbeat (15s ago), buffer already 3600
+        mock_rt.status.return_value = {
+            'heartbeat_count': 3600,
+            'total_heartbeat_count': 3600,
+            'last_heartbeat_mono': 100.0,
+            'last_heartbeat_utc': '2026-10-31T01:00:00+00:00'
+        }
+        monitor.realtime = mock_rt
+        monitor.target_pid_start_monotonic = 100.0
+        monitor.last_known_heartbeat_count = 3600
+        monitor.last_known_heartbeat_mono = 100.0
+
+        # At t=112.0: 12s elapsed without heartbeat -> gap opens
+        monitor.check_heartbeat_coverage(now=112.0)
+        self.assertIsNotNone(monitor.current_heartbeat_gap)
+
+        # At t=113.0: new heartbeat arrives, buffer count stays 3600 but total count -> 3601
+        mock_rt.status.return_value = {
+            'heartbeat_count': 3600,
+            'total_heartbeat_count': 3601,
+            'last_heartbeat_mono': 112.8,
+            'last_heartbeat_utc': '2026-10-31T01:00:13+00:00'
+        }
+        monitor.check_heartbeat_coverage(now=113.0)
+        # Gap must be closed immediately
+        self.assertIsNone(monitor.current_heartbeat_gap)
+
     def test_heartbeat_uncovered_classification(self):
         """Incident analysis distinguishes heartbeat_uncovered from heartbeat_stopped_during_freeze."""
         freq = 10_000_000
@@ -285,6 +359,17 @@ class J5DailyMonitoringTests(unittest.TestCase):
                 monitor.update_daily_monitoring(now=106.0)  # dt = 2.0s
                 self.assertEqual(entry['effective_monitoring_seconds'], 2.0)
                 self.assertEqual(entry['native_gap_seconds'], 2.0)
+
+                # Condition 4: Interval > 5s -> counted in intervals_over_5s_count and categorized as unaccounted
+                monitor.current_provider_gap = None
+                monitor.update_daily_monitoring(now=114.0)  # dt = 8.0s
+                self.assertEqual(entry['intervals_over_5s_count'], 1)
+                self.assertEqual(entry['unaccounted_seconds'], 8.0)
+                self.assertEqual(entry['wall_seconds'], 14.0)
+
+                # Verify exact sum equality: effective + blind + native_gap + unaccounted == wall_seconds
+                self.assertEqual(round(entry['effective'] + entry['blind'] + entry['native_gap'] + entry['unaccounted'], 1),
+                                 entry['wall_seconds'])
 
                 # Status export
                 monitor.publish('normal')

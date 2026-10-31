@@ -1,11 +1,15 @@
 """Capture Task Manager's native chart controls, without desktop screenshots."""
 import ctypes as c
 import os
+import sys
 import time
 from ctypes import wintypes as w
 from collections import Counter
 
 import numpy as np
+
+def is_test_environment():
+    return os.environ.get('TASKMGR_WATCH_TEST') == '1' or 'unittest' in sys.modules
 
 u = c.WinDLL('user32', use_last_error=True)
 g = c.WinDLL('gdi32', use_last_error=True)
@@ -55,6 +59,8 @@ def rectangle(hwnd):
     return (r.left, r.top, r.right-r.left, r.bottom-r.top)
 
 def enumerate_windows(parent=None):
+    if is_test_environment():
+        return []
     result = []
     callback = CALLBACK(lambda h, _: result.append(h) or True)
     if parent is None:
@@ -92,6 +98,8 @@ def locate():
     return None
 
 def taskmgr_pids():
+    if is_test_environment():
+        return set()
     pids = set()
     for hwnd in enumerate_windows():
         if class_name(hwnd) == 'TaskManagerWindow':
@@ -129,6 +137,8 @@ class SystemCpuSampler:
 
 
 def capture(hwnd):
+    if is_test_environment():
+        raise RuntimeError(f"TEST ISOLATION VIOLATION: Test environment attempted to capture real window: {hwnd}")
     _, _, width, height = rectangle(hwnd)
     if width <= 0 or height <= 0 or width*height > 10_000_000:
         raise ValueError('Invalid chart dimensions')

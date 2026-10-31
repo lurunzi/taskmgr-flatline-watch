@@ -90,7 +90,7 @@ class PROCESSENTRY32(ctypes.Structure):
 
 def is_desktop_ready():
     """Return True when explorer is running and user session desktop is unlocked."""
-    if os.environ.get('TASKMGR_WATCH_TEST') == '1':
+    if is_test_environment():
         return getattr(Monitor, '_mock_desktop_ready', True)
     try:
         kernel = ctypes.windll.kernel32
@@ -125,7 +125,7 @@ def is_desktop_ready():
 
 def is_user_interacting_system(idle_threshold_ms=10000):
     """Return True if user performed keyboard/mouse input within idle_threshold_ms."""
-    if os.environ.get('TASKMGR_WATCH_TEST') == '1':
+    if is_test_environment():
         return getattr(Monitor, '_mock_user_interacting_system', False)
     try:
         u = ctypes.windll.user32
@@ -141,6 +141,8 @@ def is_user_interacting_system(idle_threshold_ms=10000):
 
 def is_user_interacting_with_window(target_pid, idle_threshold_ms=10000):
     """Return True if target_pid window is in foreground and user interacted recently."""
+    if is_test_environment():
+        return getattr(Monitor, '_mock_user_interacting_window', False)
     try:
         u = ctypes.windll.user32
         k = ctypes.windll.kernel32
@@ -161,6 +163,8 @@ def is_user_interacting_with_window(target_pid, idle_threshold_ms=10000):
         return False
 
 def is_taskmgr_process_alive(pid):
+    if is_test_environment():
+        return getattr(Monitor, '_mock_taskmgr_alive', True)
     try:
         require_taskmgr(pid)
         return True
@@ -332,6 +336,11 @@ def inspect_target_dll(baseline_path=None, dll_path=None):
     return info
 
 class Monitor:
+    _mock_desktop_ready = True
+    _mock_user_interacting_system = False
+    _mock_user_interacting_window = False
+    _mock_taskmgr_alive = True
+
     def __init__(self, query_trace=False, restart_only=False, light_etw=False,
                  etw_budget=TRACE_BUDGET, output=None):
         # Lightweight ETW is separate from the origin debugger/dump monitor.
@@ -420,6 +429,11 @@ class Monitor:
         self.heartbeat_gap_retry_count = 0
         self.cumulative_heartbeat_gap_seconds = 0.0
         self.last_known_heartbeat_count = 0
+        self.last_known_heartbeat_mono = None
+        self.last_known_heartbeat_utc = None
+        if is_test_environment():
+            self._mock_taskmgr_pids = getattr(self, '_mock_taskmgr_pids', set())
+            self._mock_pid_alive = getattr(self, '_mock_pid_alive', True)
         self.daily_monitoring_file = self.output / 'daily-monitoring.json'
         self.daily_monitoring_history = self._load_daily_monitoring()
         self.last_daily_update_mono = time.monotonic()
@@ -592,14 +606,14 @@ class Monitor:
             self.last_status_write = time.monotonic()
 
     def get_taskmgr_pids(self):
-        if os.environ.get('TASKMGR_WATCH_TEST') == '1' and hasattr(self, '_mock_taskmgr_pids'):
-            return set(self._mock_taskmgr_pids)
+        if is_test_environment():
+            return set(getattr(self, '_mock_taskmgr_pids', set()))
         return taskmgr_pids()
 
     def is_pid_alive(self, pid):
         if not pid:
             return False
-        if os.environ.get('TASKMGR_WATCH_TEST') == '1':
+        if is_test_environment():
             return getattr(self, '_mock_pid_alive', True)
         try:
             if pid in self.get_taskmgr_pids():
@@ -714,22 +728,36 @@ class Monitor:
                 rt_status = self.realtime.status()
             except Exception:
                 pass
-        cur_hb_count = rt_status.get('heartbeat_count', 0)
+        cur_hb_total = rt_status.get('total_heartbeat_count')
+        if cur_hb_total is None:
+            cur_hb_total = rt_status.get('heartbeat_count', 0)
         last_mono = rt_status.get('last_heartbeat_mono')
         last_utc = rt_status.get('last_heartbeat_utc')
 
-        if cur_hb_count > self.last_known_heartbeat_count:
-            self.last_known_heartbeat_count = cur_hb_count
-            if self.current_heartbeat_gap:
-                gap = dict(self.current_heartbeat_gap)
-                gap['end_utc'] = last_utc or timestamp()
-                gap['end_qpc'] = qpc()
-                duration = round(now - gap.pop('start_monotonic'), 1)
-                gap['duration_seconds'] = duration
-                self.cumulative_heartbeat_gap_seconds += duration
-                self.observations.record_heartbeat_coverage_gap(gap)
-                self.current_heartbeat_gap = None
-                self.heartbeat_gap_retry_count = 0
+        has_new_heartbeat = False
+        if cur_hb_total > self.last_known_heartbeat_count:
+            has_new_heartbeat = True
+            self.last_known_heartbeat_count = cur_hb_total
+        elif last_mono is not None and (self.last_known_heartbeat_mono is None or last_mono > self.last_known_heartbeat_mono):
+            has_new_heartbeat = True
+        elif last_utc is not None and (self.last_known_heartbeat_utc is None or last_utc != self.last_known_heartbeat_utc):
+            has_new_heartbeat = True
+
+        if last_mono is not None:
+            self.last_known_heartbeat_mono = last_mono
+        if last_utc is not None:
+            self.last_known_heartbeat_utc = last_utc
+
+        if has_new_heartbeat and self.current_heartbeat_gap:
+            gap = dict(self.current_heartbeat_gap)
+            gap['end_utc'] = last_utc or timestamp()
+            gap['end_qpc'] = qpc()
+            duration = round(now - gap.pop('start_monotonic'), 1)
+            gap['duration_seconds'] = duration
+            self.cumulative_heartbeat_gap_seconds += duration
+            self.observations.record_heartbeat_coverage_gap(gap)
+            self.current_heartbeat_gap = None
+            self.heartbeat_gap_retry_count = 0
 
         ref_mono = last_mono if last_mono is not None else self.target_pid_start_monotonic
         if ref_mono is not None and (now - ref_mono >= HEARTBEAT_GAP_THRESHOLD_SECONDS):
@@ -758,6 +786,16 @@ class Monitor:
                     except Exception:
                         pass
                     self.last_heartbeat_re_enable_monotonic = now
+        elif self.current_heartbeat_gap is not None and ref_mono is not None and (now - ref_mono < HEARTBEAT_GAP_THRESHOLD_SECONDS):
+            gap = dict(self.current_heartbeat_gap)
+            gap['end_utc'] = last_utc or timestamp()
+            gap['end_qpc'] = qpc()
+            duration = round(now - gap.pop('start_monotonic'), 1)
+            gap['duration_seconds'] = duration
+            self.cumulative_heartbeat_gap_seconds += duration
+            self.observations.record_heartbeat_coverage_gap(gap)
+            self.current_heartbeat_gap = None
+            self.heartbeat_gap_retry_count = 0
 
     def _load_daily_monitoring(self):
         if hasattr(self, 'daily_monitoring_file') and self.daily_monitoring_file.exists():
@@ -778,7 +816,7 @@ class Monitor:
     def update_daily_monitoring(self, now):
         dt = now - self.last_daily_update_mono
         self.last_daily_update_mono = now
-        if not (0.0 < dt <= 5.0):
+        if dt <= 0.0:
             return
 
         today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -791,34 +829,68 @@ class Monitor:
         if today_entry is None:
             today_entry = {
                 'date': today_date,
+                'wall_seconds': 0.0,
                 'effective_monitoring_hours': 0.0,
                 'effective_monitoring_seconds': 0.0,
+                'effective': 0.0,
                 'blind_seconds': 0.0,
+                'blind': 0.0,
                 'native_gap_seconds': 0.0,
+                'native_gap': 0.0,
+                'unaccounted_seconds': 0.0,
+                'unaccounted': 0.0,
                 'heartbeat_gap_seconds': 0.0,
+                'intervals_over_5s_count': 0,
                 'flatlines_confirmed': 0,
                 'native_0x8007139f_count': 0
             }
             self.daily_monitoring_history.append(today_entry)
 
-        cur_state = self.state.get('state')
-        has_taskmgr = bool(self.state.get('taskmgr_pid'))
-        is_cpu_page = has_taskmgr and cur_state not in ('blind', 'waiting')
-        detector_valid = (cur_state != 'invalid')
-        native_ok = (self.current_provider_gap is None)
+        eff = float(today_entry.get('effective', today_entry.get('effective_monitoring_seconds', 0.0)))
+        blind = float(today_entry.get('blind', today_entry.get('blind_seconds', 0.0)))
+        native_gap = float(today_entry.get('native_gap', today_entry.get('native_gap_seconds', 0.0)))
+        unacc = float(today_entry.get('unaccounted', today_entry.get('unaccounted_seconds', 0.0)))
+        intervals_over_5s = int(today_entry.get('intervals_over_5s_count', 0))
 
-        if is_cpu_page and detector_valid and native_ok:
-            today_entry['effective_monitoring_seconds'] = round(today_entry.get('effective_monitoring_seconds', 0.0) + dt, 1)
-            today_entry['effective_monitoring_hours'] = round(today_entry['effective_monitoring_seconds'] / 3600.0, 2)
+        if dt > 5.0:
+            intervals_over_5s += 1
+            unacc += dt
+        else:
+            cur_state = self.state.get('state')
+            has_taskmgr = bool(self.state.get('taskmgr_pid'))
+            is_cpu_page = has_taskmgr and cur_state not in ('blind', 'waiting')
+            detector_valid = (cur_state != 'invalid')
+            native_ok = (self.current_provider_gap is None)
 
-        if cur_state in ('blind', 'waiting'):
-            today_entry['blind_seconds'] = round(today_entry.get('blind_seconds', 0.0) + dt, 1)
-
-        if self.current_provider_gap is not None:
-            today_entry['native_gap_seconds'] = round(today_entry.get('native_gap_seconds', 0.0) + dt, 1)
+            if cur_state in ('blind', 'waiting'):
+                blind += dt
+            elif self.current_provider_gap is not None:
+                native_gap += dt
+            elif is_cpu_page and detector_valid and native_ok:
+                eff += dt
+            else:
+                unacc += dt
 
         if self.current_heartbeat_gap is not None:
             today_entry['heartbeat_gap_seconds'] = round(today_entry.get('heartbeat_gap_seconds', 0.0) + dt, 1)
+
+        eff_r = round(eff, 1)
+        blind_r = round(blind, 1)
+        native_gap_r = round(native_gap, 1)
+        unacc_r = round(unacc, 1)
+        wall_r = round(eff_r + blind_r + native_gap_r + unacc_r, 1)
+
+        today_entry['wall_seconds'] = wall_r
+        today_entry['effective'] = eff_r
+        today_entry['effective_monitoring_seconds'] = eff_r
+        today_entry['effective_monitoring_hours'] = round(eff_r / 3600.0, 2)
+        today_entry['blind'] = blind_r
+        today_entry['blind_seconds'] = blind_r
+        today_entry['native_gap'] = native_gap_r
+        today_entry['native_gap_seconds'] = native_gap_r
+        today_entry['unaccounted'] = unacc_r
+        today_entry['unaccounted_seconds'] = unacc_r
+        today_entry['intervals_over_5s_count'] = intervals_over_5s
 
         if len(self.daily_monitoring_history) > 30:
             self.daily_monitoring_history = self.daily_monitoring_history[-30:]

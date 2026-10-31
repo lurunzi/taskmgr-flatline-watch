@@ -19,6 +19,13 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Test isolation, monotonic heartbeat tracking, and daily wall-clock accounting (31 October 2026)
+
+To harden test reliability and resolve false telemetry anomalies during extended monitoring:
+- **Test environment isolation and execution guards**: In unit test mode (`TASKMGR_WATCH_TEST=1` or `unittest` module loaded), write operations targeting live evidence directories (`D:\TaskmgrFreezeCaptures` and repository `.local/`) are intercepted by `assert_not_protected_test_path()` and fail immediately with `TEST ISOLATION VIOLATION`. All system probes (`get_taskmgr_pids`, `is_pid_alive`, `is_desktop_ready`, `is_user_interacting_system`, `is_user_interacting_with_window`) default to safe, isolated mocks. Real system actions (`launch_taskmgr`, `restore_cpu_page`, `restart_taskmgr`, `NativeCapture.capture`) throw hard isolation violations if invoked in test mode, guaranteeing unit tests never depend on, interact with, or mutate live Task Manager instances.
+- **Monotonic heartbeat tracking and false gap elimination**: Previously, `check_heartbeat_coverage()` determined heartbeat arrival by checking whether `heartbeat_count` (`len(deque(maxlen=3600))`) had increased. Once the rolling buffer filled to capacity (3600 items), buffer length stopped increasing, causing the watcher to erroneously declare an open heartbeat coverage gap that could never close. `RealtimeConsumer` now tracks total received heartbeats via a monotonic counter (`total_heartbeat_count`). Coverage checks evaluate the monotonic count alongside advancing heartbeat timestamps (`last_heartbeat_mono` / `last_heartbeat_utc`), ensuring active heartbeats promptly close open gaps and buffer saturation never triggers false coverage warnings.
+- **Daily monitoring wall-clock accounting (J5)**: `update_daily_monitoring()` now accounts for the complete wall-clock progression (`wall_seconds`). Sample intervals exceeding 5.0 seconds (e.g. during heavy system load, navigation, or recovery) are counted in `intervals_over_5s_count` and categorized as `unaccounted`. Intervals under 5.0 seconds are partitioned into `effective`, `blind`, `native_gap`, or `unaccounted`, maintaining strict category sum equality (`wall_seconds == effective + blind + native_gap + unaccounted`). Prior telemetry entries for 2026-10-30 and 2026-10-31 are preserved and annotated with explanatory notes regarding previous under-counting and buffer saturation artifacts.
+
 ## Native ranking anchor, discrepancy reporting, heartbeat repair, and daily monitoring (30 October 2026)
 
 Following N1's qualification pass (owner decision: 6 of 6 conforming, 0 outside flatlines across 57+ hours) and subsequent roadmap deliverables (N2, A3, N4, J5):
@@ -274,6 +281,13 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 测试环境隔离、单调心跳计数与每日全时长统计（2026 年 10 月 31 日）
+
+为彻底杜绝测试对实机环境与证据目录的干扰，并修复长时间监测下的遥测假异常：
+- **测试环境硬隔离与操作守卫**：在单元测试环境（`TASKMGR_WATCH_TEST=1` 或加载 `unittest` 模块）下，任何尝试写入真实证据目录（`D:\TaskmgrFreezeCaptures` 与仓库 `.local/`）的操作均由 `assert_not_protected_test_path()` 硬拦截并抛出 `TEST ISOLATION VIOLATION` 立即失败。系统探针（`get_taskmgr_pids`、`is_pid_alive`、`is_desktop_ready`、`is_user_interacting_system`、`is_user_interacting_with_window`）在测试中默认返回安全的隔离假实现。针对真实环境的操作（`launch_taskmgr`、`restore_cpu_page`、`restart_taskmgr`、`NativeCapture.capture`）在测试中调用一律抛出硬守卫异常，确保全量测试无论本机是否运行真实任务管理器均表现确定、绝不依赖或改变真实任务管理器。
+- **单调心跳计数与假缺口根除**：此前 `check_heartbeat_coverage()` 仅依据 `heartbeat_count`（即 `deque(maxlen=3600)` 长度）是否增长来判定是否有新心跳到达。当心跳缓冲达到 3600 条上限后，缓冲长度不再增长，导致监测器误判心跳断流并开启假缺口且无法闭合。`RealtimeConsumer` 新增单调递增的心跳计数器 `total_heartbeat_count`。看门狗综合比对单调计数与持续推进的心跳时间戳（`last_heartbeat_mono` / `last_heartbeat_utc`），确保缓冲存满后心跳覆盖状态始终稳定为 `ok`，有新心跳到达时缺口立即闭合。
+- **每日全时长核算与分类平衡（J5）**：`update_daily_monitoring()` 改为基于实际经过物理时间（`wall_seconds`）进行完整核算。超过 5.0 秒的大样本间隔（如高负载、页面导航或转储恢复期间）记入 `intervals_over_5s_count` 并归类为 `unaccounted`（未核算/未知），不再整段丢弃。小于等于 5.0 秒的间隔分别归入 `effective`、`blind`、`native_gap` 或 `unaccounted`，严格保证各类时长之和恒等于 `wall_seconds`。10-30 与 10-31 两日的既有数据保持原始数值并在文件内加注口径说明。
 
 ## 原生排行锚定、高度差异报告、心跳修复与日常监测（2026 年 10 月 30 日）
 

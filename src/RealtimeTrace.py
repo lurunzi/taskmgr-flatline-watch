@@ -309,6 +309,7 @@ class RealtimeConsumer:
         self.last_error = None
         self.pending_native_error = None
         self.heartbeat_events = deque(maxlen=3600)
+        self.total_heartbeat_count = 0
         self.last_heartbeat_mono = None
         self.last_provider_event_utc = None
         self.last_provider_event_qpc = None
@@ -551,6 +552,7 @@ class RealtimeConsumer:
                     }
                     with self.lock:
                         self.heartbeat_events.append(hb_entry)
+                        self.total_heartbeat_count += 1
                         self.last_heartbeat_mono = event_mono
                 except Exception:
                     pass
@@ -648,6 +650,7 @@ class RealtimeConsumer:
             res['has_pending_error'] = bool(self.pending_native_error)
             res['target_pid'] = self.target_pid
             res['heartbeat_count'] = len(self.heartbeat_events)
+            res['total_heartbeat_count'] = self.total_heartbeat_count
             res['last_heartbeat_utc'] = self.heartbeat_events[-1]['utc'] if self.heartbeat_events else None
             res['last_heartbeat_mono'] = self.last_heartbeat_mono
             res['provider_event_count'] = self.provider_event_count
