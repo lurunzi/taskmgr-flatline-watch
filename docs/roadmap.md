@@ -42,7 +42,8 @@ The problem is the Task Manager total CPU chart freezing as a flat line while th
 - **Acceptance (all required).**
   1. Zero native aggregation errors: within effective time, `Microsoft.Windows.Taskmgr` records exactly 0 `0x8007139F` errors from `TaskManagerDataLayer.dll`.
   2. Zero confirmed flatlines: within effective time, exactly 0 total-chart flatlines are confirmed and recovered. Idle floor-level charts are excluded by the A11 rule.
-  3. [Added; reported, not required] `0x8007000E` at `ProcessDataSource2.cpp:821` occurs about six times an hour on 9549. If the third-call defect is fixed, it should fall to about 0.
+  3. [Added, 1 November] Provoked check: on the fixed file, the J17 thread-churn recipe (`tools/churn-stress.py --load threads --thread-workers 4 --thread-batch 64`, two 30-minute load blocks with quiet blocks between) produces 0 `0x8007139F` and 0 confirmed flatlines. On 9549 the same recipe gave 9 freezes in one load hour.
+  4. [Added; reported, not required] `0x8007000E` at `ProcessDataSource2.cpp:821` occurs about six times an hour on 9549. If the third-call defect is fixed, it should fall to about 0.
 - **Status.** Automated (J16): begins counting automatically when Goal 1 passes, tracking calendar days (>=14), effective monitoring hours (>=150h via J5), high-load windows (>=20 windows with >=50 process starts in 2s), zero 0x8007139F errors, zero confirmed flatlines, and reporting ProcessDataSource2.cpp:821 0x8007000E errors; persisted in goal2.json and status.json; notifies owner when Goal 3 retirement can be manually performed; standing by for Goal 1 (gated to `not_started` with zero counts while Goal 1 is `waiting_for_update`; verified 1 November 2026, J18).
 
 ### Goal 3: controlled retirement of the watcher
@@ -114,6 +115,7 @@ Derived from the recordings of 26–30 October. "Queued" items are handed to the
 | J16 | Automate Goal 1 controlled verification on DLL change and Goal 2 metric tracking; strictly keep Goal 3 manual | Enables unattended verification upon Windows Update arrival; automatically archives candidate DLL, executes isolated controlled verification with 9549 negative control, generates Feedback Hub failure report if defective, and tracks 14-day / 150h / 20 high-load window criteria in real time | Done (1 November 2026) |
 | J17 | Provoked reproduction by process churn: alternate 10-minute quiet and load blocks while the watcher runs | Round 1 (`cmd.exe`, 1 November 16:10–17:30): 1 freeze in 0.667 h of load, 0 in quiet, inconclusive. Round 2 (thread churn, 18:10–20:10): 9 in 1 h of load, 1 in 1 h of quiet, all 10 with the native signature; reproduced on demand; see the [stress report](stress-reproduction-20261101.md) | Done: thread churn reproduces on demand |
 | J18 | Restore minimized Task Manager window, gate Goal 2 tracking until Goal 1 passes, and fix delayed-onset ETW thread decoding window | Minimized Task Manager caused blindness and navigation failure during churn stress tests; Goal 2 was marked `goal2_failed` before Goal 1 passed; and 17:13 incident analysis reported 0 thread starts due to 301s visual onset lag excluding native error QPC from thread decoding window | Done (1 November 2026) |
+| J19 | Add the J17 thread-churn recipe to goal 2 as a provoked check on the fixed file | Thread churn reproduced the freeze on 9549 within minutes, which tests a fix far harder than ordinary use | Done (criterion added) |
 
 ETW storage: 6.0 of 40 GiB used; incident folders since 20 October average about 67 MB, so the budget lasts several months at the current rate.
 
@@ -184,7 +186,8 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 - **验收准则（全部满足）**：
   1. 零原生聚合错误：有效监测期内，`Microsoft.Windows.Taskmgr` 记录到的、来自 `TaskManagerDataLayer.dll` 的 `0x8007139F` 总数严格等于 0。
   2. 零确认平线：有效监测期内，经确认并恢复的 CPU 总图平线次数严格等于 0；闲置贴底的低负载图按 A11 规则排除，不算误报。
-  3. 【补充，只报告不作硬性要求】`ProcessDataSource2.cpp:821` 的 `0x8007000E` 在 9549 上约每小时出现六次；若第三次调用缺陷已修复，应降到约 0。
+  3. 【补充，11 月 1 日】诱发检验：在修复后的文件上，按 J17 的线程增减配方（`tools/churn-stress.py --load threads --thread-workers 4 --thread-batch 64`，两个 30 分钟加压段，中间穿插安静段）运行，`0x8007139F` 与确认平线均为 0。同一配方在 9549 上加压 1 小时冻结 9 次。
+  4. 【补充，只报告不作硬性要求】`ProcessDataSource2.cpp:821` 的 `0x8007000E` 在 9549 上约每小时出现六次；若第三次调用缺陷已修复，应降到约 0。
 - **当前状态**：已实现自动化推进（J16）：目标一通过后自动开始计时并按口径统计（日历天数 ≥14 天、有效监测时长 ≥150 小时、≥20 个高负载突增窗口、0 原生聚合错误、0 确认平线、报告 821 处 0x8007000E 次数）；状态持久化至 `goal2.json` 与 `status.json`；满足全部条件时提示负责人手动执行目标三退役；待目标一达成后正式开始（在目标一 `waiting_for_update` 期间严格门控为 `not_started` 且计数保持归零；已于 2026 年 11 月 1 日修复并受控验证，J18）。
 
 ### 目标三：监测工具受控退役（手动停用与证据归档）
@@ -255,6 +258,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | J15 | 原生 ETW 跟踪直接解码与 N1 计数去重：通过 Win32 ETW 读取器（OpenTraceW / ProcessTrace）直接输出 events.json.gz 解决循环 ETL 的解码字节超限（decoder output byte limit exceeded），规范化事件目录名以消除 n1-summary.json 中的重复分析，并回填 10-31 19:39 事件。后续跟进（2026-11-01，提交 c78b2db）：针对初版直接解码器丢失字段问题，改用 TDH 与二进制回退完整解析 TraceLogging 的 wilResult 负载（file、line、failure_type） | 128 MB 循环 ETL 中 Taskmgr 记录约 24,000 条 FallbackError，导致 tracerpt XML 膨胀超 1.09 GB；直接解码器 3.6 秒解码并压缩至 7.4 MB gzip；N1 计数更新至 7 次符合。TDH 解析经探测 ETL 与 tracerpt XML 逐字段回归一致，已全量重新分析回填至 -reanalysis2 目录 | 已完成（2026-10-31；2026-11-01 提交 c78b2db 恢复解码器完整字段） |
 | J16 | DLL 变化时自动执行目标一受控验证并自动累计目标二口径指标；目标三严格保持手动 | 更新到达时无人值守自动推进；自动归档新 DLL、以独立子进程运行受控验证及 9549 反向对照、失败生成反馈中心摘要、实时累计 14 天/150 小时/20 高负载窗口准则 | 已完成（2026-11-01） |
 | J17 | 用进程增减压力诱发复现：监测器运行时，安静段与加压段每 10 分钟交替 | 第一轮（`cmd.exe`，11-01 16:10–17:30）：加压 0.667 小时 1 次、安静 0 次，不确定。第二轮（线程增减，18:10–20:10）：加压 1 小时 9 次、安静 1 小时 1 次，10 次全部带原生特征；按需复现成功；见[压力测试报告](stress-reproduction-20261101.md#zh) | 已完成：线程增减可按需复现 |
+| J19 | 把 J17 的线程增减配方加入目标二，作为对修复后文件的诱发检验 | 线程增减在 9549 上几分钟内就能复现冻结，对修复的考验远强于日常使用 | 已完成（已加入准则） |
 | J18 | 最小化任务管理器窗口自动还原、目标二前置门控（等待目标一通过）、以及视觉起点滞后时的 ETW 线程解码窗口修复 | 压力测试中任务管理器最小化导致失明且离页导航无法还原；目标二在目标一通过前误判 `goal2_failed`；17:13 事件因 301 秒视觉滞后导致线程解码窗口遗漏原生错误时刻、错误报告 0 次线程启动 | 已完成（2026-11-01） |
 
 ETW 存储：40 GiB 已用 6.0 GiB；10 月 20 日以来每个事件目录平均约 67 MB，按当前速度可用数月。
