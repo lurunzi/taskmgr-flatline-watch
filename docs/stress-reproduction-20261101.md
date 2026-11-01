@@ -2,7 +2,7 @@ The English version governs.
 
 <a id="en"></a>
 
-# Provoked reproduction by process churn, 1 November 2026 (J17)
+# Provoked reproduction by process and thread churn, 1 November 2026 (J17)
 
 **English** · [中文](#zh)
 
@@ -10,7 +10,34 @@ English is the controlling text.
 
 ## Result
 
-**The test did not show that process churn reproduces the freeze on demand.**
+**Round 2 reproduced the freeze on demand with thread churn: 9 freezes in 1 hour of load against 1 in 1 hour of quiet.** Round 1, with `cmd.exe` process churn, was inconclusive. Both rounds are described below.
+
+### Round 2 (thread churn, 18:09:37–20:09:51 UTC)
+
+- Four 30-minute blocks: quiet, load, quiet, load. In each load block, 4 child processes repeatedly created batches of 64 short-lived threads, about 10,800 thread starts per second (38,942,272 in total).
+- Load: 9 freezes in 1.001 h. Quiet: 1 freeze in 1.0 h, at 18:38:26, about a minute before the first load block.
+- If both conditions had the same rate, 9 or more of the 10 freezes falling in the load hour would happen with probability about 1.1% (one-sided binomial). At the natural rate of about 0.4 per hour, 9 in one hour would be far rarer still.
+- All 10 were genuine and attributed by native error time:
+  - each recovered through the N3 native fast path;
+  - each carried the full chain `aggregationdatamonitor.cpp:640 → :159 → Core.cpp:407`;
+  - the heartbeat continued in each;
+  - the native error came 9.0–14.4 s before the first flat candidate.
+- The first freeze came 12 s after load began. Six freezes fell in the first 13 minutes of the first load block, and three in the second half of the second.
+- Each recovery restarts Task Manager, so freezes within a load block are not independent. A freshly started instance under load may freeze sooner.
+- Evidence: `D:\TaskmgrFreezeCaptures\stress-20261101-180937\`. A 20-second aborted start, `stress-20261101-180715`, is excluded.
+
+| Block | Kind | UTC | Thread starts per second | Freezes (native time) |
+|---:|---|---|---:|---|
+| 0 | quiet | 18:09:47–18:39:47 | 0 | 1 (18:38:26) |
+| 1 | load | 18:39:47–19:09:50 | 10,772 | 6 (18:39:59, 18:40:43, 18:42:44, 18:43:28, 18:52:13, 18:52:51) |
+| 2 | quiet | 19:09:50–19:39:50 | 0 | 0 |
+| 3 | load | 19:39:50–20:09:51 | 10,837 | 3 (19:58:55, 20:06:13, 20:08:36) |
+
+**Round 2 recipe.** Keep Task Manager on Performance > CPU and run `tools/churn-stress.py --load threads --thread-workers 4 --thread-batch 64` for 30 minutes. This produced at least one freeze in each load block here. Remaining limits: one machine, one DLL build (9549), one evening.
+
+### Round 1 (cmd.exe churn, 16:09:48–17:29:49 UTC)
+
+**Round 1 did not show that process churn reproduces the freeze on demand.**
 
 - Over 80 minutes of alternating blocks, one freeze occurred during a load block and none during quiet blocks.
 - Natural freezes on this machine ran at about 0.4 per hour over the preceding day. At that rate, a single freeze in 40 minutes of load is unremarkable: the chance of at least one is about 23%.
@@ -65,7 +92,7 @@ Totals: quiet, 0.667 h with 0 freezes; load, 0.667 h with 1 freeze (1.5 per hour
 
 ## Next steps
 
-- A longer run with larger blocks (for example 4 × 30 minutes) and a thread-churn load. Only after that should a reproduction claim be made or withdrawn.
+- Done in round 2: a longer run (4 × 30 minutes) with a thread-churn load, which reproduced the freeze.
 - The watcher should detect a minimized Task Manager and restore it without taking focus when the user is not active.
 - Explain the zero thread-start count in the analysis of `restart-20261101-171355-621305`.
 
@@ -73,7 +100,7 @@ Totals: quiet, 0.667 h with 0 freezes; load, 0.667 h with 1 freeze (1.5 per hour
 
 <a id="zh"></a>
 
-# 用进程增减压力诱发复现，2026 年 11 月 1 日（J17）
+# 用进程与线程增减压力诱发复现，2026 年 11 月 1 日（J17）
 
 [English](#en) · **中文**
 
@@ -81,7 +108,34 @@ Totals: quiet, 0.667 h with 0 freezes; load, 0.667 h with 1 freeze (1.5 per hour
 
 ## 结论
 
-**本次测试没有证明进程增减压力能按需复现冻结。**
+**第二轮用线程增减负载按需复现了冻结：加压 1 小时冻结 9 次，安静 1 小时 1 次。** 第一轮用 `cmd.exe` 进程增减，结果不确定。两轮都在下文说明。
+
+### 第二轮（线程增减，UTC 18:09:37–20:09:51）
+
+- 4 段、每段 30 分钟：安静、加压、安静、加压。加压段由 4 个子进程反复成批创建 64 个短命线程，约每秒 10,800 次线程启动，合计 38,942,272 次。
+- 加压 1.001 小时冻结 9 次；安静 1.0 小时冻结 1 次，发生在 18:38:26，即第一个加压段开始前约 1 分钟。
+- 如果两种条件下冻结频率相同，10 次冻结中有 9 次或以上落在加压的那 1 小时，概率约 1.1%（单侧二项检验）。按每小时约 0.4 次的自然频率，1 小时冻结 9 次更是极其罕见。
+- 10 次全部是真冻结，均按原生错误时间归段：
+  - 每次都由 N3 原生快速路径恢复；
+  - 每次都带完整调用链 `aggregationdatamonitor.cpp:640 → :159 → Core.cpp:407`；
+  - 每次心跳都持续；
+  - 原生错误比首次平线候选早 9.0–14.4 秒。
+- 加压开始 12 秒后就出现第一次冻结。第一个加压段的前 13 分钟内有 6 次，第二个加压段的后半段有 3 次。
+- 每次恢复都会重启任务管理器，所以同一加压段内的冻结并不相互独立；刚启动的实例在负载下可能更快冻结。
+- 证据：`D:\TaskmgrFreezeCaptures\stress-20261101-180937\`。一次只跑了 20 秒就中止的启动（`stress-20261101-180715`）不计入。
+
+| 段 | 类型 | UTC | 每秒线程启动 | 冻结（按原生错误时间） |
+|---:|---|---|---:|---|
+| 0 | 安静 | 18:09:47–18:39:47 | 0 | 1（18:38:26） |
+| 1 | 加压 | 18:39:47–19:09:50 | 10,772 | 6（18:39:59、18:40:43、18:42:44、18:43:28、18:52:13、18:52:51） |
+| 2 | 安静 | 19:09:50–19:39:50 | 0 | 0 |
+| 3 | 加压 | 19:39:50–20:09:51 | 10,837 | 3（19:58:55、20:06:13、20:08:36） |
+
+**第二轮复现配方：** 任务管理器停在"性能 → CPU"页，运行 `tools/churn-stress.py --load threads --thread-workers 4 --thread-batch 64` 30 分钟。本次每个加压段都至少出现了一次冻结。仍有的局限：一台机器、一个 DLL 版本（9549）、一个晚上。
+
+### 第一轮（cmd.exe 进程增减，UTC 16:09:48–17:29:49）
+
+**第一轮没有证明进程增减压力能按需复现冻结。**
 
 - 80 分钟内安静与加压交替：加压段出现 1 次冻结，安静段 0 次。
 - 前一天本机自然冻结约每小时 0.4 次。按这个频率，40 分钟加压内出现一次冻结并不稀奇：至少出现一次的概率约 23%。
@@ -136,6 +190,6 @@ Totals: quiet, 0.667 h with 0 freezes; load, 0.667 h with 1 freeze (1.5 per hour
 
 ## 下一步
 
-- 用更长的段（例如 4 × 30 分钟）和线程增减负载再跑一轮。在那之前，不下"能复现"或"不能复现"的结论。
+- 已在第二轮完成：用更长的段（4 × 30 分钟）和线程增减负载再跑一轮，复现了冻结。
 - 监测器应能识别被最小化的任务管理器，并在用户不活动时以不抢焦点的方式还原。
 - 查明 `restart-20261101-171355-621305` 分析中线程启动为 0 的原因。
