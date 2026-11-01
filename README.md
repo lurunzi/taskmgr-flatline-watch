@@ -15,6 +15,10 @@ The English version governs.
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
 The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
 
+## Full investigation report (1 November 2026)
+
+The [full investigation report](docs/investigation-report-20261101.md) covers the whole investigation from 29 September to 1 November 2026: the mechanism with the status of each step, the evidence for the function defect, the native signature, the live A7 lineage, the provoked reproduction, corrected claims, the timeline, the mitigation, escalation, the path to done and where the evidence is kept.
+
 ## Summary report (1 November 2026)
 
 The [summary report](docs/summary-20261101.md) gives the whole investigation on one page: the located defect, the native freeze signature, the provoked reproduction, what is still unproven, the status of goals 1–3, the owner action still open, and where each kind of evidence is kept.
@@ -367,6 +371,10 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
 上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
+
+## 完整调查报告（2026-11-01）
+
+[完整调查报告](docs/investigation-report-20261101.md#zh)覆盖 2026-09-29 至 11-01 的全部调查：各环节状态的机制说明、函数缺陷证据、原生特征、A7 现场来源链、诱发复现、已更正的说法、时间线、缓解措施、上报、完成路径和证据位置。
 
 ## 总报告（2026-11-01）
 
