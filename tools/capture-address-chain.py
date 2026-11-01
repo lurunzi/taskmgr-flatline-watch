@@ -13,6 +13,7 @@ import ctypes
 import hashlib
 import json
 import multiprocessing as mp
+import re
 import subprocess
 import sys
 import time
@@ -41,6 +42,31 @@ def chart_sample(pipe, timeout=8):
     if not pipe.poll(timeout):
         raise TimeoutError('native chart helper timed out')
     return pipe.recv()
+
+
+def extract_cdb_debug_strings(cdb_log_path: Path) -> list[dict]:
+    if not cdb_log_path.exists():
+        return []
+    results = []
+    hresult_pat = re.compile(r'(0x[0-9a-fA-F]{8}|[89][0-9a-fA-F]{7})\b')
+    with cdb_log_path.open('r', encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            stripped = line.strip()
+            if any(p in stripped for p in ('Preparing the environment', 'Extension Gallery', 'NatVis script', 'Microsoft (R) Windows Debugger')):
+                continue
+            is_debug_candidate = False
+            for marker in ('Windows Runtime Originate Error', 'C++ EH exception', 'OutputDebugString',
+                           'wil', 'ReturnHr', 'FailFast', 'Exception', '8007139F', '8007139f', '8007000e', '8007000E'):
+                if marker in stripped:
+                    is_debug_candidate = True
+                    break
+            if is_debug_candidate:
+                hrs = hresult_pat.findall(stripped)
+                results.append({
+                    'line': stripped,
+                    'hresults': list(dict.fromkeys(hrs))
+                })
+    return results
 
 
 def main():
@@ -237,10 +263,35 @@ def main():
                     except Exception as exc:
                         save(**{dump.stem+'_validation_error':repr(exc)})
                 session.memory.close()
+            cdb_debug = extract_cdb_debug_strings(args.output/'cdb.log')
+            save(cdb_debug_strings=cdb_debug,
+                 has_0x8007139f_debug_string=any(any('8007139f' in h.lower() for h in item.get('hresults', [])) for item in cdb_debug))
+            resumed_status = None
+            resumed_armed_qpc = None
             if stopped_watcher:
                 subprocess.Popen([str(ROOT/'.venv/Scripts/pythonw.exe'),str(ROOT/'src/FlatlineWatch.py'),*restart_args],
                                  cwd=ROOT,creationflags=subprocess.CREATE_NO_WINDOW)
                 save(recovery_resumed=True)
+                # Wait for watcher to initialize and start its ETW session
+                status_file = Path('D:/TaskmgrFreezeCaptures/status.json')
+                deadline = time.monotonic() + 30
+                prev_watcher_pid = previous.get('watcher_pid') if isinstance(previous, dict) else None
+                while time.monotonic() < deadline:
+                    time.sleep(1)
+                    if status_file.exists():
+                        try:
+                            st = json.loads(status_file.read_text(encoding='utf-8'))
+                            new_pid = st.get('watcher_pid')
+                            letw = st.get('light_etw', {})
+                            armed = letw.get('armed_qpc')
+                            if new_pid and new_pid != prev_watcher_pid and letw.get('state') == 'running' and armed:
+                                resumed_status = st
+                                resumed_armed_qpc = armed
+                                break
+                        except Exception:
+                            pass
+                save(resumed_watcher_confirmed=bool(resumed_armed_qpc),
+                     resumed_watcher_armed_qpc=resumed_armed_qpc)
         except Exception as exc:
             save(status='incomplete',cleanup_error=repr(exc))
         finally:
@@ -251,6 +302,24 @@ def main():
                 try:
                     process_trace.stop()
                     process_trace.decode()
+                    started_qpc = process_trace.record.get('started_qpc')
+                    stopped_qpc = process_trace.record.get('stopped_qpc')
+                    freq = process_trace.record.get('qpc_frequency', 10_000_000)
+                    overlap_qpc = (stopped_qpc - resumed_armed_qpc) if (stopped_qpc and resumed_armed_qpc) else None
+                    overlap_sec = round(overlap_qpc / freq, 6) if overlap_qpc is not None else None
+                    save(etw_boundaries={
+                        'capture_trace': {
+                            'session': process_trace.name,
+                            'started_qpc': started_qpc,
+                            'stopped_qpc': stopped_qpc
+                        },
+                        'resumed_watcher_trace': {
+                            'session': resumed_status.get('light_etw', {}).get('session') if resumed_status else None,
+                            'armed_qpc': resumed_armed_qpc
+                        },
+                        'overlap_qpc': overlap_qpc,
+                        'overlap_seconds': overlap_sec
+                    })
                 except Exception as exc:
                     save(process_trace_error=repr(exc),process_trace_active=process_trace.active)
         if state['status']=='observing_after_detach' and not state.get('freeze'):

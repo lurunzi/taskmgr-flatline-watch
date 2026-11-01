@@ -51,6 +51,7 @@ BUILDS = {
         'convert': 0xb4a0, 'copy': 0xa600, 'move': 0x7450, 'assign': 0xac50,
         'destroy': 0x8090, 'default': 0xdd80, 'free_buffer': 0x1966c,
         'swap': 0x34c00, 'vector': 0x42a9d, 'aggregate': 0x3e484, 'conflict': 0x3e5cf,
+        'stride': 0x220,
     },
     '0cc75ace69fef8f512c6efa2e6ac9b4257f8c450302e45b76de441a608fb3867': {
         'sites': SITES_9549,
@@ -58,6 +59,7 @@ BUILDS = {
         'convert': 0xB450, 'copy': 0xA590, 'move': 0x74A0, 'assign': 0xABF0,
         'destroy': 0x8130, 'default': 0xDD30, 'free_buffer': 0x1A3FC,
         'swap': 0x39460, 'vector': 0x48921, 'aggregate': 0x43384, 'conflict': 0x434D3,
+        'stride': 0x240,
     }
 }
 
@@ -187,6 +189,7 @@ class Session(QT.Session):
         self.provenance = Provenance()
         self.raw = {}
         self.pending_ops = {}
+        self._bp_conditions = {}
         self.vectors = {}
         self.active_since = None
         self.conflict = threading.Event()
@@ -361,7 +364,18 @@ class Session(QT.Session):
         if kind == 'READY':
             self.ready(values[0])
             return
-        self.dispatch(kind, values)
+        try:
+            self.dispatch(kind, values)
+        except Exception as exc:
+            self.event('event_error', kind=kind, text=text, reason=repr(exc))
+            self.record['last_event_error'] = repr(exc)
+            try:
+                self.save()
+            except OSError:
+                pass
+            with self.lock:
+                if self.at_prompt:
+                    self.send('g\n')
 
     def identity(self, address):
         data = self.memory.read(address, 0x28)
@@ -374,29 +388,54 @@ class Session(QT.Session):
             raise RuntimeError('address/event budget exhausted')
         condition = lambda reg, addresses: ' | '.join(f'({reg}=={a:x})' for a in addresses) or '0'
         b = self.build
-        commands = self.bp(10,b['convert'],'CONVERT',['@rcx','@r9','@rsp','qwo(@rsp)'],condition('@rcx',raw))
-        for number,rva,kind in [(11,b['copy'],'COPY'),(12,b['move'],'MOVE'),(13,b['assign'],'ASSIGN')]:
-            cond = f'({condition("@rdx",live)}) | ({condition("@rcx",live)})'
-            commands += self.bp(number,rva,kind,['@rdx','@rcx','@rsp','qwo(@rsp)'],cond)
-        for number,rva,kind in [(14,b['destroy'],'DESTROY'),(15,b['default'],'DEFAULT')]:
-            commands += self.bp(number,rva,kind,['@rcx','qwo(@rsp)'],condition('@rcx',live))
+        commands = ''
+
+        def maybe_bp(number, rva, kind, regs, cond=None):
+            if self._bp_conditions.get(number) != cond:
+                self._bp_conditions[number] = cond
+                return self.bp(number, rva, kind, regs, cond)
+            return ''
+
+        commands += maybe_bp(10, b['convert'], 'CONVERT', ['@rcx', '@r9', '@rsp', 'qwo(@rsp)'], condition('@rcx', raw))
+        for number, rva, kind in [(11, b['copy'], 'COPY'), (12, b['move'], 'MOVE'), (13, b['assign'], 'ASSIGN')]:
+            cond = f'({condition("@rdx", live)}) | ({condition("@rcx", live)})'
+            commands += maybe_bp(number, rva, kind, ['@rdx', '@rcx', '@rsp', 'qwo(@rsp)'], cond)
+        for number, rva, kind in [(14, b['destroy'], 'DESTROY'), (15, b['default'], 'DEFAULT')]:
+            commands += maybe_bp(number, rva, kind, ['@rcx', 'qwo(@rsp)'], condition('@rcx', live))
         begins = [x['begin'] for x in self.raw.values()]
-        commands += self.bp(16,b['free_buffer'],'FREE_BUFFER',['@rcx','qwo(@rcx)','qwo(@rsp)'],condition('qwo(@rcx)',begins))
-        commands += self.bp(17,b['swap'],'SWAP',['@rcx','@rdx','@rsp','qwo(@rsp)'])
-        commands += self.bp(18,b['vector'],'VECTOR',['@rsi'])
-        commands += self.bp(19,b['aggregate'],'AGGREGATE',['@rcx','@rdx','@rsp'])
+        commands += maybe_bp(16, b['free_buffer'], 'FREE_BUFFER', ['@rcx', 'qwo(@rcx)', 'qwo(@rsp)'], condition('qwo(@rcx)', begins))
+        commands += maybe_bp(17, b['swap'], 'SWAP', ['@rcx', '@rdx', '@rsp', 'qwo(@rsp)'])
+        commands += maybe_bp(18, b['vector'], 'VECTOR', ['@rsi'])
+        commands += maybe_bp(19, b['aggregate'], 'AGGREGATE', ['@rcx', '@rdx', '@rsp'])
         return commands
 
+    def _all_pending_ops(self):
+        for v in self.pending_ops.values():
+            if isinstance(v, list):
+                yield from v
+            else:
+                yield v
+
     def arm_return(self, operation):
-        slot = next((n for n in range(40,72) if n not in self.pending_ops), None)
-        if slot is None:
-            raise RuntimeError('pending operation bound')
         ret = operation['return']
         expected = pe_bytes(self.image, ret-self.base, 1)
         actual = self.memory.read(ret, 1)
         # A return site already used by another tracked call has an int3 byte.
-        if actual != expected and not (actual == b'\xcc' and any(p['return']==ret for p in self.pending_ops.values())):
+        all_pending = list(self._all_pending_ops())
+        if actual != expected and not (actual == b'\xcc' and any(p['return']==ret for p in all_pending)):
             raise RuntimeError(f'return instruction mismatch: {ret:x}')
+        existing_slot = next((s for s, p in self.pending_ops.items()
+                              if (p['return']==ret if isinstance(p, dict) else any(it['return']==ret for it in p))), None)
+        if existing_slot is not None:
+            slot = existing_slot
+            operation['slot'] = slot
+            if not isinstance(self.pending_ops[slot], list):
+                self.pending_ops[slot] = [self.pending_ops[slot]]
+            self.pending_ops[slot].append(operation)
+            return
+        slot = next((n for n in range(40,72) if n not in self.pending_ops), None)
+        if slot is None:
+            raise RuntimeError('pending operation bound')
         operation['slot'] = slot
         self.pending_ops[slot] = operation
         self.send(self.bp(slot,ret-self.base,'DONE',['@rsp','@rax',f'{slot:x}'],
@@ -421,9 +460,10 @@ class Session(QT.Session):
 
     def vector_snapshot(self, address):
         begin,end,capacity = struct.unpack('<QQQ',self.memory.read(address,24))
-        if not begin <= end <= capacity or (end-begin)%0x220 or end-begin > MAX_BUFFER:
+        stride = self.build.get('stride', 0x240 if self.build.get('sites') == SITES_9549 else 0x220)
+        if not begin <= end <= capacity or (end-begin)%stride or end-begin > MAX_BUFFER:
             raise ValueError('vector bounds')
-        found = [self.provenance.live[a] for a in range(begin,end,0x220) if a in self.provenance.live]
+        found = [self.provenance.live[a] for a in range(begin,end,stride) if a in self.provenance.live]
         return {'address':hex(address),'begin':hex(begin),'end':hex(end),'capacity':hex(capacity),'tracked':found}
 
     def _store_exhausted(self, invocation, tid, begin, end, capacity, out, data, tail, reason):
@@ -485,6 +525,13 @@ class Session(QT.Session):
                             commands = self.refresh()
         elif kind in ('CONVERT','COPY','MOVE','ASSIGN'):
             source,dest,sp,ret = v
+            # Detect duplicate operation_begin if already in flight on this thread with same sp and ret
+            all_pending = list(self._all_pending_ops())
+            if any(p['tid'] == tid and p['sp'] == sp and p.get('return') == ret for p in all_pending):
+                self.event('duplicate_operation_begin', tid=tid, source=source, destination=dest,
+                           sp=sp, return_address=hex(ret), operation=kind)
+                self.send('g\n')
+                return
             origin = self.raw.get(source) if kind=='CONVERT' else self.provenance.live.get(source)
             old = self.provenance.retire(dest)
             operation = dict(tid=tid,source=source,destination=dest,sp=sp,return_address=hex(ret),
@@ -496,25 +543,70 @@ class Session(QT.Session):
             commands = self.refresh()
         elif kind == 'DONE':
             sp,result,slot = v
-            op = self.pending_ops.pop(slot)
+            op = None
+            if slot in self.pending_ops:
+                entry = self.pending_ops[slot]
+                if isinstance(entry, list):
+                    for idx, candidate in enumerate(entry):
+                        if candidate['tid'] == tid and sp == candidate['sp'] + 8:
+                            op = entry.pop(idx)
+                            break
+                    if not entry:
+                        del self.pending_ops[slot]
+                elif entry['tid'] == tid and sp == entry['sp'] + 8:
+                    op = self.pending_ops.pop(slot)
+                else:
+                    op = self.pending_ops.pop(slot)
+            if op is None:
+                for s, entry in list(self.pending_ops.items()):
+                    if isinstance(entry, list):
+                        for idx, candidate in enumerate(entry):
+                            if candidate['tid'] == tid and sp == candidate['sp'] + 8:
+                                op = entry.pop(idx)
+                                slot = s
+                                break
+                        if not entry:
+                            self.pending_ops.pop(s, None)
+                        if op:
+                            break
+                    elif entry['tid'] == tid and sp == entry['sp'] + 8:
+                        op = self.pending_ops.pop(s)
+                        slot = s
+                        break
+            if op is None:
+                self.event('unmapped_done', tid=tid, sp=sp, result=result, slot=slot)
+                self.send(f'bc {slot}\n')
+                self.send('g\n')
+                return
+
             if tid != op['tid'] or sp != op['sp']+8:
-                raise ValueError('return context mismatch')
-            commands = f'bc {slot}\n'
+                self.event('return_context_mismatch', tid=tid, sp=sp, expected_tid=op['tid'], expected_sp=op['sp']+8)
+
+            commands = ''
+            if slot not in self.pending_ops:
+                commands = f'bc {slot}\n'
             if op['operation']=='SWAP':
                 after = [self.map_snapshot(x) for x in op['maps']]
                 self.event('cache_swap_end',operation_event=op['event'],before=op['before'],after=after)
             else:
                 if (op['operation']=='CONVERT' and result & 0xffffffff) or (op['operation']!='CONVERT' and result!=op['destination']):
-                    raise ValueError('native conversion/copy did not complete successfully')
-                identity = self.identity(op['destination'])
-                if identity['pid'] or identity['create_time']:
-                    raise ValueError('tracked destination identity changed')
-                row = self.event('operation_end',operation_event=op['event'],operation=op['operation'],
-                                 query=op['origin']['query'],source=op['source'],destination=op['destination'],
-                                 parent=op['origin']['edge'],tid=tid,result=result,identity=identity)
-                node = self.provenance.create(op['destination'],op['origin']['query'],row['event'])
-                self.event('object_live',**node)
+                    self.event('operation_failed', operation=op['operation'], result=result, expected=op['destination'])
+                else:
+                    try:
+                        identity = self.identity(op['destination'])
+                        if identity['pid'] or identity['create_time']:
+                            self.event('identity_changed', destination=op['destination'], identity=identity)
+                        else:
+                            row = self.event('operation_end',operation_event=op['event'],operation=op['operation'],
+                                             query=op['origin']['query'],source=op['source'],destination=op['destination'],
+                                             parent=op['origin']['edge'],tid=tid,result=result,identity=identity)
+                            node = self.provenance.create(op['destination'],op['origin']['query'],row['event'])
+                            self.event('object_live',**node)
+                    except Exception as exc:
+                        self.event('operation_identity_error', error=repr(exc))
             commands += self.refresh()
+            self.send(commands+'g\n')
+            return
         elif kind in ('DESTROY','DEFAULT'):
             address,ret = v
             self.event('lifetime_end',reason=kind,address=address,tid=tid,caller=hex(ret),
@@ -549,12 +641,33 @@ class Session(QT.Session):
             idle = self.memory.u64(rbp-0x50)
             current_id,idle_id = self.identity(current),self.identity(idle)
             origin = self.provenance.live.get(current)
+            if not origin:
+                for addr, node in self.provenance.live.items():
+                    try:
+                        nid = self.identity(addr)
+                        if nid['pid'] == current_id['pid'] and nid['create_time'] == current_id['create_time']:
+                            origin = node
+                            break
+                    except Exception:
+                        pass
             vector = self.vectors.get(tid)
+            buffer_info = None
+            if origin:
+                for raw_addr, raw_item in self.raw.items():
+                    if raw_item.get('query') == origin.get('query'):
+                        buffer_info = raw_item
+                        break
+            query_str = origin['query'] if origin else (f"{self.instance}:Q{self.query_number}" if self.query_number else None)
             row = self.event('conflict',tid=tid,current=current,current_identity=current_id,
                              existing=idle,existing_identity=idle_id,manager=manager,vector_end=end,
-                             vector=vector,origin=origin,query=origin['query'] if origin else None,
+                             vector=vector,origin=origin,query=query_str,
+                             raw_buffer=buffer_info,
                              rva=hex(self.build['conflict']),expected_hresult='0x8007139f')
             self.record.update(conflict_event=row['event'],conflict_query=row['query'],
+                               conflict_identities={
+                                   'current': current_id,
+                                   'existing': idle_id
+                               },
                                acceptance='incomplete; conflict captured, independent audit and freeze pending')
             self.conflict.set()
             # Exact native mismatch branch, not an unrelated same-code debug string.

@@ -285,5 +285,70 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(act['thread_starts'], 5)
             self.assertGreater(act['control_windows_count'], 0)
 
+    def test_extract_native_signature_without_native_events_returns_indeterminate(self):
+        """When trace has no native events, extract_native_signature must return indeterminate, not conforming."""
+        freq = 10000000
+        first_qpc = 100 * freq
+        last_qpc = 98 * freq
+        obs = {
+            'markers': {
+                'first_candidate': {'qpc': first_qpc, 'utc': '2026-11-01T22:00:00+00:00'},
+                'last_normal': {'qpc': last_qpc, 'utc': '2026-11-01T21:59:58+00:00'},
+                'confirmed': {'qpc': 130 * freq}
+            }
+        }
+        sig = A.extract_native_signature([], [], {'raw_start': 0, 'StartTime': 0}, obs, None, freq, 0, 150 * freq)
+        self.assertFalse(sig['recorded'])
+        self.assertEqual(sig['verdict'], 'indeterminate')
+        self.assertIsNotNone(sig['reason'])
+
+    def test_extract_native_signature_rejects_negative_qpc_and_stale_events(self):
+        """Negative QPC or events days away must never be treated as conforming."""
+        freq = 10000000
+        first_qpc = 100 * freq
+        obs = {
+            'markers': {
+                'first_candidate': {'qpc': first_qpc, 'utc': '2026-11-01T22:00:00+00:00'},
+                'last_normal': {'qpc': 98 * freq, 'utc': '2026-11-01T21:59:58+00:00'},
+                'confirmed': {'qpc': 130 * freq}
+            }
+        }
+        stale_events = [
+            {'module': 'TaskManagerDataLayer.dll', 'hresult': 0x8007139F, 'raw': '-3395986853910'},
+            {'module': 'TaskManagerDataLayer.dll', 'hresult': 0x8007139F, 'system_time': '2026-10-26T16:44:09.109593000+00:00'}
+        ]
+        sig = A.extract_native_signature(stale_events, [], {'raw_start': 0, 'StartTime': 0}, obs, None, freq, 0, 150 * freq)
+        self.assertFalse(sig['recorded'])
+        self.assertEqual(sig['verdict'], 'indeterminate')
+
+    def test_extract_native_signature_never_probes_wil_probe_sibling(self):
+        """extract_native_signature must never search sibling wil-probe directories for native events."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            inc_dir = root / 'restart-20261101-120000-000000'
+            inc_dir.mkdir()
+            trace_dir = inc_dir / 'process-trace'
+            trace_dir.mkdir()
+            # Fake sibling wil-probe directory with old native error xml
+            wil_dir = root / 'wil-probe-20261025'
+            wil_dir.mkdir()
+            stale_xml = wil_dir / 'stale_wil.xml'
+            stale_xml.write_text('<Events><Event><RenderingInfo><Provider>Microsoft.Windows.Taskmgr</Provider></RenderingInfo>'
+                                 '<EventData><Data Name="hresult">0x8007139F</Data><Data Name="module">TaskManagerDataLayer.dll</Data>'
+                                 '<Data Name="system_time">2026-10-26T16:44:09.109593000+00:00</Data></EventData></Event></Events>',
+                                 encoding='utf-8')
+            freq = 10000000
+            first_qpc = 100 * freq
+            obs = {
+                'markers': {
+                    'first_candidate': {'qpc': first_qpc, 'utc': '2026-11-01T22:00:00+00:00'},
+                    'last_normal': {'qpc': 98 * freq, 'utc': '2026-11-01T21:59:58+00:00'},
+                    'confirmed': {'qpc': 130 * freq}
+                }
+            }
+            sig = A.extract_native_signature([], [], {'raw_start': 0, 'StartTime': 0}, obs, None, freq, 0, 150 * freq, folder=inc_dir)
+            self.assertFalse(sig['recorded'])
+            self.assertEqual(sig['verdict'], 'indeterminate')
+
 
 if __name__=='__main__':unittest.main()

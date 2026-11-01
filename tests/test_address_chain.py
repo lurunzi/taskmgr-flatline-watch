@@ -229,6 +229,102 @@ class AddressChainTests(unittest.TestCase):
                 save()
                 self.assertFalse(audit_module.audit(folder)['address_chain_closed'])
 
+    def test_duplicate_operation_begin_does_not_abort_or_corrupt_slots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            mem = Memory()
+            session = pinned_session('unused', 4321, folder, lambda *a: None, lambda s: None, memory=mem)
+            session.base = 0x10000000
+            session.send = Mock(return_value=True)
+            session.refresh = Mock(return_value='')
+            ret = session.base + 0x45678
+            mem.blocks[ret] = A.pe_bytes(session.image, 0x45678, 1)
+            mem.blocks[0x2000] = bytes(0x28)
+            mem.blocks[0x3000] = bytes(0x28)
+            session.provenance.create(0x2000, 'Q1', 1)
+
+            # First MOVE operation_begin
+            session.dispatch('MOVE', [1, 0x2000, 0x3000, 0x8000, ret])
+            self.assertEqual(len(session.pending_ops), 1)
+
+            # Duplicate MOVE operation_begin on same thread, same sp and ret
+            session.dispatch('MOVE', [1, 0x2000, 0x3000, 0x8000, ret])
+            # Should not create a second slot
+            self.assertEqual(len(session.pending_ops), 1)
+
+            # DONE arrives
+            session.dispatch('DONE', [1, 0x8008, 0x3000, 40])
+            self.assertIn(0x3000, session.provenance.live)
+
+            # Duplicate DONE arrives for same slot 40: must not raise KeyError(40)!
+            session.dispatch('DONE', [1, 0x8008, 0x3000, 40])
+            events = [json.loads(x) for x in (folder/'address-events.jsonl').read_text().splitlines()]
+            kinds = [e['kind'] for e in events]
+            self.assertIn('duplicate_operation_begin', kinds)
+            self.assertIn('unmapped_done', kinds)
+
+    def test_conflict_records_identities_and_query(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            mem = Memory()
+            session = pinned_session('unused', 4321, folder, lambda *a: None, lambda s: None, memory=mem)
+            session.base = 0x10000000
+            session.send = Mock(return_value=True)
+            session.refresh = Mock(return_value='')
+            # current entity at 0x2000, idle entity at 0x4000
+            mem.blocks[0x2000] = bytes(0x28)  # pid=0, create_time=0
+            idle_data = bytearray(0x28)
+            struct.pack_into('<I', idle_data, 0x10, 0)
+            struct.pack_into('<Q', idle_data, 0x18, 123456)
+            mem.blocks[0x4000] = bytes(idle_data)
+            # rbp-0x50 holds idle address
+            rbp = 0x8050
+            mem.blocks[rbp - 0x50] = struct.pack('<Q', 0x4000)
+            session.provenance.create(0x2000, 'Q262', 1)
+
+            session.dispatch('CONFLICT', [1, 0x2000, rbp, 0x6000, 0x7000])
+            self.assertTrue(session.conflict.is_set())
+            events = [json.loads(x) for x in (folder/'address-events.jsonl').read_text().splitlines()]
+            conflicts = [e for e in events if e['kind'] == 'conflict']
+            self.assertEqual(len(conflicts), 1)
+            c = conflicts[0]
+            self.assertEqual(c['current_identity']['pid'], 0)
+            self.assertEqual(c['current_identity']['create_time'], 0)
+            self.assertEqual(c['existing_identity']['create_time'], 123456)
+            self.assertEqual(c['query'], 'Q262')
+
+    def test_a7_trace_cdb_lines_replay_regression(self):
+        """Replay exact cdb output lines from A7 trace around KeyError(41)."""
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            mem = Memory()
+            session = pinned_session('unused', 59432, folder, lambda *a: None, lambda s: None, memory=mem)
+            session.base = 0x7ff9bfb70000
+            session.send = Mock(return_value=True)
+            session.refresh = Mock(return_value='')
+            ret = 0x7ff9bfbb745f
+            mem.blocks[ret] = A.pe_bytes(session.image, ret - session.base, 1)
+            # addresses from A7 trace
+            source = 0x1898ab25d60
+            dest1 = 0x1898a8eec80
+            dest2 = 0x1898a8eeec0
+            mem.blocks[source] = bytes(0x28)
+            mem.blocks[dest1] = bytes(0x28)
+            mem.blocks[dest2] = bytes(0x28)
+            session.provenance.create(source, '59432-test:Q262', 59)
+
+            # Replay lines through handle_line
+            session.handle_line('AC MOVE 10e24 1898ab25d60 1898a8eec80 523357f2f8 7ff9bfbb745f')
+            session.handle_line('AC MOVE 10e24 1898ab25d60 1898a8eec80 523357f2f8 7ff9bfbb745f')
+            session.handle_line('AC DONE 10e24 523357f300 1898a8eec80 29')
+            session.handle_line('AC DONE 10e24 523357f300 1898a8eeec0 29')
+
+            self.assertIsNone(session.record.get('chain_error'))
+            events = [json.loads(x) for x in (folder/'address-events.jsonl').read_text().splitlines()]
+            ends = [e for e in events if e['kind'] == 'operation_end']
+            self.assertEqual(len(ends), 1)
+            self.assertEqual(ends[0]['destination'], dest1)
+
 
 if __name__=='__main__':
     unittest.main()

@@ -123,7 +123,8 @@ def audit(folder):
                 errors.append('missing aggregation vector entry')
                 continue
             start,end = int(vector['begin'],16),int(vector['end'],16)
-            if not start<=e['current']<end or (e['current']-start)%0x220 or end!=e['vector_end']:
+            stride = 0x240 if ((e['current']-start)%0x240 == 0 and (end-start)%0x240 == 0) else 0x220
+            if not start<=e['current']<end or (e['current']-start)%stride or end!=e['vector_end']:
                 errors.append('conflict current object is not an aggregation vector element')
             if e['current_identity']['pid'] or e['current_identity']['create_time'] or \
                e['existing_identity']['pid'] or not e['existing_identity']['create_time']:

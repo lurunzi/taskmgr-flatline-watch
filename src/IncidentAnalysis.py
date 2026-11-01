@@ -258,9 +258,6 @@ def extract_native_signature(native_events, events, header, observation, resolve
     if not native_events and folder is not None:
         folder_p = Path(folder)
         candidates_dirs = [folder_p, folder_p/'process-trace']
-        wil_probe_dir = folder_p.parent/'wil-probe-20261025'
-        if wil_probe_dir.exists():
-            candidates_dirs.extend([wil_probe_dir, wil_probe_dir/'decode-1543-to-2030', wil_probe_dir/'decode-upto-20261026-1543'])
         for c in candidates_dirs:
             if not c.exists():
                 continue
@@ -305,11 +302,15 @@ def extract_native_signature(native_events, events, header, observation, resolve
         except Exception:
             pass
 
+    obs_pid = observation.get('pid') or (observation.get('taskmgr_pid') if isinstance(observation, dict) else None)
     matching = []
     for ev in native_events:
         mod = ev.get('module', '')
         hr = ev.get('hresult', 0)
         if not (mod.lower().startswith('taskmanagerdatalayer') and hr in (0x8007139F, 2147947423, -2147019873)):
+            continue
+        ev_pid = ev.get('pid')
+        if obs_pid and ev_pid and ev_pid != obs_pid:
             continue
         qpc_val = None
         if ev.get('raw'):
@@ -321,17 +322,22 @@ def extract_native_signature(native_events, events, header, observation, resolve
             try:
                 dt = datetime.fromisoformat(ev['system_time'])
                 diff_sec = (dt - anchor_utc).total_seconds()
-                qpc_val = anchor_qpc + int(diff_sec * freq)
+                if abs(diff_sec) <= 3600:
+                    qpc_val = anchor_qpc + int(diff_sec * freq)
             except Exception:
                 pass
         elif qpc_val is None and ev.get('system_time') and header.get('raw_start') and header.get('StartTime'):
             try:
                 dt = datetime.fromisoformat(ev['system_time'])
-                ticks_val = int(dt.timestamp()) * 10_000_000 + 116444736000000000 + dt.microsecond * 10
-                qpc_val = header['raw_start'] + (ticks_val - header['StartTime']) * freq // 10_000_000
+                diff_sec = (dt - anchor_utc).total_seconds() if anchor_utc else 0
+                if abs(diff_sec) <= 3600:
+                    ticks_val = int(dt.timestamp()) * 10_000_000 + 116444736000000000 + dt.microsecond * 10
+                    qpc_val = header['raw_start'] + (ticks_val - header['StartTime']) * freq // 10_000_000
             except Exception:
                 pass
-        if qpc_val is None:
+        if qpc_val is None or qpc_val <= 0:
+            continue
+        if coverage_begin is not None and qpc_val < coverage_begin - 140 * freq:
             continue
         ev_copy = dict(ev)
         ev_copy['qpc'] = qpc_val
@@ -343,7 +349,7 @@ def extract_native_signature(native_events, events, header, observation, resolve
             ev_copy['utc'] = None
         matching.append(ev_copy)
 
-    matching = [m for m in matching if (confirmed is None or m['qpc'] <= confirmed)]
+    matching = [m for m in matching if m['qpc'] > 0 and (confirmed is None or m['qpc'] <= confirmed)]
     matching.sort(key=lambda m: m['qpc'])
 
     if matching:
@@ -672,7 +678,12 @@ def update_n1_summary(summary_dir, incident_name, native_sig, timestamp_utc=None
         if h_canon in seen:
             prev_idx = seen[h_canon]
             prev = deduped_history[prev_idx]
-            if h.get('verdict') == 'conforming' or prev.get('verdict') != 'conforming':
+            if h_canon == c_name:
+                if 'note' in prev and 'note' not in h:
+                    h['note'] = prev['note']
+                h['incident'] = h_canon
+                deduped_history[prev_idx] = h
+            elif h.get('verdict') == 'conforming' or prev.get('verdict') != 'conforming':
                 if 'note' in prev and 'note' not in h:
                     h['note'] = prev['note']
                 h['incident'] = h_canon
