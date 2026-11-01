@@ -415,6 +415,10 @@ class Monitor:
         self.blind_retry_history = []
         self.next_navigation_retry_monotonic = None
         self.next_navigation_retry_utc = None
+        self.minimized_retry_count = 0
+        self.next_minimized_retry_monotonic = None
+        self.next_minimized_retry_utc = None
+        self.minimized_target = None
         self.auto_open_count = 0
         self.auto_open_last_utc = None
         self.auto_open_last_result = None
@@ -499,11 +503,11 @@ class Monitor:
             state = phase
         changed = state != self.state.get('state')
         sample_state = extra.get('sample_state', state)
-        if sample_state == 'waiting':
+        if sample_state in ('waiting', 'minimized'):
             blind_seconds = round(time.monotonic() - self.waiting_since_monotonic, 1) if self.waiting_since_monotonic else 0.0
             waiting_since = self.waiting_since_utc
             blind_after = bool(self.blind_after_recovery)
-            next_retry = self.next_navigation_retry_utc
+            next_retry = self.next_minimized_retry_utc if sample_state == 'minimized' else self.next_navigation_retry_utc
         else:
             blind_seconds = 0
             waiting_since = None
@@ -610,7 +614,7 @@ class Monitor:
                           'next_retry_utc': self.next_navigation_retry_utc
                       },
                       'goal1': self.goal_manager.get_goal1_status() if getattr(self, 'goal_manager', None) else {'status': 'waiting_for_update'},
-                      'goal2': self.goal_manager.get_goal2_status() if getattr(self, 'goal_manager', None) else {'status': 'waiting_for_goal1'},
+                      'goal2': self.goal_manager.get_goal2_status() if getattr(self, 'goal_manager', None) else {'status': 'not_started'},
                       **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(self.output/'status.json', self.state)
@@ -869,11 +873,11 @@ class Monitor:
         else:
             cur_state = self.state.get('state')
             has_taskmgr = bool(self.state.get('taskmgr_pid'))
-            is_cpu_page = has_taskmgr and cur_state not in ('blind', 'waiting')
+            is_cpu_page = has_taskmgr and cur_state not in ('blind', 'waiting', 'minimized')
             detector_valid = (cur_state != 'invalid')
             native_ok = (self.current_provider_gap is None)
 
-            if cur_state in ('blind', 'waiting'):
+            if cur_state in ('blind', 'waiting', 'minimized'):
                 blind += dt
             elif self.current_provider_gap is not None:
                 native_gap += dt
@@ -943,6 +947,7 @@ class Monitor:
                 self.dump_thread.start()
             self.retry_recovery(now)
             self.check_blind_navigation(now)
+            self.check_minimized_window(now)
             self.check_auto_open(now)
             if now-self.last_origin_scan >= 5:
                 # Any page can hit the aggregation error, not only the CPU page.
@@ -977,7 +982,7 @@ class Monitor:
             self.reset_observations('recovery_rearm')
             self.rearm_requested = False
         if sample['state'] != 'captured':
-            if sample['state'] == 'waiting':
+            if sample['state'] in ('waiting', 'minimized'):
                 now = time.monotonic()
                 pid = sample.get('pid')
                 if not pid:
@@ -993,17 +998,25 @@ class Monitor:
                         'start_utc': self.waiting_since_utc,
                         'start_qpc': qpc(),
                         'start_monotonic': now,
-                        'reason': 'post_recovery_navigation' if self.blind_after_recovery else 'waiting_for_cpu_page',
+                        'reason': 'window_minimized' if sample['state'] == 'minimized' else ('post_recovery_navigation' if self.blind_after_recovery else 'waiting_for_cpu_page'),
                         'after_recovery': bool(self.blind_after_recovery),
                         'taskmgr_pid': pid or self.state.get('taskmgr_pid')
                     }
-                if pid and (not self.blind_navigation_target or self.blind_navigation_target.get('target_pid') != pid):
-                    self.arm_blind_navigation(target_pid=pid, now=now)
+                if sample['state'] == 'minimized':
+                    hwnd = sample.get('hwnd')
+                    self.handle_minimized_window(now, pid, hwnd)
+                else:
+                    if pid and (not self.blind_navigation_target or self.blind_navigation_target.get('target_pid') != pid):
+                        self.arm_blind_navigation(target_pid=pid, now=now)
             self.reset_observations('capture_state', {'state':sample['state'],'error':sample.get('error')})
             self.publish(sample['state'], error=sample.get('error'))
             return
         self.taskmgr_was_running = True
         self.boot_auto_open_checked = True
+        self.minimized_retry_count = 0
+        self.next_minimized_retry_monotonic = None
+        self.next_minimized_retry_utc = None
+        self.minimized_target = None
         if self.next_auto_open_monotonic is not None:
             self.clear_auto_open()
         if self.waiting_since_monotonic is not None:
@@ -1429,6 +1442,56 @@ class Monitor:
             self.last_event = str(folder)
         self.dump_thread = threading.Thread(target=self.resume_navigation, args=(folder, evidence, target_pid), daemon=False)
         self.dump_thread.start()
+
+    def restore_minimized_window(self, hwnd):
+        if is_test_environment():
+            mock_fn = getattr(self, '_mock_restore_minimized', None)
+            if mock_fn:
+                return mock_fn(hwnd)
+            return True
+        try:
+            u = ctypes.windll.user32
+            return bool(u.ShowWindowAsync(hwnd, 4))  # SW_SHOWNOACTIVATE = 4
+        except Exception:
+            return False
+
+    def handle_minimized_window(self, now, pid, hwnd):
+        if not hwnd and pid:
+            from NativeCapture import find_minimized_taskmgr
+            minimized = find_minimized_taskmgr()
+            if minimized and minimized[1] == pid:
+                hwnd = minimized[0]
+        if not hwnd:
+            return
+        self.minimized_target = {'pid': pid, 'hwnd': hwnd}
+
+        if self.next_minimized_retry_monotonic is not None and now < self.next_minimized_retry_monotonic:
+            return
+
+        if is_user_interacting_system(10000):
+            delay = BLIND_BACKOFF_SCHEDULE[min(self.minimized_retry_count, len(BLIND_BACKOFF_SCHEDULE)-1)]
+            self.minimized_retry_count += 1
+            self.next_minimized_retry_monotonic = now + delay
+            self.next_minimized_retry_utc = datetime.fromtimestamp(time.time() + delay).astimezone().isoformat()
+            return
+
+        self.restore_minimized_window(hwnd)
+        self.minimized_retry_count = 0
+        self.next_minimized_retry_monotonic = None
+        self.next_minimized_retry_utc = None
+
+    def check_minimized_window(self, now):
+        if not self.minimized_target or (self.dump_thread and self.dump_thread.is_alive()):
+            return
+        target_pid = self.minimized_target.get('pid')
+        if target_pid and not is_taskmgr_process_alive(target_pid):
+            self.minimized_target = None
+            self.minimized_retry_count = 0
+            self.next_minimized_retry_monotonic = None
+            self.next_minimized_retry_utc = None
+            return
+        if self.next_minimized_retry_monotonic is not None and now >= self.next_minimized_retry_monotonic:
+            self.handle_minimized_window(now, target_pid, self.minimized_target.get('hwnd'))
 
     def schedule_auto_open(self, delay, reason, now=None):
         cur = time.monotonic() if now is None else now

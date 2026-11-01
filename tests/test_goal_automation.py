@@ -175,7 +175,7 @@ class TestGoalAutomation(IsolatedTestCase):
 
     def test_goal2_tracker_lifecycle_and_evaluation(self):
         tracker = Goal2Tracker(self.output_dir)
-        self.assertEqual(tracker.state["status"], "waiting_for_goal1")
+        self.assertEqual(tracker.state["status"], "not_started")
         self.assertFalse(tracker.state["ready_for_goal3"])
 
         # Start counting
@@ -257,6 +257,55 @@ class TestGoalAutomation(IsolatedTestCase):
         self.assertEqual(tracker2.state["effective_monitoring_hours"], 2.0)
         self.assertEqual(tracker2.state["high_load_windows_count"], 1)
 
+    def test_goal2_tracker_not_started_gating(self):
+        tracker = Goal2Tracker(self.output_dir)
+        self.assertEqual(tracker.state["status"], "not_started")
+        self.assertIsNone(tracker.state["start_utc"])
+
+        # In not_started, errors and flatlines must NOT accumulate and must NOT fail Goal 2
+        tracker.record_aggregation_error({"hresult": "0x8007139F"})
+        self.assertEqual(tracker.state["status"], "not_started")
+        self.assertEqual(tracker.state["aggregation_errors_0x8007139F_count"], 0)
+
+        tracker.record_confirmed_flatline("folder")
+        self.assertEqual(tracker.state["status"], "not_started")
+        self.assertEqual(tracker.state["confirmed_flatlines_count"], 0)
+
+        tracker.record_process_datasource2_821()
+        self.assertEqual(tracker.state["process_datasource2_821_count"], 0)
+
+        tracker.accumulate_effective_seconds(3600)
+        self.assertEqual(tracker.state["effective_monitoring_hours"], 0.0)
+
+        tracker.record_high_load_window(process_count=80)
+        self.assertEqual(tracker.state["high_load_windows_count"], 0)
+
+        eval_res = tracker.evaluate_criteria()
+        self.assertEqual(eval_res["status"], "not_started")
+
+        # Loading a corrupted goal2.json that had failed before Goal 1 must reset to not_started
+        corrupted = {
+            "status": "goal2_failed",
+            "start_utc": None,
+            "aggregation_errors_0x8007139F_count": 5,
+            "confirmed_flatlines_count": 1,
+            "process_datasource2_821_count": 562
+        }
+        (self.output_dir / "goal2.json").write_text(json.dumps(corrupted), encoding="utf-8")
+        tracker_reloaded = Goal2Tracker(self.output_dir)
+        self.assertEqual(tracker_reloaded.state["status"], "not_started")
+        self.assertEqual(tracker_reloaded.state["aggregation_errors_0x8007139F_count"], 0)
+        self.assertEqual(tracker_reloaded.state["confirmed_flatlines_count"], 0)
+        self.assertEqual(tracker_reloaded.state["process_datasource2_821_count"], 0)
+
+        # When Goal 1 passes, start_counting starts from zero
+        tracker_reloaded.start_counting({"sha256": "new_passed_dll", "file_version": "10.0.26100.9999"})
+        self.assertEqual(tracker_reloaded.state["status"], "accumulating")
+        self.assertIsNotNone(tracker_reloaded.state["start_utc"])
+        self.assertEqual(tracker_reloaded.state["target_dll_sha256"], "new_passed_dll")
+        self.assertEqual(tracker_reloaded.state["aggregation_errors_0x8007139F_count"], 0)
+        self.assertEqual(tracker_reloaded.state["confirmed_flatlines_count"], 0)
+
     def test_goal_automation_manager_orchestration(self):
         manager = GoalAutomationManager(self.output_dir)
         initial_dll = {
@@ -269,7 +318,7 @@ class TestGoalAutomation(IsolatedTestCase):
         g1 = manager.get_goal1_status()
         self.assertEqual(g1["status"], "waiting_for_update")
         g2 = manager.get_goal2_status()
-        self.assertEqual(g2["status"], "waiting_for_goal1")
+        self.assertEqual(g2["status"], "not_started")
 
         # Simulate DLL change triggering Goal 1
         updated_dll = {

@@ -207,5 +207,83 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(s2['qualifying_count'], 1)
             self.assertEqual(s2['conforming_count'], 1)
 
+    def test_thread_window_includes_preceding_native_event_when_visual_onset_delayed(self):
+        """When Task Manager was minimized or blind, native event can precede visual onset by > 130s (e.g. 301s).
+        The decode thread_window must include the native event so thread_starts is not 0."""
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            trace = folder / 'process-trace'
+            trace.mkdir()
+            (trace / 'baseline.json').write_text('[]')
+            freq = 10000000  # 10 MHz
+            # Native event at 1000s (QPC 10,000,000,000)
+            ne_qpc = 1000 * freq
+            # Visual candidate at 1301s (301s lead, QPC 13,010,000,000)
+            first_qpc = 1301 * freq
+            conf_qpc = 1313 * freq
+            (trace / 'session.json').write_text(json.dumps(dict(
+                status='stopped', decode_exit=0, qpc_frequency=freq,
+                baseline_end_qpc=0, stopped_qpc=conf_qpc + 10 * freq,
+                decode_file='events.json.gz'
+            )))
+            observation = dict(
+                qpc_frequency=freq, watcher_pid=99,
+                markers=dict(last_normal=None, first_candidate={'qpc': first_qpc}, confirmed={'qpc': conf_qpc}),
+                samples=[dict(qpc=first_qpc, state='candidate'), dict(qpc=conf_qpc, state='candidate')],
+                native_event=dict(
+                    timestamp_qpc=ne_qpc,
+                    hresult='0x8007139F',
+                    module='TaskManagerDataLayer.dll',
+                    taskmgr_pid=60044,
+                    thread_id=66128
+                )
+            )
+            (folder / 'observation.json').write_text(json.dumps(observation))
+
+            passed_thread_window = []
+            def mock_decode(path, thread_window=None):
+                passed_thread_window.append(thread_window)
+                native_events = [{
+                    'raw': ne_qpc,
+                    'system_time': None,
+                    'task': 'FallbackError',
+                    'pid': 60044,
+                    'tid': 66128,
+                    'hresult': 2147947423,
+                    'module': 'TaskManagerDataLayer.dll',
+                    'file': 'aggregationdatamonitor.cpp',
+                    'line': 640,
+                    'failure_type': 1,
+                    'message': ''
+                }]
+                hdr = dict(raw_start=0, StartTime=0, PerfFreq=freq, EventsLost=0, BuffersLost=0,
+                           native_events=native_events)
+                # 5 thread starts in 2s before error, 2 process starts
+                evs = [
+                    dict(kind='process_start', qpc=ne_qpc - 1 * freq, pid=101, parent_pid=100, image='test.exe'),
+                    dict(kind='process_start', qpc=ne_qpc - 500000, pid=102, parent_pid=100, image='test.exe'),
+                    dict(kind='thread_start', qpc=ne_qpc - 1 * freq, pid=101),
+                    dict(kind='thread_start', qpc=ne_qpc - 800000, pid=101),
+                    dict(kind='thread_start', qpc=ne_qpc - 600000, pid=101),
+                    dict(kind='thread_start', qpc=ne_qpc - 400000, pid=101),
+                    dict(kind='thread_start', qpc=ne_qpc - 200000, pid=101)
+                ]
+                return evs, hdr, []
+
+            with patch.object(A._decoder, 'decode', side_effect=mock_decode):
+                res = A.analyze(folder)
+
+            self.assertTrue(passed_thread_window, "decode should have been called")
+            tw = passed_thread_window[0]
+            self.assertIsNotNone(tw)
+            # thread_window must start at or before ne_qpc - 120 * freq to cover control windows
+            self.assertLessEqual(tw[0], ne_qpc - 120 * freq)
+            self.assertGreaterEqual(tw[1], conf_qpc)
+
+            act = res['native_signature']['activity_before']
+            self.assertEqual(act['process_starts'], 2)
+            self.assertEqual(act['thread_starts'], 5)
+            self.assertGreater(act['control_windows_count'], 0)
+
 
 if __name__=='__main__':unittest.main()

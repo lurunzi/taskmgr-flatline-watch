@@ -26,6 +26,7 @@ TEXT = {
  'autostart':'开机自启动', 'autostart_missing':'未安装自启动（运行 Install.cmd）', 'query_trace':'查询追踪',
  'restart_only':'只重启，不取证', 'hint_restart':'持续异常 30 秒后直接重启任务管理器，不保存转储和图表，然后继续检测。',
  'restart_cooldown':'重启冷却中', 'restarted':'任务管理器已重启', 'restart_failed':'重启未完成，稍后重试',
+ 'minimized':'已最小化，将自动还原',
  'blind_status':'监测失效', 'blind_alert':'监测失效（等待 CPU 页面）',
  'not_running_status':'任务管理器未运行', 'not_running_auto_open':'任务管理器未运行，将于 {time} 自动打开',
  'native_gap_status':'原生记录中断', 'native_gap_alert':'原生记录中断',
@@ -52,6 +53,7 @@ TEXT = {
  'autostart':'Start at logon', 'autostart_missing':'Autostart not installed (run Install.cmd)', 'query_trace':'Query trace',
  'restart_only':'Restart only, no evidence', 'hint_restart':'After 30 seconds of suspected freezing, restarts Task Manager directly without saving dumps or graphs, then resumes detection.',
  'restart_cooldown':'Restart cooldown', 'restarted':'Task Manager restarted', 'restart_failed':'Restart incomplete; retrying',
+ 'minimized':'Minimized; will restore automatically',
  'blind_status':'Monitoring inactive', 'blind_alert':'Monitoring inactive (waiting for CPU page)',
  'not_running_status':'Task Manager not running', 'not_running_auto_open':'Task Manager not running; will open automatically at {time}',
  'native_gap_status':'Native recording interrupted', 'native_gap_alert':'Native recording interrupted',
@@ -152,7 +154,7 @@ class Watch(QWidget):
         key=state['state']
         blind_sec=state.get('blind_seconds', 0)
         gap_sec=state.get('native_coverage_gap_seconds', 0)
-        is_blind_timeout = (key == 'waiting' and blind_sec >= 300)
+        is_blind_timeout = (key in ('waiting', 'minimized') and blind_sec >= 300)
         is_native_gap = (state.get('native_coverage') == 'gap' and gap_sec >= 60)
         auto_open = state.get('auto_open', {})
         not_running_text = auto_open.get('status_text_' + self.lang)

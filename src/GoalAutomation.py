@@ -363,7 +363,7 @@ class Goal2Tracker:
         self.goal2_file = self.output_dir / "goal2.json"
         self.lock = threading.Lock()
         self.state = {
-            "status": "waiting_for_goal1",
+            "status": "not_started",
             "start_utc": None,
             "last_updated_utc": None,
             "target_dll_sha256": None,
@@ -396,6 +396,16 @@ class Goal2Tracker:
                 try:
                     data = json.loads(self.goal2_file.read_text(encoding="utf-8"))
                     if isinstance(data, dict):
+                        # Gating constraint: if start_utc is None/absent, Goal 1 has not passed yet,
+                        # so status must be not_started with 0 counts.
+                        if not data.get("start_utc"):
+                            data["status"] = "not_started"
+                            data["aggregation_errors_0x8007139F_count"] = 0
+                            data["confirmed_flatlines_count"] = 0
+                            data["process_datasource2_821_count"] = 0
+                            if "criteria" in data:
+                                data["criteria"]["zero_aggregation_errors"] = True
+                                data["criteria"]["zero_flatlines"] = True
                         self.state.update(data)
                 except Exception:
                     pass
@@ -476,6 +486,8 @@ class Goal2Tracker:
     def record_aggregation_error(self, event_info: dict | None = None) -> None:
         """Records a 0x8007139F native aggregation error (immediately fails Goal 2)."""
         with self.lock:
+            if self.state.get("status") != "accumulating":
+                return
             self.state["aggregation_errors_0x8007139F_count"] = (
                 self.state.get("aggregation_errors_0x8007139F_count", 0) + 1
             )
@@ -487,6 +499,8 @@ class Goal2Tracker:
     def record_confirmed_flatline(self, incident_folder: str | Path | None = None) -> None:
         """Records a confirmed flatline recovery (immediately fails Goal 2)."""
         with self.lock:
+            if self.state.get("status") != "accumulating":
+                return
             self.state["confirmed_flatlines_count"] = (
                 self.state.get("confirmed_flatlines_count", 0) + 1
             )
@@ -498,6 +512,8 @@ class Goal2Tracker:
     def record_process_datasource2_821(self) -> None:
         """Records a 0x8007000E error at ProcessDataSource2.cpp:821 (reported only)."""
         with self.lock:
+            if self.state.get("status") != "accumulating":
+                return
             self.state["process_datasource2_821_count"] = (
                 self.state.get("process_datasource2_821_count", 0) + 1
             )
@@ -506,9 +522,10 @@ class Goal2Tracker:
     def evaluate_criteria(self) -> dict:
         """Evaluates whether Goal 2 criteria are met."""
         with self.lock:
-            status = self.state.get("status", "waiting_for_goal1")
+            status = self.state.get("status", "not_started")
             start_utc = self.state.get("start_utc")
-            if not start_utc or status == "waiting_for_goal1":
+            if not start_utc or status in ("not_started", "waiting_for_goal1"):
+                self.state["status"] = "not_started"
                 return dict(self.state)
 
             # Calculate calendar days
@@ -627,6 +644,10 @@ class GoalAutomationManager:
 
         # Check if an existing Goal 1 receipt exists for this DLL
         self._check_existing_receipt(target_dll_info.get("sha256"))
+
+        # If Goal 1 passed and Goal 2 has not started, start Goal 2 accumulation
+        if self.goal1_state.get("status") == "passed" and self.tracker.state.get("status") == "not_started":
+            self.tracker.start_counting(target_dll_info)
 
         # If DLL changed on startup, trigger Goal 1 check
         if target_dll_info.get("dll_changed"):

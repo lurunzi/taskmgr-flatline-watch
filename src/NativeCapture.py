@@ -28,6 +28,7 @@ signature(u, 'GetClassNameW', [w.HWND, w.LPWSTR, c.c_int], c.c_int)
 signature(u, 'GetWindowRect', [w.HWND, c.POINTER(w.RECT)], w.BOOL)
 signature(u, 'IsWindowVisible', [w.HWND], w.BOOL)
 signature(u, 'IsIconic', [w.HWND], w.BOOL)
+signature(u, 'ShowWindowAsync', [w.HWND, c.c_int], w.BOOL)
 signature(u, 'GetWindowThreadProcessId', [w.HWND, c.POINTER(w.DWORD)], w.DWORD)
 signature(u, 'GetDC', [w.HWND], w.HDC)
 signature(u, 'ReleaseDC', [w.HWND, w.HDC], c.c_int)
@@ -108,6 +109,17 @@ def taskmgr_pids():
             pids.add(pid.value)
     return pids
 
+def find_minimized_taskmgr():
+    if is_test_environment():
+        return getattr(find_minimized_taskmgr, '_mock_window', None)
+    for hwnd in enumerate_windows():
+        if class_name(hwnd) == 'TaskManagerWindow':
+            if u.IsIconic(hwnd):
+                pid = w.DWORD()
+                u.GetWindowThreadProcessId(hwnd, c.byref(pid))
+                return hwnd, pid.value
+    return None
+
 def system_times():
     # GetSystemTimes only covers the caller's processor group above 64 CPUs.
     if (os.cpu_count() or 0) > 64:
@@ -172,6 +184,10 @@ def capture(hwnd):
 def sample():
     found = locate()
     if not found:
+        minimized = find_minimized_taskmgr()
+        if minimized:
+            hwnd, pid = minimized
+            return {'state': 'minimized', 'hwnd': hwnd, 'pid': pid}
         pids = taskmgr_pids()
         pid = next(iter(pids)) if pids else None
         return {'state':'waiting', 'pid':pid}

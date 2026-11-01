@@ -718,10 +718,34 @@ def analyze(folder, output=None):
     marker_clocks = [m.get('qpc') for k,m in observation.get('markers',{}).items()
                      if k in ('last_normal','first_candidate','confirmed') and isinstance(m,dict)
                      and type(m.get('qpc')) is int]
-    clocks_to_keep = sample_clocks+marker_clocks
-    min_clock = (min(clocks_to_keep) - 130 * session.get('qpc_frequency', 10_000_000)) if clocks_to_keep else None
-    window = (min_clock, max(clocks_to_keep)) if clocks_to_keep else None
+    native_clocks = []
+    ne = observation.get('native_event')
+    if isinstance(ne, dict):
+        q = ne.get('timestamp_qpc') or ne.get('qpc')
+        if type(q) is int:
+            native_clocks.append(q)
+    for une in observation.get('uncorroborated_native_events', []):
+        if isinstance(une, dict):
+            q = une.get('timestamp_qpc') or une.get('qpc')
+            if type(q) is int:
+                native_clocks.append(q)
     decoded_file = session.get('decode_file') or 'events.xml'
+    trace_file = trace / decoded_file
+    if trace_file.is_file() and (decoded_file.endswith('.json') or decoded_file.endswith('.json.gz')):
+        try:
+            peek_data = json.load(gzip.open(trace_file, 'rt', encoding='utf-8') if decoded_file.endswith('.gz') else open(trace_file, 'rt', encoding='utf-8'))
+            for nev in peek_data.get('header', {}).get('native_events', []):
+                raw_qpc = nev.get('raw')
+                if raw_qpc is not None:
+                    try:
+                        native_clocks.append(int(raw_qpc))
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
+    clocks_to_keep = sample_clocks + marker_clocks + native_clocks
+    min_clock = (min(clocks_to_keep) - 140 * session.get('qpc_frequency', 10_000_000)) if clocks_to_keep else None
+    window = (min_clock, max(clocks_to_keep)) if clocks_to_keep else None
     if decoded_file not in ('events.xml', 'events.xml.gz', 'events.json.gz', 'events.json'):
         raise ValueError('unsupported decoded trace path')
     events, header, decode_errors = _decoder.decode(trace/decoded_file,thread_window=window)

@@ -17,6 +17,10 @@ public class WindowFinderUtil {
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
     public static IntPtr FindTaskmgrWindow(int targetPid) {
         IntPtr found = IntPtr.Zero;
@@ -61,6 +65,12 @@ while ($clock.ElapsedMilliseconds -lt 10000) {
     $process.Refresh()
 }
 if ($targetHwnd -eq [IntPtr]::Zero) { throw 'Task Manager window is unavailable' }
+try {
+    if ([WindowFinderUtil]::IsIconic($targetHwnd)) {
+        [WindowFinderUtil]::ShowWindowAsync($targetHwnd, 4) | Out-Null
+        Start-Sleep -Milliseconds 250
+    }
+} catch {}
 $root=[System.Windows.Automation.AutomationElement]::FromHandle($targetHwnd)
 Step 'window'
 
