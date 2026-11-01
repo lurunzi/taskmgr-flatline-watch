@@ -23,6 +23,15 @@ The [summary report](docs/summary-20261101.md) gives the whole investigation on 
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Daily counter under-counting fix and backfill (1 November 2026, J20)
+
+To resolve under-counting in `daily-monitoring.json` and align telemetry definitions across components:
+- **Confirmed flatline increment**: In `AutomaticWatch.py`, `flatlines_confirmed` was previously initialized to 0 and never incremented. Non-verification confirmations in `trigger()` and `restart_now()` now increment `flatlines_confirmed` on the UTC date entry under `daily_lock`, ensuring newly confirmed flatlines are recorded immediately.
+- **Native error deduplication and event tally**: Native aggregation errors (`0x8007139F`) from `TaskManagerDataLayer.dll` are now recorded directly via the real-time ETW callback path regardless of whether a freeze is triggered. Events for the same `taskmgr_pid` within 1.0 second are merged into a single incident (`native_0x8007139f_count`), while raw events are accumulated in `native_0x8007139f_events`. Incrementing inside `accept()` for outside-flatline branches was removed to prevent double-counting.
+- **Goal 2 occurrence accounting**: `Goal2Tracker` now applies the same 1-second per-PID deduplication rule to `aggregation_errors_0x8007139F_count`, while recording total raw events in `aggregation_errors_0x8007139F_events`. The zero-defect pass criteria remain strict (`aggregation_errors_0x8007139F_count == 0`).
+- **Effective monitoring criteria alignment**: `_is_monitor_effective()` in `GoalAutomation.py` was unified with `AutomaticWatch.is_effective()`, explicitly treating `minimized` state as non-effective (preventing false high-load window accumulation during window minimization).
+- **Authoritative historical backfill**: `tools/backfill-daily-counters.py` backed up `daily-monitoring.json` to `daily-monitoring.before-counter-fix-20261101-222900.json` and recalculated daily counters from authoritative `restart-*` evidence folders: 2026-10-30 (1 flatline, 1 native error), 2026-10-31 (4 flatlines, 4 native errors), and 2026-11-01 (17 flatlines, 17 native errors), leaving time accounting fields untouched and updating explanatory notes.
+
 ## Minimized window auto-restoration, Goal 2 gating, and delayed-onset thread window fix (1 November 2026)
 
 To resolve monitoring blindness during window minimization, prevent premature Goal 2 failure evaluation, and correct thread window calculation when visual onset is delayed:
@@ -355,6 +364,15 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 每日统计漏计修复与历史回填（2026 年 11 月 1 日，J20）
+
+为解决 `daily-monitoring.json` 中平线与原生错误少计问题并统一组件间有效监测口径：
+- **确认平线计入每日统计**：`AutomaticWatch.py` 此前仅初始化 `flatlines_confirmed` 为 0 而未在任何地方递增。现已在非 verification 的 `trigger()` 与 `restart_now()` 确认冻结时，于 `daily_lock` 保护下对当天 UTC 条目递增 `flatlines_confirmed`，确保平线即时入账。
+- **原生错误按次合并与事件累计**：来自 `TaskManagerDataLayer.dll` 的原生聚合错误（`0x8007139F`）改为在实时 ETW 回调路径统一统计（无论是否伴随冻结）。同一 `taskmgr_pid` 在 1 秒内的事件合并为一次计入 `native_0x8007139f_count`，同时记录原始事件数 `native_0x8007139f_events`。移除 `accept()` 冻结外分支中的重复递增。
+- **目标二按次合并口径**：`Goal2Tracker` 采用相同的 1 秒内同 PID 合并规则计算 `aggregation_errors_0x8007139F_count`（按次），并在 `aggregation_errors_0x8007139F_events` 中留存原始事件数。零缺陷通过准则（`aggregation_errors_0x8007139F_count == 0`）保持不变。
+- **有效监测口径统一**：将 `GoalAutomation.py` 的 `_is_monitor_effective()` 与 `AutomaticWatch.is_effective()` 统一，把 `minimized` 状态也纳入非有效范围，消除最小化期间可能误计高负载窗口的口径差异。
+- **权威历史数据回填**：通过 `tools/backfill-daily-counters.py` 将 `daily-monitoring.json` 备份为 `daily-monitoring.before-counter-fix-20261101-222900.json`，并依据 `restart-*` 权威事件目录重新核算每日数值：2026-10-30（平线 1 次，原生 1 次）、2026-10-31（平线 4 次，原生 4 次）、2026-11-01（平线 17 次，原生 17 次），保持全部时间核算字段不变并更新说明备注。
 
 ## 最小化窗口自动还原、目标二门控与视觉滞后线程窗口修复（2026 年 11 月 1 日）
 

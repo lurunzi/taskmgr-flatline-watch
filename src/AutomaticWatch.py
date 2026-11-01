@@ -358,6 +358,11 @@ class Monitor:
         else:
             self.output = OUTPUT
         self.output.mkdir(parents=True, exist_ok=True)
+        self.daily_lock = threading.RLock()
+        self._last_native_error_per_pid = {}
+        self.daily_monitoring_file = self.output / 'daily-monitoring.json'
+        self.daily_monitoring_history = self._load_daily_monitoring()
+        self.last_daily_update_mono = time.monotonic()
         self.target_dll = inspect_target_dll(self.output/'target-dll-baseline.json')
         self.goal_manager = GoalAutomationManager(self.output, monitor=self)
         self.goal_manager.initialize(self.target_dll)
@@ -372,7 +377,7 @@ class Monitor:
             self.realtime.register_goal_callbacks(
                 on_process_start=self.goal_manager.on_process_start,
                 on_datasource2_821_error=self.goal_manager.on_datasource2_821_error,
-                on_native_error_0x8007139F=self.goal_manager.on_native_error_0x8007139F
+                on_native_error_0x8007139F=self._on_native_error_0x8007139F
             )
             try:
                 self.realtime.start()
@@ -447,9 +452,6 @@ class Monitor:
         if is_test_environment():
             self._mock_taskmgr_pids = getattr(self, '_mock_taskmgr_pids', set())
             self._mock_pid_alive = getattr(self, '_mock_pid_alive', True)
-        self.daily_monitoring_file = self.output / 'daily-monitoring.json'
-        self.daily_monitoring_history = self._load_daily_monitoring()
-        self.last_daily_update_mono = time.monotonic()
         self.current_monitored_pid = None
         self.target_pid_start_monotonic = None
         self.origin = OriginWatch(PROCDUMP, self.output, validate_full_dump, write_json, query_trace)
@@ -561,10 +563,12 @@ class Monitor:
 
         today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         today_eff_hours = 0.0
-        for entry in self.daily_monitoring_history:
-            if entry.get('date') == today_date:
-                today_eff_hours = entry.get('effective_monitoring_hours', 0.0)
-                break
+        with self.daily_lock:
+            for entry in self.daily_monitoring_history:
+                if entry.get('date') == today_date:
+                    today_eff_hours = entry.get('effective_monitoring_hours', 0.0)
+                    break
+            history_copy = [dict(e) for e in self.daily_monitoring_history]
 
         auto_open_text_zh = self.next_auto_open_text_zh if not self.get_taskmgr_pids() else None
         auto_open_text_en = self.next_auto_open_text_en if not self.get_taskmgr_pids() else None
@@ -594,7 +598,7 @@ class Monitor:
                       'heartbeat_gap_started':hb_gap_started,
                       'heartbeat_gap_seconds':hb_gap_seconds,
                       'heartbeat_cumulative_gap_seconds':cumulative_hb_gap,
-                      'daily_monitoring_history':list(self.daily_monitoring_history),
+                      'daily_monitoring_history':history_copy,
                       'today_effective_monitoring_hours':today_eff_hours,
                       'mode':'restart_only' if self.restart_only else 'capture',
                       'auto_open': {
@@ -812,6 +816,91 @@ class Monitor:
             self.current_heartbeat_gap = None
             self.heartbeat_gap_retry_count = 0
 
+    def is_effective(self) -> bool:
+        """Determines whether monitor is currently in effective monitoring condition."""
+        cur_state = self.state.get('state')
+        has_taskmgr = bool(self.state.get('taskmgr_pid'))
+        is_cpu_page = has_taskmgr and cur_state not in ('blind', 'waiting', 'minimized')
+        detector_valid = (cur_state != 'invalid')
+        native_ok = (self.current_provider_gap is None)
+        return bool(is_cpu_page and detector_valid and native_ok)
+
+    def _create_daily_entry(self, date_str: str) -> dict:
+        return {
+            'date': date_str,
+            'wall_seconds': 0.0,
+            'effective_monitoring_hours': 0.0,
+            'effective_monitoring_seconds': 0.0,
+            'effective': 0.0,
+            'blind_seconds': 0.0,
+            'blind': 0.0,
+            'native_gap_seconds': 0.0,
+            'native_gap': 0.0,
+            'unaccounted_seconds': 0.0,
+            'unaccounted': 0.0,
+            'heartbeat_gap_seconds': 0.0,
+            'intervals_over_5s_count': 0,
+            'flatlines_confirmed': 0,
+            'native_0x8007139f_count': 0,
+            'native_0x8007139f_events': 0
+        }
+
+    def _get_or_create_today_entry(self, today_date: str | None = None) -> dict:
+        """Finds or creates today's entry in self.daily_monitoring_history. Call under self.daily_lock."""
+        if today_date is None:
+            today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        for entry in self.daily_monitoring_history:
+            if entry.get('date') == today_date:
+                if 'native_0x8007139f_events' not in entry:
+                    entry['native_0x8007139f_events'] = entry.get('native_0x8007139f_count', 0)
+                return entry
+        today_entry = self._create_daily_entry(today_date)
+        self.daily_monitoring_history.append(today_entry)
+        if len(self.daily_monitoring_history) > 30:
+            self.daily_monitoring_history = self.daily_monitoring_history[-30:]
+        return today_entry
+
+    def _record_confirmed_flatline_daily(self) -> None:
+        today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        with self.daily_lock:
+            entry = self._get_or_create_today_entry(today_date)
+            entry['flatlines_confirmed'] = entry.get('flatlines_confirmed', 0) + 1
+            self._save_daily_monitoring()
+
+    def _record_native_error_daily(self, event_info: dict | None = None) -> None:
+        pid = event_info.get('taskmgr_pid') if isinstance(event_info, dict) else None
+        mono_ts = (
+            event_info.get('timestamp_monotonic')
+            if isinstance(event_info, dict) and event_info.get('timestamp_monotonic') is not None
+            else time.monotonic()
+        )
+        today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        with self.daily_lock:
+            last_ts = self._last_native_error_per_pid.get(pid)
+            is_new_incident = (last_ts is None or (mono_ts - last_ts) >= 1.0)
+            if is_new_incident:
+                self._last_native_error_per_pid[pid] = mono_ts
+                if len(self._last_native_error_per_pid) > 100:
+                    cutoff = mono_ts - 60.0
+                    self._last_native_error_per_pid = {
+                        k: v for k, v in self._last_native_error_per_pid.items() if v >= cutoff
+                    }
+
+            entry = self._get_or_create_today_entry(today_date)
+            cur_events = entry.get('native_0x8007139f_events')
+            entry['native_0x8007139f_events'] = (cur_events + 1) if cur_events is not None else 1
+            if is_new_incident:
+                entry['native_0x8007139f_count'] = entry.get('native_0x8007139f_count', 0) + 1
+            self._save_daily_monitoring()
+
+    def _on_native_error_0x8007139F(self, event_info: dict | None = None) -> None:
+        if getattr(self, 'goal_manager', None):
+            try:
+                self.goal_manager.on_native_error_0x8007139F(event_info)
+            except Exception:
+                pass
+        self._record_native_error_daily(event_info)
+
     def _load_daily_monitoring(self):
         if hasattr(self, 'daily_monitoring_file') and self.daily_monitoring_file.exists():
             try:
@@ -835,86 +924,58 @@ class Monitor:
             return
 
         today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        today_entry = None
-        for entry in self.daily_monitoring_history:
-            if entry.get('date') == today_date:
-                today_entry = entry
-                break
+        with self.daily_lock:
+            today_entry = self._get_or_create_today_entry(today_date)
 
-        if today_entry is None:
-            today_entry = {
-                'date': today_date,
-                'wall_seconds': 0.0,
-                'effective_monitoring_hours': 0.0,
-                'effective_monitoring_seconds': 0.0,
-                'effective': 0.0,
-                'blind_seconds': 0.0,
-                'blind': 0.0,
-                'native_gap_seconds': 0.0,
-                'native_gap': 0.0,
-                'unaccounted_seconds': 0.0,
-                'unaccounted': 0.0,
-                'heartbeat_gap_seconds': 0.0,
-                'intervals_over_5s_count': 0,
-                'flatlines_confirmed': 0,
-                'native_0x8007139f_count': 0
-            }
-            self.daily_monitoring_history.append(today_entry)
+            eff = float(today_entry.get('effective', today_entry.get('effective_monitoring_seconds', 0.0)))
+            blind = float(today_entry.get('blind', today_entry.get('blind_seconds', 0.0)))
+            native_gap = float(today_entry.get('native_gap', today_entry.get('native_gap_seconds', 0.0)))
+            unacc = float(today_entry.get('unaccounted', today_entry.get('unaccounted_seconds', 0.0)))
+            intervals_over_5s = int(today_entry.get('intervals_over_5s_count', 0))
 
-        eff = float(today_entry.get('effective', today_entry.get('effective_monitoring_seconds', 0.0)))
-        blind = float(today_entry.get('blind', today_entry.get('blind_seconds', 0.0)))
-        native_gap = float(today_entry.get('native_gap', today_entry.get('native_gap_seconds', 0.0)))
-        unacc = float(today_entry.get('unaccounted', today_entry.get('unaccounted_seconds', 0.0)))
-        intervals_over_5s = int(today_entry.get('intervals_over_5s_count', 0))
-
-        if dt > 5.0:
-            intervals_over_5s += 1
-            unacc += dt
-        else:
-            cur_state = self.state.get('state')
-            has_taskmgr = bool(self.state.get('taskmgr_pid'))
-            is_cpu_page = has_taskmgr and cur_state not in ('blind', 'waiting', 'minimized')
-            detector_valid = (cur_state != 'invalid')
-            native_ok = (self.current_provider_gap is None)
-
-            if cur_state in ('blind', 'waiting', 'minimized'):
-                blind += dt
-            elif self.current_provider_gap is not None:
-                native_gap += dt
-            elif is_cpu_page and detector_valid and native_ok:
-                eff += dt
-                if getattr(self, 'goal_manager', None):
-                    self.goal_manager.accumulate_effective_seconds(dt)
-            else:
+            if dt > 5.0:
+                intervals_over_5s += 1
                 unacc += dt
+            else:
+                cur_state = self.state.get('state')
+                if cur_state in ('blind', 'waiting', 'minimized'):
+                    blind += dt
+                elif self.current_provider_gap is not None:
+                    native_gap += dt
+                elif self.is_effective():
+                    eff += dt
+                    if getattr(self, 'goal_manager', None):
+                        self.goal_manager.accumulate_effective_seconds(dt)
+                else:
+                    unacc += dt
 
-        if self.current_heartbeat_gap is not None:
-            today_entry['heartbeat_gap_seconds'] = round(today_entry.get('heartbeat_gap_seconds', 0.0) + dt, 1)
+            if self.current_heartbeat_gap is not None:
+                today_entry['heartbeat_gap_seconds'] = round(today_entry.get('heartbeat_gap_seconds', 0.0) + dt, 1)
 
-        eff_r = round(eff, 1)
-        blind_r = round(blind, 1)
-        native_gap_r = round(native_gap, 1)
-        unacc_r = round(unacc, 1)
-        wall_r = round(eff_r + blind_r + native_gap_r + unacc_r, 1)
+            eff_r = round(eff, 1)
+            blind_r = round(blind, 1)
+            native_gap_r = round(native_gap, 1)
+            unacc_r = round(unacc, 1)
+            wall_r = round(eff_r + blind_r + native_gap_r + unacc_r, 1)
 
-        today_entry['wall_seconds'] = wall_r
-        today_entry['effective'] = eff_r
-        today_entry['effective_monitoring_seconds'] = eff_r
-        today_entry['effective_monitoring_hours'] = round(eff_r / 3600.0, 2)
-        today_entry['blind'] = blind_r
-        today_entry['blind_seconds'] = blind_r
-        today_entry['native_gap'] = native_gap_r
-        today_entry['native_gap_seconds'] = native_gap_r
-        today_entry['unaccounted'] = unacc_r
-        today_entry['unaccounted_seconds'] = unacc_r
-        today_entry['intervals_over_5s_count'] = intervals_over_5s
+            today_entry['wall_seconds'] = wall_r
+            today_entry['effective'] = eff_r
+            today_entry['effective_monitoring_seconds'] = eff_r
+            today_entry['effective_monitoring_hours'] = round(eff_r / 3600.0, 2)
+            today_entry['blind'] = blind_r
+            today_entry['blind_seconds'] = blind_r
+            today_entry['native_gap'] = native_gap_r
+            today_entry['native_gap_seconds'] = native_gap_r
+            today_entry['unaccounted'] = unacc_r
+            today_entry['unaccounted_seconds'] = unacc_r
+            today_entry['intervals_over_5s_count'] = intervals_over_5s
 
-        if len(self.daily_monitoring_history) > 30:
-            self.daily_monitoring_history = self.daily_monitoring_history[-30:]
+            if len(self.daily_monitoring_history) > 30:
+                self.daily_monitoring_history = self.daily_monitoring_history[-30:]
 
-        if getattr(self, '_last_daily_save', 0) == 0 or now - self._last_daily_save >= 30:
-            self._save_daily_monitoring()
-            self._last_daily_save = now
+            if getattr(self, '_last_daily_save', 0) == 0 or now - self._last_daily_save >= 30:
+                self._save_daily_monitoring()
+                self._last_daily_save = now
 
     def tick(self):
         now = time.monotonic()
@@ -1107,12 +1168,6 @@ class Monitor:
                     self.observations.record_uncorroborated_native_error(native_error, 'chart_not_flat_for_10s')
                     try:
                         record_outside_flatline(self.output, native_error, 'chart_not_flat_for_10s')
-                        today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-                        for entry in self.daily_monitoring_history:
-                            if entry.get('date') == today_date:
-                                entry['native_0x8007139f_count'] = entry.get('native_0x8007139f_count', 0) + 1
-                                break
-                        self._save_daily_monitoring()
                     except Exception:
                         pass
 
@@ -1179,6 +1234,7 @@ class Monitor:
             self.last_capture_target = target
             if getattr(self, 'goal_manager', None):
                 self.goal_manager.record_confirmed_flatline(folder)
+            self._record_confirmed_flatline_daily()
         self.last_event = str(folder)
         self.capture_result = 'capturing'
         self.recovery_result = None
@@ -1214,6 +1270,7 @@ class Monitor:
         self.last_capture_target = target
         if getattr(self, 'goal_manager', None):
             self.goal_manager.record_confirmed_flatline(folder)
+        self._record_confirmed_flatline_daily()
         self.last_event = str(folder)
         self.capture_result = None
         self.recovery_result = None

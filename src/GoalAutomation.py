@@ -362,6 +362,7 @@ class Goal2Tracker:
         self.output_dir = Path(output_dir)
         self.goal2_file = self.output_dir / "goal2.json"
         self.lock = threading.Lock()
+        self._last_native_error_times: dict[int | None, float] = {}
         self.state = {
             "status": "not_started",
             "start_utc": None,
@@ -373,6 +374,7 @@ class Goal2Tracker:
             "effective_monitoring_hours": 0.0,
             "high_load_windows_count": 0,
             "aggregation_errors_0x8007139F_count": 0,
+            "aggregation_errors_0x8007139F_events": 0,
             "confirmed_flatlines_count": 0,
             "process_datasource2_821_count": 0,
             "criteria": {
@@ -401,6 +403,7 @@ class Goal2Tracker:
                         if not data.get("start_utc"):
                             data["status"] = "not_started"
                             data["aggregation_errors_0x8007139F_count"] = 0
+                            data["aggregation_errors_0x8007139F_events"] = 0
                             data["confirmed_flatlines_count"] = 0
                             data["process_datasource2_821_count"] = 0
                             if "criteria" in data:
@@ -426,6 +429,7 @@ class Goal2Tracker:
     def start_counting(self, target_dll_info: dict) -> None:
         """Starts Goal 2 accumulation upon Goal 1 pass."""
         with self.lock:
+            self._last_native_error_times.clear()
             now_utc = datetime.now(timezone.utc).isoformat()
             self.state.update({
                 "status": "accumulating",
@@ -438,6 +442,7 @@ class Goal2Tracker:
                 "effective_monitoring_hours": 0.0,
                 "high_load_windows_count": 0,
                 "aggregation_errors_0x8007139F_count": 0,
+                "aggregation_errors_0x8007139F_events": 0,
                 "confirmed_flatlines_count": 0,
                 "process_datasource2_821_count": 0,
                 "criteria": {
@@ -484,13 +489,29 @@ class Goal2Tracker:
         self.save()
 
     def record_aggregation_error(self, event_info: dict | None = None) -> None:
-        """Records a 0x8007139F native aggregation error (immediately fails Goal 2)."""
+        """Records a 0x8007139F native aggregation error (immediately fails Goal 2).
+        Merges events for the same taskmgr_pid within 1 second into a single count,
+        while accumulating total raw events.
+        """
         with self.lock:
-            if self.state.get("status") != "accumulating":
+            if self.state.get("status") not in ("accumulating", "goal2_failed"):
                 return
-            self.state["aggregation_errors_0x8007139F_count"] = (
-                self.state.get("aggregation_errors_0x8007139F_count", 0) + 1
+            self.state["aggregation_errors_0x8007139F_events"] = (
+                self.state.get("aggregation_errors_0x8007139F_events", 0) + 1
             )
+            pid = event_info.get("taskmgr_pid") if isinstance(event_info, dict) else None
+            mono_ts = (
+                event_info.get("timestamp_monotonic")
+                if isinstance(event_info, dict) and event_info.get("timestamp_monotonic") is not None
+                else time.monotonic()
+            )
+            last_ts = self._last_native_error_times.get(pid)
+            is_new_incident = (last_ts is None or (mono_ts - last_ts) >= 1.0)
+            if is_new_incident:
+                self._last_native_error_times[pid] = mono_ts
+                self.state["aggregation_errors_0x8007139F_count"] = (
+                    self.state.get("aggregation_errors_0x8007139F_count", 0) + 1
+                )
             self.state["status"] = "goal2_failed"
             self.state["criteria"]["zero_aggregation_errors"] = False
         self.evaluate_criteria()
@@ -499,7 +520,7 @@ class Goal2Tracker:
     def record_confirmed_flatline(self, incident_folder: str | Path | None = None) -> None:
         """Records a confirmed flatline recovery (immediately fails Goal 2)."""
         with self.lock:
-            if self.state.get("status") != "accumulating":
+            if self.state.get("status") not in ("accumulating", "goal2_failed"):
                 return
             self.state["confirmed_flatlines_count"] = (
                 self.state.get("confirmed_flatlines_count", 0) + 1
@@ -512,7 +533,7 @@ class Goal2Tracker:
     def record_process_datasource2_821(self) -> None:
         """Records a 0x8007000E error at ProcessDataSource2.cpp:821 (reported only)."""
         with self.lock:
-            if self.state.get("status") != "accumulating":
+            if self.state.get("status") not in ("accumulating", "goal2_failed"):
                 return
             self.state["process_datasource2_821_count"] = (
                 self.state.get("process_datasource2_821_count", 0) + 1
@@ -606,6 +627,23 @@ class Goal2Tracker:
                 "summary_text_zh": self.state.get("summary_text_zh", ""),
                 "summary_text_en": self.state.get("summary_text_en", "")
             }
+
+
+def is_monitor_effective(monitor) -> bool:
+    """Determines if the watcher is currently in effective monitoring time.
+    Requires Taskmgr alive on CPU page (not blind/waiting/minimized), detector valid, and native ETW ok.
+    """
+    if not monitor:
+        return True
+    if hasattr(monitor, "is_effective"):
+        return monitor.is_effective()
+    st = getattr(monitor, "state", {})
+    cur_state = st.get("state")
+    has_taskmgr = bool(st.get("taskmgr_pid"))
+    is_cpu_page = has_taskmgr and cur_state not in ("blind", "waiting", "minimized")
+    detector_valid = (cur_state != "invalid")
+    native_ok = (getattr(monitor, "current_provider_gap", None) is None)
+    return bool(is_cpu_page and detector_valid and native_ok)
 
 
 class GoalAutomationManager:
@@ -730,15 +768,7 @@ class GoalAutomationManager:
 
     def _is_monitor_effective(self) -> bool:
         """Determines if the watcher is currently in effective monitoring time."""
-        if not self.monitor:
-            return True
-        st = getattr(self.monitor, "state", {})
-        cur_state = st.get("state")
-        has_taskmgr = bool(st.get("taskmgr_pid"))
-        is_cpu_page = has_taskmgr and cur_state not in ("blind", "waiting")
-        detector_valid = (cur_state != "invalid")
-        native_ok = (getattr(self.monitor, "current_provider_gap", None) is None)
-        return bool(is_cpu_page and detector_valid and native_ok)
+        return is_monitor_effective(self.monitor)
 
     def on_native_error_0x8007139F(self, event_info: dict | None = None) -> None:
         """Callback from RealtimeTrace for 0x8007139F native freeze errors."""
