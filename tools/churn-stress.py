@@ -136,6 +136,57 @@ class Churn:
         self.workers = []
 
 
+class ThreadChurn:
+    """Child processes that keep creating batches of short-lived threads.
+
+    Each thread adds and removes a SYSTEM_THREAD_INFORMATION entry, so the
+    process snapshot size changes far more often than with cmd.exe churn.
+    Children stop when their stdin is closed and report their thread count.
+    """
+    def __init__(self, workers, batch):
+        self.workers, self.batch = workers, batch
+        self.children = []
+        self.started = 0
+
+    def start(self):
+        self.children = [subprocess.Popen([sys.executable, '-X', 'utf8', str(Path(__file__).resolve()),
+                                           '--thread-worker', str(self.batch)],
+                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                          stderr=subprocess.DEVNULL, creationflags=CREATE_NO_WINDOW)
+                         for _ in range(self.workers)]
+
+    def halt(self):
+        for child in self.children:
+            try:
+                child.stdin.close()
+            except OSError:
+                pass
+        for child in self.children:
+            try:
+                out, _ = child.communicate(timeout=30)
+                self.started += json.loads(out.decode('utf-8').strip().splitlines()[-1]).get('thread_starts', 0)
+            except Exception:
+                pass
+        self.children = []
+
+
+def thread_worker(batch):
+    import random
+    stop = threading.Event()
+    threading.Thread(target=lambda: (sys.stdin.read(), stop.set()), daemon=True).start()
+    started = 0
+    while not stop.is_set():
+        batch_threads = [threading.Thread(target=time.sleep, args=(random.uniform(0.001, 0.02),))
+                         for _ in range(batch)]
+        for thread in batch_threads:
+            thread.start()
+        for thread in batch_threads:
+            thread.join()
+        started += batch
+    print(json.dumps({'thread_starts': started}), flush=True)
+    return 0
+
+
 def collect_incidents(evidence, start, end):
     found = []
     for folder in sorted(evidence.glob('restart-*')):
@@ -185,16 +236,24 @@ def run(args):
     start_qpc = qpc()
     t0 = time.monotonic()
     records, samples = [], []
-    churn = Churn(args.threads)
+    loads = []
+    if args.load in ('cmd', 'mixed'):
+        loads.append(Churn(args.threads))
+    if args.load in ('threads', 'mixed'):
+        loads.append(ThreadChurn(args.thread_workers, args.thread_batch))
+    cmd_load = next((load for load in loads if isinstance(load, Churn)), None)
+    thread_load = next((load for load in loads if isinstance(load, ThreadChurn)), None)
     stopped_early = None
     try:
         for index, kind, offset, length in blocks:
             while time.monotonic() - t0 < offset:
                 time.sleep(0.5)
             begin = utc_now()
-            before = churn.started
+            before = cmd_load.started if cmd_load else 0
+            threads_before = thread_load.started if thread_load else 0
             if kind == 'load':
-                churn.start()
+                for load in loads:
+                    load.start()
             block_end = t0 + offset + length
             while time.monotonic() < block_end:
                 if (output/'STOP').exists():
@@ -209,19 +268,26 @@ def run(args):
                                 'provider_event_count': realtime.get('provider_event_count')})
                 time.sleep(5)
             if kind == 'load':
-                churn.halt()
+                for load in loads:
+                    load.halt()
             end = utc_now()
-            started = churn.started - before
-            records.append({'block': index, 'kind': kind, 'start_utc': begin.isoformat(), 'end_utc': end.isoformat(),
+            started = (cmd_load.started if cmd_load else 0) - before
+            thread_starts = (thread_load.started if thread_load else 0) - threads_before
+            seconds = max((end - begin).total_seconds(), 1)
+            records.append({'block': index, 'kind': kind, 'load': args.load if kind == 'load' else None,
+                            'start_utc': begin.isoformat(), 'end_utc': end.isoformat(),
                             'seconds': round((end - begin).total_seconds(), 1), 'process_starts': started,
-                            'process_starts_per_second': round(started / max((end - begin).total_seconds(), 1), 1)})
-            print(f"block {index} {kind}: {records[-1]['seconds']} s, {started} process starts", flush=True)
+                            'process_starts_per_second': round(started / seconds, 1),
+                            'thread_starts': thread_starts, 'thread_starts_per_second': round(thread_starts / seconds, 1)})
+            print(f"block {index} {kind}: {records[-1]['seconds']} s, {started} cmd starts, "
+                  f"{thread_starts} thread starts", flush=True)
             (output/'progress.json').write_text(json.dumps({'blocks': records}, indent=2), encoding='utf-8')
             if stopped_early:
                 break
     except KeyboardInterrupt:
         stopped_early = 'Ctrl+C'
-        churn.halt()
+        for load in loads:
+            load.halt()
     finish = utc_now()
 
     # Give the watcher time to finish a recovery that started at the end.
@@ -239,13 +305,16 @@ def run(args):
         found = sum(len(r['incidents']) for r in chosen)
         totals[kind] = {'blocks': len(chosen), 'hours': round(hours, 3), 'incidents': found,
                         'incidents_per_hour': round(found / hours, 2) if hours else None,
-                        'process_starts': sum(r['process_starts'] for r in chosen)}
+                        'process_starts': sum(r['process_starts'] for r in chosen),
+                        'thread_starts': sum(r.get('thread_starts', 0) for r in chosen)}
     receipt = {'status': 'stopped_early' if stopped_early else 'complete', 'stopped_early': stopped_early,
                'tool': 'tools/churn-stress.py', 'start_utc': start.isoformat(), 'start_qpc': start_qpc,
-               'finish_utc': finish.isoformat(), 'threads': args.threads, 'block_minutes': args.block_minutes,
+               'finish_utc': finish.isoformat(), 'load': args.load, 'threads': args.threads,
+               'thread_workers': args.thread_workers, 'thread_batch': args.thread_batch,
+               'block_minutes': args.block_minutes,
                'blocks': records, 'totals': totals, 'incidents_outside_blocks': outside,
                'limits': 'Attribution by recovery-folder time; a freeze can start in one block and be confirmed in the next. '
-                         'Load is cmd.exe process churn only. Temporal association, not proof of mechanism.'}
+                         'Load is synthetic cmd.exe and/or thread churn. Temporal association, not proof of mechanism.'}
     (output/'receipt.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
     (output/'samples.json').write_text(json.dumps(samples, indent=1), encoding='utf-8')
     print(json.dumps(totals, indent=2))
@@ -254,10 +323,17 @@ def run(args):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ['--thread-worker']:
+        return thread_worker(int(argv[1]) if len(argv) > 1 else 64)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--blocks', type=int, default=6, help='alternating blocks (default 6)')
     parser.add_argument('--block-minutes', type=float, default=10.0, help='minutes per block (default 10)')
-    parser.add_argument('--threads', type=int, default=8, help='churn threads during load blocks (default 8)')
+    parser.add_argument('--load', choices=('cmd', 'threads', 'mixed'), default='cmd',
+                        help='cmd.exe process churn, short-lived thread churn, or both')
+    parser.add_argument('--threads', type=int, default=8, help='cmd churn threads during load blocks (default 8)')
+    parser.add_argument('--thread-workers', type=int, default=4, help='thread-churn child processes (default 4)')
+    parser.add_argument('--thread-batch', type=int, default=64, help='threads created per batch in each child')
     parser.add_argument('--first', choices=('quiet', 'load'), default='quiet')
     parser.add_argument('--preflight-wait', type=float, default=10.0, help='minutes to wait for a healthy watcher')
     parser.add_argument('--settle', type=float, default=90.0, help='seconds to wait for a final recovery')
