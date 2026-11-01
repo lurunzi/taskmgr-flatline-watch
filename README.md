@@ -15,6 +15,10 @@ The English version governs.
 Personal Windows diagnostic extension of [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher), based on commit `e10fcd2`. The original MIT license, source and icon attribution are retained. The automatic native chart capture, detector and dump workflow were added with Codex as an AI collaborator.
 The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREAM-README.md).
 
+## Summary report (1 November 2026)
+
+The [summary report](docs/summary-20261101.md) gives the whole investigation on one page: the located defect, the native freeze signature, the provoked reproduction, what is still unproven, the status of goals 1–3, the owner action still open, and where each kind of evidence is kept.
+
 ## Roadmap (25 October 2026)
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
@@ -343,6 +347,10 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 
 这是个人 Windows 诊断工具，基于 [ScreenWatcher](https://github.com/bigzeze/ScreenWatcher) 的 `e10fcd2` 提交扩展。保留上游 MIT 许可、源码和图标归属。原生图表自动抓取、异常判定和转储流程由 Codex 作为 AI 协作贡献者参与实现。
 上游原 README 原样保留为 [`UPSTREAM-README.md`](UPSTREAM-README.md)。
+
+## 总报告（2026-11-01）
+
+[总报告](docs/summary-20261101.md#zh)用一页概括整个调查：已定位的缺陷、原生冻结特征、诱发复现、尚未证明的部分、目标 1–3 的状态、仍待负责人处理的事项，以及各类证据的存放位置。
 
 ## 路线图（2026-10-25）
 
