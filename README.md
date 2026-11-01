@@ -19,6 +19,28 @@ The original upstream README is kept unchanged as [`UPSTREAM-README.md`](UPSTREA
 
 The [roadmap](docs/roadmap.md) defines when the flatline problem counts as resolved, gives the status of each workstream, records a critical review of the work so far and lists the next actions in order. Its main finding: the detector flags a candidate only after the total line has been flat for 11–14 seconds, so the "before-first" analysis window lies inside the freeze rather than before it. Task Manager's own ETW provider `Microsoft.Windows.Taskmgr` reports failures with their HRESULT without a debugger; a probe now checks whether `0x8007139F` marks each freeze, before any pixel-based reanalysis.
 
+## Goal 1 verification and Goal 2 metric tracking automation (1 November 2026)
+
+To ensure the roadmap's resolution criteria advance unattended upon Windows Update delivery (J16):
+- **Automatic Goal 1 execution on DLL change**: The watcher checks `TaskManagerDataLayer.dll`'s SHA-256 hash at startup and hourly against `target-dll-baseline.json`. Upon detecting a hash change, `GoalAutomation.py` automatically:
+  1. Archives the candidate DLL and matching PDB into `D:\TaskmgrFreezeCaptures\fix-verification\dll-<version>\` along with a standardized `MANIFEST.json`.
+  2. Runs `tools/verify-query-fix.py` in an isolated child process against the new file.
+  3. Executes the same controlled harness against the preserved `dll-9549` negative control.
+  4. Explicitly records Criterion 5 (real-kernel churn run) as unexecuted / deferred to manual evaluation.
+  5. Writes structured verification receipts to `D:\TaskmgrFreezeCaptures\fix-verification\goal1-<timestamp>\`.
+  6. On failure, generates an English summary formatted for direct submission to Microsoft Feedback Hub.
+  7. Updates `status.json` with a dedicated `goal1` block (`waiting_for_update`, `passed`, or `failed`).
+- **Automatic Goal 2 metric tracking**: Once Goal 1 passes, `Goal2Tracker` begins real-time accumulation towards the 14-day resolution criteria:
+  - Tracks calendar days (>= 14).
+  - Tracks effective monitoring hours (>= 150.0h, continuously accumulated from J5 `daily-monitoring.json`).
+  - Tracks high-load bursts in effective monitoring time (>= 20 windows with >= 50 process starts within 2 seconds, tracked live via `Microsoft-Windows-Kernel-Process` EID 1).
+  - Verifies zero `0x8007139F` native aggregation errors from `TaskManagerDataLayer.dll` (any occurrence immediately sets `goal2_failed`).
+  - Verifies zero confirmed flatlines (any occurrence immediately sets `goal2_failed`).
+  - Records occurrences of `0x8007000E` at `ProcessDataSource2.cpp:821` (reported for monitoring only).
+  - Persists state to `goal2.json` and exposes it in `status.json`.
+  - Upon meeting all criteria, marks `goal2_passed` and alerts the owner via system tray that Goal 3 may be performed manually.
+- **Strict Goal 3 boundary**: The automation never automatically unregisters scheduled tasks, never stops the watcher, and never cleans evidence.
+
 ## Direct ETW trace decoding, N1 de-duplication, and 7th conforming flatline (31 October 2026)
 
 To resolve offline analysis decoding failures on large circular traces, prevent duplicate counting across re-analysis runs, and incorporate the 31 October 19:39 incident into the N1 tally:
@@ -318,6 +340,28 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
 ## 路线图（2026-10-25）
 
 [路线图](docs/roadmap.md#zh)规定平线问题怎样算解决，列出各工作线现状、对已有工作的批判性审查和按顺序的下一步行动。主要发现：检测器在总图已平 11–14 秒后才判为候选，因此"平线前"分析窗口落在冻结期内，而不是冻结之前。任务管理器自带的 ETW 提供程序 `Microsoft.Windows.Taskmgr` 无需调试器即可报告带 HRESULT 的故障；现在先用探测会话检验每次冻结是否都伴随 `0x8007139F`，再决定是否做基于像素的重新分析。
+
+## 目标一受控验证与目标二指标跟踪自动化（2026 年 11 月 1 日）
+
+为确保微软推送更新时各项完成标准能够无人值守自动推进（J16）：
+- **DLL 哈希变更时自动运行目标一**：监测器启动时与每小时定期比对 `TaskManagerDataLayer.dll` 的 SHA-256 哈希。一旦发现哈希变化，`GoalAutomation.py` 自动执行以下步骤：
+  1. 将新版本 DLL 与匹配 PDB 归档至 `D:\TaskmgrFreezeCaptures\fix-verification\dll-<文件版本>\`，并生成标准 `MANIFEST.json` 清单。
+  2. 在独立子进程中对新文件运行 `tools/verify-query-fix.py` 受控执行测试。
+  3. 对保存的 `dll-9549` 副本同步运行反向对照。
+  4. 在回执中显式注明准则 5（真实内核负载验证）未自动执行，留待手动验证。
+  5. 将完整 JSON 回执与 Markdown 总结写入 `D:\TaskmgrFreezeCaptures\fix-verification\goal1-<时间戳>\`。
+  6. 若验证失败，在回执目录下生成可直接复制到微软反馈中心的英文摘要。
+  7. 在 `status.json` 中增加 `goal1` 状态块（`waiting_for_update`、`passed` 或 `failed`）。
+- **目标二指标自动累计**：目标一通过后，`Goal2Tracker` 自动启动为期 14 天的稳定运行口径统计：
+  - 累计日历天数（需 ≥ 14 天）。
+  - 累计有效监测时长（需 ≥ 150 小时，实时累计自 J5 `daily-monitoring.json`）。
+  - 统计有效时间内的高负载窗口数（需 ≥ 20 个“2 秒内进程启动不少于 50 次”的窗口，通过 `Microsoft-Windows-Kernel-Process` EID 1 实时捕捉）。
+  - 监测 `TaskManagerDataLayer.dll` 的 `0x8007139F` 原生错误（严格等于 0，一旦发生立即标为 `goal2_failed`）。
+  - 监测确认平线次数（严格等于 0，一旦发生立即标为 `goal2_failed`）。
+  - 持续记录 `ProcessDataSource2.cpp:821` 处的 `0x8007000E` 次数（只作报告）。
+  - 状态持久化至 `goal2.json` 并实时暴露在 `status.json`。
+  - 满足全部标准后自动标记为 `goal2_passed`，并通过托盘提示负责人可以手动执行目标三退役。
+- **目标三严格手动边界**：代码绝不自动注销计划任务、绝不自动停止监测进程、绝不自动清理任何证据。
 
 ## 原生 ETW 跟踪直接解码、N1 计数去重与第 7 次符合平线（2026 年 10 月 31 日）
 

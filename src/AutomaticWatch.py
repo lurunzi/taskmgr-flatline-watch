@@ -25,6 +25,7 @@ from RollingProcessTrace import RollingRecorder, TRACE_BUDGET
 from RealtimeTrace import RealtimeConsumer, re_enable_session_provider
 from IncidentWatch import Observations, OfflineProcessor, SNAPSHOT_WAIT_SECONDS, mark_recovery
 from IncidentAnalysis import record_outside_flatline
+from GoalAutomation import GoalAutomationManager
 
 ROOT = Path(__file__).resolve().parents[1]
 REAL_OUTPUT = Path('D:/TaskmgrFreezeCaptures').resolve()
@@ -358,6 +359,9 @@ class Monitor:
             self.output = OUTPUT
         self.output.mkdir(parents=True, exist_ok=True)
         self.target_dll = inspect_target_dll(self.output/'target-dll-baseline.json')
+        self.goal_manager = GoalAutomationManager(self.output, monitor=self)
+        self.goal_manager.initialize(self.target_dll)
+        self.last_dll_check = time.monotonic()
         self.detector = FlatlineDetector(30)
         self.frames = deque(maxlen=61 if light_etw else 31)
         self.observations = Observations()
@@ -365,6 +369,11 @@ class Monitor:
         self.offline = OfflineProcessor() if light_etw else None
         self.realtime = RealtimeConsumer() if light_etw else None
         if self.realtime:
+            self.realtime.register_goal_callbacks(
+                on_process_start=self.goal_manager.on_process_start,
+                on_datasource2_821_error=self.goal_manager.on_datasource2_821_error,
+                on_native_error_0x8007139F=self.goal_manager.on_native_error_0x8007139F
+            )
             try:
                 self.realtime.start()
             except Exception:
@@ -600,6 +609,8 @@ class Monitor:
                           'last_result': self.auto_navigation_last_result,
                           'next_retry_utc': self.next_navigation_retry_utc
                       },
+                      'goal1': self.goal_manager.get_goal1_status() if getattr(self, 'goal_manager', None) else {'status': 'waiting_for_update'},
+                      'goal2': self.goal_manager.get_goal2_status() if getattr(self, 'goal_manager', None) else {'status': 'waiting_for_goal1'},
                       **extra}
         if changed or time.monotonic()-self.last_status_write > 5:
             write_json(self.output/'status.json', self.state)
@@ -868,6 +879,8 @@ class Monitor:
                 native_gap += dt
             elif is_cpu_page and detector_valid and native_ok:
                 eff += dt
+                if getattr(self, 'goal_manager', None):
+                    self.goal_manager.accumulate_effective_seconds(dt)
             else:
                 unacc += dt
 
@@ -917,6 +930,11 @@ class Monitor:
             self.check_native_coverage(now)
             self.check_heartbeat_coverage(now)
             self.update_daily_monitoring(now)
+            if hasattr(self, 'last_dll_check') and now - self.last_dll_check >= 3600:
+                self.last_dll_check = now
+                self.target_dll = inspect_target_dll(self.output / 'target-dll-baseline.json')
+                if getattr(self, 'goal_manager', None):
+                    self.goal_manager.check_dll_update(self.target_dll)
             if self.pending_navigation:
                 folder,saved=self.pending_navigation
                 self.pending_navigation=None
@@ -1146,6 +1164,8 @@ class Monitor:
         if not verification:
             self.last_capture = time.monotonic()
             self.last_capture_target = target
+            if getattr(self, 'goal_manager', None):
+                self.goal_manager.record_confirmed_flatline(folder)
         self.last_event = str(folder)
         self.capture_result = 'capturing'
         self.recovery_result = None
@@ -1179,6 +1199,8 @@ class Monitor:
         write_json(folder/'event.json',record)
         self.last_capture = time.monotonic()
         self.last_capture_target = target
+        if getattr(self, 'goal_manager', None):
+            self.goal_manager.record_confirmed_flatline(folder)
         self.last_event = str(folder)
         self.capture_result = None
         self.recovery_result = None

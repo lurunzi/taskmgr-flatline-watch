@@ -34,7 +34,11 @@ TEXT = {
  'etw_disk':'事件记录暂停：磁盘可用 {free:.2f} GiB',
  'restart_etw':'自动恢复，不抓转储',
  'report':'打开最近候选报告',
- 'hint_etw':'持续异常 30 秒后保存图表和循环事件记录，重启任务管理器，再生成候选分析。候选不代表已证明的原因。'},
+ 'hint_etw':'持续异常 30 秒后保存图表和循环事件记录，重启任务管理器，再生成候选分析。候选不代表已证明的原因。',
+ 'goal1_waiting':'等待微软更新', 'goal1_passed':'目标一已通过', 'goal1_failed':'目标一未通过',
+ 'goal2_waiting':'等待目标一', 'goal2_accumulating':'目标二统计中（{days}/14天 · {hours:.1f}/150h · {windows}/20窗口）',
+ 'goal2_passed':'目标二已达成：可手动执行目标三退役监测器', 'goal2_failed':'目标二未通过（检测到异常）',
+ 'goal2_prompt':'目标二已达成！负责人可手动执行 Autostart.cmd off 与 Stop.ps1 退役监测器。'},
  'en': {'title':'Task Manager automatic capture', 'folder':'Open records on D:', 'quit':'Quit', 'show':'Status',
  'pause':'Pause', 'resume':'Resume', 'hint':'After 30 seconds of suspected freezing, saves and verifies two dumps, then restarts Task Manager and resumes detection.',
  'starting':'Starting', 'waiting':'Waiting for Task Manager CPU / logical processors page', 'normal':'Aggregate changing',
@@ -56,7 +60,11 @@ TEXT = {
  'etw_disk':'Recording paused: {free:.2f} GiB disk free',
  'restart_etw':'Auto recover, no dumps',
  'report':'Open latest candidate report',
- 'hint_etw':'After 30 seconds of suspected freezing, saves charts and circular events, restarts Task Manager, then reports candidates. Candidates are not proven causes.'}
+ 'hint_etw':'After 30 seconds of suspected freezing, saves charts and circular events, restarts Task Manager, then reports candidates. Candidates are not proven causes.',
+ 'goal1_waiting':'Waiting for Windows Update', 'goal1_passed':'Goal 1 passed', 'goal1_failed':'Goal 1 failed',
+ 'goal2_waiting':'Waiting for Goal 1', 'goal2_accumulating':'Goal 2 accumulating ({days}/14d · {hours:.1f}/150h · {windows}/20 windows)',
+ 'goal2_passed':'Goal 2 passed: owner may manually perform Goal 3 retirement', 'goal2_failed':'Goal 2 failed (defects detected)',
+ 'goal2_prompt':'Goal 2 passed! Owner may manually retire watcher via Autostart.cmd off and Stop.ps1.'}
 }
 
 class Watch(QWidget):
@@ -190,6 +198,36 @@ class Watch(QWidget):
             alerts.append(f"{self.text('blind_alert')} ({blind_sec:.0f}s)")
         if is_native_gap:
             alerts.append(f"{self.text('native_gap_alert')} ({gap_sec:.0f}s)")
+
+        # Goal 1 & Goal 2 status
+        goal1 = state.get('goal1', {})
+        goal2 = state.get('goal2', {})
+        g1_st = goal1.get('status', 'waiting_for_update')
+        g1_text = self.text('goal1_' + ('waiting' if g1_st == 'waiting_for_update' else g1_st))
+        g2_st = goal2.get('status', 'waiting_for_goal1')
+        if g2_st == 'accumulating':
+            g2_text = self.text('goal2_accumulating').format(
+                days=goal2.get('calendar_days', 0),
+                hours=goal2.get('effective_monitoring_hours', 0.0),
+                windows=goal2.get('high_load_windows_count', 0)
+            )
+        elif g2_st == 'goal2_passed':
+            g2_text = self.text('goal2_passed')
+        elif g2_st == 'goal2_failed':
+            g2_text = self.text('goal2_failed')
+        else:
+            g2_text = self.text('goal2_waiting')
+
+        if goal2.get('ready_for_goal3'):
+            alerts.append(self.text('goal2_prompt'))
+            if not getattr(self, '_goal3_prompted', False):
+                self._goal3_prompted = True
+                try:
+                    self.tray.showMessage(self.text('title'), self.text('goal2_prompt'), QSystemTrayIcon.Information, 15000)
+                except Exception:
+                    pass
+
+        alerts.append(f"G1: {g1_text} · G2: {g2_text}")
         if alerts:
             self.tray.setToolTip(f"{self.text('title')}\n" + '\n'.join(alerts))
         else:

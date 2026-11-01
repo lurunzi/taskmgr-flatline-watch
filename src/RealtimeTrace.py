@@ -323,6 +323,14 @@ class RealtimeConsumer:
         self.state = {'state': 'stopped' if self.enabled else 'disabled', 'session': self.name}
         self._callback_ref = None
         self._logfile = None
+        self.on_process_start = None
+        self.on_datasource2_821_error = None
+        self.on_native_error_0x8007139F = None
+
+    def register_goal_callbacks(self, on_process_start=None, on_datasource2_821_error=None, on_native_error_0x8007139F=None):
+        self.on_process_start = on_process_start
+        self.on_datasource2_821_error = on_datasource2_821_error
+        self.on_native_error_0x8007139F = on_native_error_0x8007139F
 
     def set_target_pid(self, pid):
         with self.lock:
@@ -433,6 +441,13 @@ class RealtimeConsumer:
                 self.state = {'state': 'error', 'error': self.last_error, 'session': self.name}
                 return
 
+            # Best-effort enable Microsoft-Windows-Kernel-Process for Goal 2 process start rate tracking
+            try:
+                kp_guid = parse_guid('{22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}')
+                advapi32.EnableTraceEx2(self.session_handle, ctypes.byref(kp_guid), 1, 4, 0x10, 0, 0, None)
+            except Exception:
+                pass
+
             self._callback_ref = PEVENT_RECORD_CALLBACK(self._on_event)
 
             self._logfile = EVENT_TRACE_LOGFILEW()
@@ -460,6 +475,18 @@ class RealtimeConsumer:
                 self.last_callback_utc = datetime.now(timezone.utc).isoformat()
             record = record_ptr.contents if hasattr(record_ptr, 'contents') else record_ptr
             hdr = record.EventHeader
+            provider_str = str(hdr.ProviderId).lower()
+
+            # Handle Microsoft-Windows-Kernel-Process (EID 1: ProcessStart) for Goal 2 high-load window tracking
+            if provider_str == '{22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}':
+                if getattr(hdr.EventDescriptor, 'Id', 0) == 1:
+                    if self.on_process_start:
+                        try:
+                            self.on_process_start(time.monotonic())
+                        except Exception:
+                            pass
+                return
+
             pid = hdr.ProcessId
             with self.lock:
                 current_target = self.target_pid
@@ -467,7 +494,6 @@ class RealtimeConsumer:
             if not current_target or pid != current_target:
                 return
 
-            provider_str = str(hdr.ProviderId).lower()
             if provider_str != TASKMGR_GUID.lower():
                 return
 
@@ -526,6 +552,20 @@ class RealtimeConsumer:
                 with self.lock:
                     if self.pending_native_error is None:
                         self.pending_native_error = event_info
+                if self.on_native_error_0x8007139F:
+                    try:
+                        self.on_native_error_0x8007139F(event_info)
+                    except Exception:
+                        pass
+
+            # 1b. Check for 0x8007000E at ProcessDataSource2.cpp:821 (Goal 2 reporting)
+            if b'\x0e\x00\x07\x80' in raw and SIGNATURE_MODULE_BYTES in raw:
+                if b'ProcessDataSource2.cpp' in raw or b'821' in raw:
+                    if self.on_datasource2_821_error:
+                        try:
+                            self.on_datasource2_821_error()
+                        except Exception:
+                            pass
 
             # 2. Check for CurrentUpdateCycle heartbeat (UpdateStarted / UpdateFinalized)
             if b'UpdateStarted' in raw or b'UpdateFinalized' in raw:
