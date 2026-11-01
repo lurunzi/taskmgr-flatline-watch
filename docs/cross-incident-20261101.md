@@ -13,7 +13,7 @@ Compiled on 1 November 2026 from the 11 qualifying flatlines that conform to N1,
 ## Sources
 
 - Per incident: `native_signature` and `activity_before` in `incident-analysis.json`, taken from the `-reanalysis` folder where one exists, and `trigger_kind` in `event.json`, all under `D:\TaskmgrFreezeCaptures\restart-*`.
-- Call chains: the incident trace for the first six freezes. For the last five, the independent probe `wil-20261031-1550-to-20261101-1500.etl`, because the direct decoder introduced in J15 loses the file and line fields; that fix is pending.
+- Call chains: the incident trace for the first six freezes. For the last five, originally cross-checked against the independent probe `wil-20261031-1550-to-20261101-1500.etl`; the direct decoder field loss from J15 is fixed in `c78b2db` via TDH TraceLogging decoding, verified field by field against tracerpt, and backfilled into `-reanalysis2` folders.
 - Onset: the first `0x8007139F` `FallbackError` from `TaskManagerDataLayer.dll`.
 - Onset window: [-2, 0) s before that error. Controls: 50 two-second windows from -120 to -20 s in the same trace.
 
@@ -68,7 +68,7 @@ Compiled on 1 November 2026 from the 11 qualifying flatlines that conform to N1,
 ## 来源
 
 - 各事件数据：`D:\TaskmgrFreezeCaptures\restart-*` 下 `incident-analysis.json` 中的 `native_signature` 与 `activity_before`（有 `-reanalysis` 目录时取该目录），以及 `event.json` 中的 `trigger_kind`。
-- 调用链：前六次取自事件 trace；后五次取自独立探测会话 `wil-20261031-1550-to-20261101-1500.etl`，因为 J15 引入的直接解码器丢失了文件和行号字段，修复待完成。
+- 调用链：前六次取自事件 trace；后五次最初对照独立探测会话 `wil-20261031-1550-to-20261101-1500.etl`；J15 直接解码器字段丢失问题已在提交 `c78b2db` 中通过 TDH TraceLogging 解码修复，与 tracerpt 解码逐字段核验完全一致，并已全量回填至 `-reanalysis2` 目录。
 - 起点：来自 `TaskManagerDataLayer.dll` 的第一条 `0x8007139F` `FallbackError`。
 - 起点窗口：该错误之前的 [-2, 0) 秒。对照：同一 trace 中 -120 至 -20 秒的 50 个 2 秒窗口。
 

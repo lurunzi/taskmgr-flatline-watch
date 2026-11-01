@@ -85,6 +85,7 @@ If flatlines continue on a fixed DLL, the visual failure has another cause and t
    - The 300 s limit applies to a whole retry attempt. Decoding and compression inside it stay bounded at 90 s, so a retry does not help a slow decode. Any exit code other than 0 or 2 is retried, including failures that will repeat.
    - About 4.4 GiB of the 40 GiB ETW budget is used, and incident folders since 19 October average about 54 MB. At five incidents a day, recording will block in roughly four months unless a retention decision is made; evidence is never deleted automatically.
    - On 26 October at 21:28 provider events vanished across all sessions, leaving a flatline incident uncovered (corrected to indeterminate). While initially suspected to be an ETW session count limit from leaked realtime sessions, a controlled experiment refuted this hypothesis up to 12 sessions. A 15-second native coverage watchdog with idempotent EnableTraceEx2 re-enabling, backoff retries, status reporting, and N2 provider_gap integration now mitigates provider dropouts automatically.
+   - The initial in-process direct ETW decoder introduced in J15 hardcoded fallback fields for `0x8007139F` events, losing `file`, `line`, and `failure_type`. This is resolved in `c78b2db` by integrating Win32 TDH (`TdhGetEventInformation`) with a direct binary fallback parser, verified field by field against tracerpt probe XML, and backfilled into `-reanalysis2` folders.
 
 ## Adjustment list (30 October 2026)
 
@@ -106,7 +107,7 @@ Derived from the recordings of 26–30 October. "Queued" items are handed to the
 | J12 | Post the A6 material, with the native signal, call chain and the logman command | The draft is ready locally and has not been published | Owner |
 | J13 | When the DLL hash changes, run the controlled execution of the new `QueryProcessInformation`, then start the J4 observation period | Definition of done item 1; the hash is recorded automatically (A4) | Waiting for Microsoft |
 | J14 | Move the controlled-execution harness into `tools/` with tests, make it resolve the function by public symbols, and run the 9549 negative control now | Goal 1 depends on a harness that today exists only in `.local/` and is pinned to one build | Done (31 October 2026) |
-| J15 | Direct ETW trace decoding and N1 tally de-duplication: resolve decoder output byte limit exceeded on circular ETWs with direct Win32 ETW reader (OpenTraceW / ProcessTrace) outputting events.json.gz, canonicalize incident folder names to eliminate re-analysis duplicates in n1-summary.json, and backfill 10-31 19:39 incident | In 128 MB circular traces, Taskmgr logged ~24,000 FallbackError events, expanding tracerpt XML to >1.09 GB; direct reader decodes in 3.6 s to 7.4 MB gzip; N1 tally updated to 7 of 7 conforming | Done (31 October 2026) |
+| J15 | Direct ETW trace decoding and N1 tally de-duplication: resolve decoder output byte limit exceeded on circular ETWs with direct Win32 ETW reader (OpenTraceW / ProcessTrace) outputting events.json.gz, canonicalize incident folder names to eliminate re-analysis duplicates in n1-summary.json, and backfill 10-31 19:39 incident. Follow-up 1 November 2026 (commit c78b2db): restore TraceLogging wilResult payload parsing (file, line, failure_type) via TDH and binary fallback after initial direct decoder lost fields | In 128 MB circular traces, Taskmgr logged ~24,000 FallbackError events, expanding tracerpt XML to >1.09 GB; direct reader decodes in 3.6 s to 7.4 MB gzip; N1 tally updated to 7 of 7 conforming. TDH parsing verified field by field against tracerpt probe ETL and backfilled across all affected incidents into -reanalysis2 folders | Done (31 October 2026; decoder fields restored 1 November 2026 in c78b2db) |
 
 ETW storage: 6.0 of 40 GiB used; incident folders since 20 October average about 67 MB, so the budget lasts several months at the current rate.
 
@@ -220,6 +221,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
    - 300 秒限时针对整次重试尝试，其中的解码和压缩仍限 90 秒，所以重试帮不了慢解码。退出码只要不是 0 或 2 就会重试，包括必然重复的失败。
    - 40 GiB 的 ETW 预算已用约 4.4 GiB，10 月 19 日以来每个事件目录平均约 54 MB。按每天五次估算，约四个月后记录会被阻止，需要事先决定保留策略；证据不会被自动删除。
    - 10 月 26 日 21:28 曾发生提供程序事件在所有会话中同时断流、导致平线未覆盖的情况（已更正为无法判定）。起初推测为实时会话泄漏超出 ETW 会话数上限导致，但实机受控实验证实 12 会话内无断流（上限推测未证实）。现已加入 15 秒原生覆盖看门狗，通过幂等 EnableTraceEx2 重启用、退避重试、状态导出以及 N2 provider_gap 联动，自动检测并缓解断流。
+   - J15 引入的初版进程内直接 ETW 解码器在提取 0x8007139F 事件时硬编码了回退字段，丢失了 file、line 和 failure_type。该问题已在提交 c78b2db 中通过 Win32 TDH（TdhGetEventInformation）动态架构解析与直接二进制回退解析解决，经与 tracerpt 探测 XML 逐字段回归一致，并全量回填至 -reanalysis2 目录。
 
 ## 调整清单（2026-10-30）
 
@@ -241,7 +243,7 @@ Decision rule for A2: if, across at least 20 incidents, the median ratio of onse
 | J12 | 发布 A6 材料，包含原生信号、调用链和 logman 命令 | 草稿已在本机备好，尚未发布 | 负责人 |
 | J13 | DLL 哈希变化时，先对新版 `QueryProcessInformation` 做受控执行，再开始 J4 的观察期 | 完成标准第 1 条；哈希已自动记录（A4） | 等待微软 |
 | J14 | 把受控执行脚本收进 `tools/` 并配上测试，改为按公共符号定位函数，现在就对 9549 做反向对照 | 目标一依赖的脚本目前只在 `.local/`，且绑定单一版本 | 已完成（2026-10-31） |
-| J15 | 原生 ETW 跟踪直接解码与 N1 计数去重：通过 Win32 ETW 读取器（OpenTraceW / ProcessTrace）直接输出 events.json.gz 解决循环 ETL 的解码字节超限（decoder output byte limit exceeded），规范化事件目录名以消除 n1-summary.json 中的重复分析，并回填 10-31 19:39 事件 | 128 MB 循环 ETL 中 Taskmgr 记录约 24,000 条 FallbackError，导致 tracerpt XML 膨胀超 1.09 GB；直接解码器 3.6 秒解码并压缩至 7.4 MB gzip；N1 计数更新至 7 次符合 | 已完成（2026-10-31） |
+| J15 | 原生 ETW 跟踪直接解码与 N1 计数去重：通过 Win32 ETW 读取器（OpenTraceW / ProcessTrace）直接输出 events.json.gz 解决循环 ETL 的解码字节超限（decoder output byte limit exceeded），规范化事件目录名以消除 n1-summary.json 中的重复分析，并回填 10-31 19:39 事件。后续跟进（2026-11-01，提交 c78b2db）：针对初版直接解码器丢失字段问题，改用 TDH 与二进制回退完整解析 TraceLogging 的 wilResult 负载（file、line、failure_type） | 128 MB 循环 ETL 中 Taskmgr 记录约 24,000 条 FallbackError，导致 tracerpt XML 膨胀超 1.09 GB；直接解码器 3.6 秒解码并压缩至 7.4 MB gzip；N1 计数更新至 7 次符合。TDH 解析经探测 ETL 与 tracerpt XML 逐字段回归一致，已全量重新分析回填至 -reanalysis2 目录 | 已完成（2026-10-31；2026-11-01 提交 c78b2db 恢复解码器完整字段） |
 
 ETW 存储：40 GiB 已用 6.0 GiB；10 月 20 日以来每个事件目录平均约 67 MB，按当前速度可用数月。
 

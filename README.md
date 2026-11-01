@@ -28,6 +28,7 @@ To resolve offline analysis decoding failures on large circular traces, prevent 
   - Native signature: Conforming `0x8007139F` on target PID 26488 with a 14.332 s lead time before the first flat candidate (`call_chain_event_count: 5`, `trigger_kind: native_fast`).
   - Heartbeat continuity (N4): Heartbeat continued throughout the freeze (`classification: heartbeat_continued_during_freeze`, 3600 events, 1800 pairs).
   - Frozen line discrepancy (A3): Total chart froze at 41.3% height (`tail_height_px: 27.0`, `inner_height_px: 46.0`) against an actual system CPU median of 34.8% (max 48.0%), with a -6.5% median and +6.7% max discrepancy during confirmation.
+- **TraceLogging wilResult schema restoration (1 November 2026, commit c78b2db)**: The initial J15 direct decoder extracted only module names and hardcoded empty string/zero fallback values for `file`, `line`, and `failure_type`. `ProcessTrace.py` was enhanced to use Win32 TDH (`TdhGetEventInformation`) to dynamically decode the self-describing TraceLogging struct layout, with a robust direct binary unpacking fallback for `wilResult`. Regression testing validated all 25 events across 5 conforming freezes field-by-field against tracerpt XML output, restoring complete 5-node call chains (`aggregationdatamonitor.cpp:640 -> :159 -> Core.cpp:407`) across all affected incidents into new `-reanalysis2` folders without inflating N1 tally counts.
 - **N1 tally status**: Live tally in `n1-summary.json` and `status.json` now stands at 7 of 7 qualifying flatlines conforming (100% conforming; 0 outside flatlines across 57+ hours of recording) across 11 unique incidents (7 conforming, 4 indeterminate).
 
 ## Controlled query defect verification (31 October 2026)
@@ -327,6 +328,7 @@ Sources: [Microsoft ProcDump documentation](https://learn.microsoft.com/en-us/sy
   - 原生特征：目标 PID 26488 确认原生 `0x8007139F` 错误，领先首次平线候选 14.332 秒（5 节点调用链，`trigger_kind: native_fast`）。
   - 心跳持续（N4）：心跳在冻结期间全程持续（`classification: heartbeat_continued_during_freeze`，3600 个事件，1800 对）。
   - 冻结线差值（A3）：总图冻结在 41.3% 高度（`tail_height_px: 27.0`，`inner_height_px: 46.0`），而系统独立 CPU 采样中位数为 34.8%（最大 48.0%），确认期内差值中位数 -6.5%、最大 +6.7%。
+- **TraceLogging wilResult 架构解析修复（2026 年 11 月 1 日，提交 c78b2db）**：J15 初版直接解码器仅解析了模块名，对 `file`、`line`、`failure_type` 采用了空字符串与零的硬编码回退值。`ProcessTrace.py` 现改用 Win32 TDH（`TdhGetEventInformation`）动态解析自描述 TraceLogging 结构体架构，并配备健壮的直接二进制解包回退。经独立探测 ETL 与 tracerpt XML 解码逐字段回归测试，5 次合格平线的全部 25 条原生错误事件逐字段完全一致，在新的 `-reanalysis2` 目录中完整恢复了 5 节点调用链（`aggregationdatamonitor.cpp:640 -> :159 -> Core.cpp:407`），并在 `n1-summary.json` 中规范化原地更新而不增加重复条目。
 - **N1 统计现状**：`n1-summary.json` 与 `status.json` 中的最新统计现为 7 次合格平线中 7 次符合（符合率 100%；57+ 小时记录期内平线外 0 次），共覆盖 11 次独立事件（7 次符合，4 次无法判定）。
 
 ## 查询缺陷受控执行验证（2026 年 10 月 31 日）
