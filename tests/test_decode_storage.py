@@ -121,5 +121,60 @@ class DecodeStorageTests(unittest.TestCase):
                     session.decode(compact=True)
             self.assertEqual(session.record['decode'], 'incomplete: decoder time/output bound')
 
+    def test_parse_fallback_error_sample_fixture(self):
+        import base64
+        fixture_path = Path(__file__).resolve().parent / 'fixtures' / 'sample_fallback_events.json'
+        self.assertTrue(fixture_path.exists(), "Sample fallback events fixture must exist")
+        items = json.loads(fixture_path.read_text(encoding='utf-8'))
+        self.assertEqual(len(items), 5)
+
+        expected = [
+            {'file': '', 'line': 0, 'failure_type': 2, 'module': 'TaskManagerDataLayer.dll', 'hresult': 2147947423, 'message': '', 'thread_id': 26532},
+            {'file': '', 'line': 0, 'failure_type': 2, 'module': 'TaskManagerDataLayer.dll', 'hresult': 2147947423, 'message': '', 'thread_id': 26532},
+            {'file': 'base\\diagnosis\\pdui\\atm\\datamonitors\\aggregationdatamonitor.cpp', 'line': 640, 'failure_type': 1, 'module': 'TaskManagerDataLayer.dll', 'hresult': 2147947423, 'message': 'winrt::hresult_error: The group or resource is not in the correct state to perform the requested operation.', 'thread_id': 26532},
+            {'file': 'base\\diagnosis\\pdui\\atm\\datamonitors\\aggregationdatamonitor.cpp', 'line': 159, 'failure_type': 1, 'module': 'TaskManagerDataLayer.dll', 'hresult': 2147947423, 'message': '', 'thread_id': 26532},
+            {'file': 'base\\diagnosis\\pdui\\atm\\core\\Core.cpp', 'line': 407, 'failure_type': 0, 'module': 'TaskManagerDataLayer.dll', 'hresult': 2147947423, 'message': '', 'thread_id': 26532},
+        ]
+
+        for item, exp in zip(items, expected):
+            raw = base64.b64decode(item['raw_b64'])
+            parsed = P.parse_fallback_error(None, raw)
+            for k, v in exp.items():
+                self.assertEqual(parsed.get(k), v, f"Field mismatch for {k}: {parsed.get(k)} != {v}")
+
+    def test_probe_etl_regression_against_tracerpt_xml(self):
+        probe_etl = Path(r'D:\TaskmgrFreezeCaptures\wil-probe-20261025\wil-20261031-1550-to-20261101-1500.etl')
+        xml_path = Path(r'D:\TaskmgrFreezeCaptures\wil-probe-20261025\decode-1031-to-1101\events.xml')
+        if not probe_etl.exists() or not xml_path.exists():
+            self.skipTest("Probe ETL or tracerpt XML not present on this machine")
+
+        res = P.decode_etl_file(probe_etl)
+        self.assertIsNotNone(res)
+        header, _, _ = res
+        native_events = header.get('native_events', [])
+        self.assertEqual(len(native_events), 25)
+
+        for group_idx in range(5):
+            group = native_events[group_idx*5 : (group_idx+1)*5]
+            self.assertEqual(group[0]['file'], '')
+            self.assertEqual(group[0]['line'], 0)
+            self.assertEqual(group[0]['failure_type'], 2)
+
+            self.assertEqual(group[1]['file'], '')
+            self.assertEqual(group[1]['line'], 0)
+            self.assertEqual(group[1]['failure_type'], 2)
+
+            self.assertEqual(group[2]['file'], 'base\\diagnosis\\pdui\\atm\\datamonitors\\aggregationdatamonitor.cpp')
+            self.assertEqual(group[2]['line'], 640)
+            self.assertEqual(group[2]['failure_type'], 1)
+
+            self.assertEqual(group[3]['file'], 'base\\diagnosis\\pdui\\atm\\datamonitors\\aggregationdatamonitor.cpp')
+            self.assertEqual(group[3]['line'], 159)
+            self.assertEqual(group[3]['failure_type'], 1)
+
+            self.assertEqual(group[4]['file'], 'base\\diagnosis\\pdui\\atm\\core\\Core.cpp')
+            self.assertEqual(group[4]['line'], 407)
+            self.assertEqual(group[4]['failure_type'], 0)
+
 
 if __name__=='__main__':unittest.main()

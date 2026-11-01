@@ -6,6 +6,7 @@ on the validation workstation. Query markers are host receipt times, not exact
 target execution times; correlation alone is never attribution.
 """
 import ctypes
+from ctypes import wintypes
 import gzip
 import json
 import os
@@ -26,6 +27,164 @@ XML_LIMIT = 256*1024**2
 COMPACT_XML_LIMIT = 1024*1024**2
 DIRECT_DECODE_JSON_LIMIT = 512*1024**2
 DIRECT_DECODE_EVENT_LIMIT = 2_000_000
+
+try:
+    _tdh = ctypes.WinDLL('tdh', use_last_error=True)
+    _tdh.TdhGetEventInformation.argtypes = [
+        ctypes.c_void_p,
+        wintypes.ULONG,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.ULONG)
+    ]
+    _tdh.TdhGetEventInformation.restype = wintypes.ULONG
+except Exception:
+    _tdh = None
+
+
+def parse_fallback_error_binary(raw):
+    """Direct fallback binary parser for TaskManagerDataLayer.dll FallbackError TraceLogging payload."""
+    offset = 16
+    if len(raw) < 16 + 4:
+        return {}
+    hresult, = struct.unpack('<I', raw[offset:offset+4])
+    offset += 4
+
+    idx = raw.find(b'\x00', offset)
+    if idx == -1:
+        return {}
+    file_name = raw[offset:idx].decode('utf-8', errors='replace')
+    offset = idx + 1
+
+    if len(raw) < offset + 4:
+        return {}
+    line_number, = struct.unpack('<I', raw[offset:offset+4])
+    offset += 4
+
+    idx = raw.find(b'\x00', offset)
+    if idx == -1:
+        return {}
+    module_name = raw[offset:idx].decode('utf-8', errors='replace')
+    offset = idx + 1
+
+    if len(raw) < offset + 4:
+        return {}
+    failure_type, = struct.unpack('<I', raw[offset:offset+4])
+    offset += 4
+
+    idx = raw.find(b'\x00\x00', offset)
+    if idx == -1:
+        msg = raw[offset:].decode('utf-16le', errors='replace')
+        offset = len(raw)
+    else:
+        if (idx - offset) % 2 != 0:
+            idx += 1
+        msg = raw[offset:idx].decode('utf-16le', errors='replace')
+        offset = idx + 2
+
+    thread_id = 0
+    if len(raw) >= offset + 4:
+        thread_id, = struct.unpack('<I', raw[offset:offset+4])
+
+    return {
+        'hresult': hresult,
+        'module': module_name,
+        'file': file_name,
+        'line': line_number,
+        'failure_type': failure_type,
+        'message': msg,
+        'thread_id': thread_id
+    }
+
+
+def parse_fallback_error(record_ptr, raw):
+    """Parse TaskManagerDataLayer.dll FallbackError (0x8007139F) TraceLogging event.
+
+    Prefers Win32 TDH (TdhGetEventInformation) to dynamically interpret the schema,
+    falling back to direct binary unpacking of the wilResult struct.
+    """
+    if _tdh is not None and record_ptr:
+        try:
+            buf_size = wintypes.ULONG(0)
+            st = _tdh.TdhGetEventInformation(record_ptr, 0, None, None, ctypes.byref(buf_size))
+            if st == 122:  # ERROR_INSUFFICIENT_BUFFER
+                buf = ctypes.create_string_buffer(buf_size.value)
+                st = _tdh.TdhGetEventInformation(record_ptr, 0, None, buf, ctypes.byref(buf_size))
+                if st == 0:
+                    raw_bytes = bytes(buf)
+                    prop_count, = struct.unpack('<I', raw_bytes[100:104])
+
+                    def get_str(str_off):
+                        if not str_off or str_off >= len(raw_bytes):
+                            return ""
+                        end = raw_bytes.find(b'\x00\x00', str_off)
+                        if end == -1:
+                            end = len(raw_bytes)
+                        if (end - str_off) % 2 != 0:
+                            end += 1
+                        return raw_bytes[str_off:end].decode('utf-16le', errors='replace')
+
+                    props = []
+                    for i in range(prop_count):
+                        pos = 112 + i * 24
+                        p_flags, name_off, intype = struct.unpack('<IIH', raw_bytes[pos:pos+10])
+                        props.append({
+                            'name': get_str(name_off),
+                            'inType': intype,
+                            'is_struct': bool(p_flags & 0x1)
+                        })
+
+                    record = record_ptr.contents if hasattr(record_ptr, 'contents') else record_ptr
+                    u_len = record.UserDataLength
+                    u_data = bytes((ctypes.c_char * u_len).from_address(record.UserData))
+                    offset = 0
+                    parsed = {}
+                    for p in props:
+                        if p['is_struct']:
+                            continue
+                        itype = p['inType']
+                        if itype == 1:  # UNICODESTRING
+                            idx = u_data.find(b'\x00\x00', offset)
+                            if idx == -1:
+                                val = u_data[offset:].decode('utf-16le', errors='replace')
+                                offset = len(u_data)
+                            else:
+                                if (idx - offset) % 2 != 0:
+                                    idx += 1
+                                val = u_data[offset:idx].decode('utf-16le', errors='replace')
+                                offset = idx + 2
+                            parsed[p['name']] = val if val else ''
+                        elif itype == 2:  # ANSISTRING
+                            idx = u_data.find(b'\x00', offset)
+                            if idx == -1:
+                                val = u_data[offset:].decode('utf-8', errors='replace')
+                                offset = len(u_data)
+                            else:
+                                val = u_data[offset:idx].decode('utf-8', errors='replace')
+                                offset = idx + 1
+                            parsed[p['name']] = val if val else ''
+                        elif itype in (7, 8):  # INT32 / UINT32
+                            val, = struct.unpack('<I', u_data[offset:offset+4])
+                            offset += 4
+                            parsed[p['name']] = val
+                        elif itype in (9, 10):  # INT64 / UINT64
+                            val, = struct.unpack('<Q', u_data[offset:offset+8])
+                            offset += 8
+                            parsed[p['name']] = val
+
+                    return {
+                        'hresult': int(parsed.get('hresult', 2147947423)),
+                        'module': parsed.get('module', 'TaskManagerDataLayer.dll'),
+                        'file': parsed.get('fileName', ''),
+                        'line': int(parsed.get('lineNumber', 0) or 0),
+                        'failure_type': int(parsed.get('failureType', 0) or 0),
+                        'message': parsed.get('message', ''),
+                        'thread_id': int(parsed.get('threadId', 0) or 0)
+                    }
+        except Exception:
+            pass
+
+    return parse_fallback_error_binary(raw)
 
 
 def session_exists(name):
@@ -158,18 +317,19 @@ def decode_etl_file(etl_path, timeout=90, event_limit=DIRECT_DECODE_EVENT_LIMIT,
             if u_len and record.UserData:
                 raw = bytes((ctypes.c_char * u_len).from_address(record.UserData))
                 if RT.SIGNATURE_HRESULT_BYTES in raw and RT.SIGNATURE_MODULE_BYTES in raw:
+                    parsed = parse_fallback_error(record_ptr, raw)
                     native_events.append({
                         'raw': stamp,
                         'system_time': None,
                         'task': 'FallbackError',
                         'pid': hdr.ProcessId,
-                        'tid': hdr.ThreadId,
-                        'hresult': 2147947423,
-                        'module': 'TaskManagerDataLayer.dll',
-                        'file': '',
-                        'line': 0,
-                        'failure_type': 2,
-                        'message': ''
+                        'tid': parsed.get('thread_id') or hdr.ThreadId,
+                        'hresult': parsed.get('hresult', 2147947423),
+                        'module': parsed.get('module', 'TaskManagerDataLayer.dll'),
+                        'file': parsed.get('file', ''),
+                        'line': parsed.get('line', 0),
+                        'failure_type': parsed.get('failure_type', 2),
+                        'message': parsed.get('message', '')
                     })
             return
 
