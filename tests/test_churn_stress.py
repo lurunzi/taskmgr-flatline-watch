@@ -39,5 +39,20 @@ class ChurnStressTests(unittest.TestCase):
         self.assertEqual(outside, ['c'])
 
 
+    def test_native_error_time_wins_over_late_recovery(self):
+        import json, tempfile
+        start = datetime(2026, 11, 1, 16, 0, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)/'restart-20261101-161400-000001'
+            folder.mkdir()
+            (folder/'event.json').write_text(json.dumps({'trigger_kind': 'native_fast',
+                                                          'native_event_time': '2026-11-01T16:08:42+00:00'}))
+            found = cs.collect_incidents(Path(d), start, start + timedelta(minutes=20))
+        self.assertEqual(found[0][1], datetime(2026, 11, 1, 16, 8, 42, tzinfo=timezone.utc))
+        self.assertEqual(found[0][2]['attributed_by'], 'native_event_time')
+        counts, _ = cs.attribute(found, cs.block_plan(2, 10, 'quiet'), start)
+        self.assertEqual(len(counts[0]), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

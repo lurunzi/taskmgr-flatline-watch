@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 EVIDENCE = Path(r'D:\TaskmgrFreezeCaptures')
@@ -76,6 +76,16 @@ def folder_time(name):
     return stamp.replace(tzinfo=timezone.utc)
 
 
+def native_time(value):
+    if not value:
+        return None
+    try:
+        when = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
 def attribute(incidents, blocks, start):
     """Count incidents per block. incidents: [(name, utc_datetime, extra)]."""
     counts = {index: [] for index, *_ in blocks}
@@ -132,15 +142,22 @@ def collect_incidents(evidence, start, end):
         if folder.name.endswith(('-reanalysis', '-reanalysis2')) or '-retry' in folder.name:
             continue
         when = folder_time(folder.name)
-        if not when or not (start <= when <= end):
+        # Recovery can lag the native error by minutes while the watcher is blind.
+        if not when or not (start <= when <= end + timedelta(minutes=30)):
             continue
-        extra = {}
+        extra = {'recovery_utc': when.isoformat()}
         try:
             event = json.loads((folder/'event.json').read_text(encoding='utf-8'))
             extra['trigger_kind'] = event.get('trigger_kind')
             extra['native_event_time'] = event.get('native_event_time')
         except (OSError, ValueError):
             pass
+        # A freeze belongs to the block where the native error occurred, not where
+        # recovery happened; a blind watcher can recover minutes later.
+        onset = native_time(extra.get('native_event_time'))
+        if onset and start <= onset <= end:
+            when = onset
+        extra['attributed_by'] = 'native_event_time' if onset else 'recovery_folder_time'
         found.append((folder.name, when, extra))
     return found
 
